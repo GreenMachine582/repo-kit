@@ -1,0 +1,10 @@
+{
+  "name": "repo-kit",
+  "version": "0.0.0",
+  "description": "One worktree per Claude session: start, sync and finish branches with rk.",
+  "author": {
+    "name": "GreenMachine582"
+  },
+  "repository": "https://github.com/GreenMachine582/repo-kit",
+  "license": "MIT"
+}

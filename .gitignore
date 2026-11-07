@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+
+# Testing and linters
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+.mypy_cache/
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+*.pem
+
+# repo-kit: per-worktree links written by `rk wt start --link`
+.repo-kit.local.toml
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

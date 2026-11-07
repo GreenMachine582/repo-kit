@@ -1,0 +1,39 @@
+[project]
+name = "repo-kit"
+version = "0.0.0"
+description = "Shared repo tooling: one worktree per Claude session, PRs that stay current, and one versioned definition of how every repo is set up."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+# Runtime is standard library only. Don't add a dependency here: see CLAUDE.md.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[project.scripts]
+rk = "repo_kit.cli:main"
+
+[project.urls]
+Repository = "https://github.com/GreenMachine582/repo-kit"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/repo_kit"]
+
+# Templates ship inside the package, so `uv tool install` and the plugin carry them.
+[tool.hatch.build.targets.wheel.force-include]
+"templates" = "repo_kit/templates"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

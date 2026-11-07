@@ -1,0 +1,13 @@
+{
+  "name": "repo-kit",
+  "owner": {
+    "name": "GreenMachine582"
+  },
+  "plugins": [
+    {
+      "name": "repo-kit",
+      "source": "./plugins/repo-kit",
+      "description": "One worktree per Claude session: start, sync and finish branches with rk."
+    }
+  ]
+}
