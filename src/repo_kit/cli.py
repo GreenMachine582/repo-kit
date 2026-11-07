@@ -10,8 +10,10 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from repo_kit import __version__
+from repo_kit.errors import RkError
 
 NOT_IMPLEMENTED = 2
 
@@ -20,6 +22,38 @@ def _not_implemented(command: str, phase: str):
     def handler(args: argparse.Namespace) -> int:
         print(f"rk {command}: not implemented yet (Phase {phase})", file=sys.stderr)
         return NOT_IMPLEMENTED
+
+    return handler
+
+
+def _print_changes(changed: list[str]) -> None:
+    print("Changed:" if changed else "Changed: nothing")
+    for item in changed:
+        print(f"  - {item}")
+
+
+def _wt_handler(action: str):
+    def handler(args: argparse.Namespace) -> int:
+        # Imported here so `rk --help` and the not-yet-built commands don't need git.
+        from repo_kit import worktree
+
+        ctx = worktree.Context.load(Path.cwd())
+        try:
+            if action == "start":
+                worktree.start(ctx, args.branch, args.from_branch, args.link, args.no_setup)
+            elif action == "sync":
+                worktree.sync(ctx, args.branch)
+            else:
+                worktree.done(
+                    ctx,
+                    args.branch,
+                    allow_unmerged=args.allow_unmerged,
+                    discard_changes=args.discard_changes,
+                    delete_unpushed=args.delete_unpushed,
+                )
+        finally:
+            _print_changes(ctx.changed)
+        return 0
 
     return handler
 
@@ -44,11 +78,11 @@ def _add_worktree(sub: argparse._SubParsersAction) -> None:
         help="use a local worktree of a GTH package (repeatable)",
     )
     start.add_argument("--no-setup", action="store_true", help="skip [worktree].setup")
-    start.set_defaults(handler=_not_implemented("wt start", "1A"))
+    start.set_defaults(handler=_wt_handler("start"))
 
     sync = wt_sub.add_parser("sync", help="merge the remote branch and its PR base, check, push")
     sync.add_argument("branch", nargs="?", help="defaults to the current worktree's branch")
-    sync.set_defaults(handler=_not_implemented("wt sync", "1A"))
+    sync.set_defaults(handler=_wt_handler("sync"))
 
     done = wt_sub.add_parser("done", help="remove a finished worktree and its branch")
     done.add_argument("branch", nargs="?", help="defaults to the current worktree's branch")
@@ -61,7 +95,7 @@ def _add_worktree(sub: argparse._SubParsersAction) -> None:
     done.add_argument(
         "--delete-unpushed", action="store_true", help="allow unpushed commits, which are lost"
     )
-    done.set_defaults(handler=_not_implemented("wt done", "1A"))
+    done.set_defaults(handler=_wt_handler("done"))
 
 
 def _add_pr_side(sub: argparse._SubParsersAction) -> None:
@@ -149,7 +183,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.handler(args)
+    try:
+        return args.handler(args)
+    except RkError as exc:
+        print(f"rk: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

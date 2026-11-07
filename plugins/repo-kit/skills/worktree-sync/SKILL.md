@@ -13,8 +13,9 @@ With no branch, it syncs the current worktree's branch. It:
 
 1. Refuses if there are uncommitted or untracked changes. Commit them first (or ask the user what to do with them).
 2. Merges `origin/<branch>` first, to pick up any merge the PR bot pushed.
-3. Merges `origin/<PR base>`, using the PR's live base, so chains follow a retargeted base.
-4. On a conflict, stops and lists the conflicting files.
+3. Merges `origin/<PR base>`, using the PR's live base, so chains follow a retargeted base. With no open PR yet, it
+   uses the base the branch was started from.
+4. On a conflict, stops and lists the conflicting files, leaving the merge in progress. Nothing is pushed.
 5. Runs the repo's `[worktree].check`, pushes **without force**, and clears the `needs-merge` label.
 
 ## Resolving conflicts

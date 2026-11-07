@@ -28,7 +28,7 @@ changed.
 [WARN] 1 stale worktree: ~/dev/wt/GreenMachine582-photo-ledger/fix-x-1a2b3c
 ```
 
-Minimum versions, checked by `doctor`: Git 2.38+ (to confirm in Phase 1C), gh 2.40+, Python 3.11+.
+Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` command checks it too), gh 2.40+, Python 3.11+.
 
 ## 🏷️ Versioning
 
