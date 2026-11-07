@@ -3,6 +3,7 @@
   "owner": {
     "name": "GreenMachine582"
   },
+  "description": "repo-kit's Claude plugin: one worktree per session, kept current by merging.",
   "plugins": [
     {
       "name": "repo-kit",
