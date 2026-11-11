@@ -57,10 +57,26 @@ def test_pr_from_api():
             "state": "closed",
             "merged_at": "2026-11-01T00:00:00Z",
             "draft": False,
-            "base": {"ref": "dev"},
-            "head": {"ref": "feat/x"},
+            "base": {"ref": "dev", "repo": {"full_name": "o/r"}},
+            "head": {"ref": "feat/x", "sha": "abc123", "repo": {"full_name": "o/r"}},
             "labels": [{"name": "needs-merge"}],
         }
     )
-    assert pr == PullRequest(7, "closed", True, False, "dev", "feat/x", ("needs-merge",))
+    assert pr == PullRequest(
+        7, "closed", True, False, "dev", "feat/x", ("needs-merge",), head_sha="abc123"
+    )
     assert pr.finished
+    assert not pr.from_fork
+
+
+@pytest.mark.parametrize("head_repo", [{"full_name": "someone/r"}, None])
+def test_pr_from_api_marks_forks_and_deleted_forks(head_repo):
+    pr = pr_from_api(
+        {
+            "number": 8,
+            "state": "open",
+            "base": {"ref": "dev", "repo": {"full_name": "o/r"}},
+            "head": {"ref": "feat/x", "sha": "abc123", "repo": head_repo},
+        }
+    )
+    assert pr.from_fork
