@@ -1,0 +1,67 @@
+# Reusable: keep every ready PR current with its base, as gth-pr-bot. See docs/pr-updates.md.
+# Consumers call it from a thin caller pinned to @v<version>, passing the same version as `ref`.
+name: update-prs
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The repo-kit tag or commit to run, such as v1.4.0
+        required: true
+        type: string
+      client-id:
+        description: gth-pr-bot's Client ID
+        required: true
+        type: string
+      dry-run:
+        description: Report what would happen and write nothing
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      PR_BOT_PRIVATE_KEY:
+        description: gth-pr-bot's private key
+        required: true
+
+permissions: {}
+
+jobs:
+  update-prs:
+    # A pull_request run from a fork gets no secrets, so it could only fail.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    # Every run reconciles everything, so a queued run can be dropped but a running one is never cut off.
+    concurrency:
+      group: update-prs-${{ github.repository }}
+      cancel-in-progress: false
+    steps:
+      # Only repo-kit is checked out: no code from the consumer repo or its PRs reaches this runner.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: GreenMachine582/repo-kit
+          ref: ${{ inputs.ref }}
+          path: repo-kit
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ inputs.client-id }}
+          private-key: ${{ secrets.PR_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      # rk is standard library only, so it runs from source: nothing is installed next to the token.
+      - name: Reconcile every open PR
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          PYTHONPATH: repo-kit/src
+          DRY_RUN: ${{ inputs.dry-run }}
+        run: |
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          python -m repo_kit update-prs "${args[@]}"

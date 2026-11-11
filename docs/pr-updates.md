@@ -32,13 +32,42 @@ Every run looks at everything, so a dropped or cancelled run is harmless:
 
 `rk update-prs --dry-run` reports all of this and writes nothing.
 
+## Workflow
+
+`.github/workflows/update-prs.yml` is a reusable workflow. A consumer holds only a caller:
+
+```yaml
+jobs:
+  update-prs:
+    if: vars.GTH_PR_BOT_CLIENT_ID != ''
+    permissions:
+      contents: read
+    uses: GreenMachine582/repo-kit/.github/workflows/update-prs.yml@v1.4.0
+    with:
+      ref: v1.4.0                      # the same version: the rk code to run
+      client-id: ${{ vars.GTH_PR_BOT_CLIENT_ID }}
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+    secrets:
+      PR_BOT_PRIVATE_KEY: ${{ secrets.GTH_PR_BOT_PRIVATE_KEY }}
+```
+
+- **What's checked out:** only repo-kit, at `ref`. No code from the consumer repo or its PRs reaches the runner.
+- **How rk runs:** from source (`python -m repo_kit` with `PYTHONPATH`). It's standard library only, so nothing is
+  installed next to the token.
+- **The token:** minted for this repo only, with contents, pull requests and issues write. `GITHUB_TOKEN` gets only
+  `contents: read`.
+- **Fork PRs:** their `pull_request` runs get no secrets, so the job skips them.
+- **Before enrolment:** the `if:` keeps the caller idle until `rk configure` has enrolled the repo.
+- **repo-kit's own caller:** `.github/workflows/keep-prs-current.yml` passes the default branch as `ref`, so only merged
+  rk code runs with the token.
+
 ## Triggers
 
 | Event | Types |
 |---|---|
 | `push` | All branches |
 | `pull_request` | `edited`, `ready_for_review`, `reopened`, `closed` |
-| `workflow_dispatch` | With a `dry_run` input |
+| `workflow_dispatch` | With a `dry-run` input, ticked by default |
 
 No schedule for now; a daily safety net is a Future item. Concurrency is one group per repo, without cancelling runs
 in progress. A dropped pending run is harmless, because any run covers everything.

@@ -73,6 +73,19 @@ def _update_prs(args: argparse.Namespace) -> int:
     return 1 if report.failed else 0
 
 
+def _configure(args: argparse.Namespace) -> int:
+    from repo_kit import bootstrap
+
+    changed: list[str] = []
+    try:
+        bootstrap.run_configure(
+            Path.cwd(), changed=changed, dry_run=args.dry_run, replace_key=args.replace_key
+        )
+    finally:
+        _print_changes(changed)
+    return 0
+
+
 def _add_worktree(sub: SubParsers) -> None:
     wt = sub.add_parser("wt", help="one branch = one worktree = one Claude session")
     wt_sub = wt.add_subparsers(dest="wt_command", required=True, metavar="<command>")
@@ -166,9 +179,14 @@ def _add_setup_side(sub: SubParsers) -> None:
     install.add_argument("--hooks", action="store_true", help="also install the commit-msg hook")
     install.set_defaults(handler=_not_implemented("install", "1C"))
 
-    sub.add_parser("configure", help="Apps, secrets, labels, then github apply").set_defaults(
-        handler=_not_implemented("configure", "1C")
+    configure = sub.add_parser(
+        "configure", help="enrol this repo for gth-pr-bot: labels, Client ID and key"
     )
+    configure.add_argument("--dry-run", action="store_true", help="report what would change")
+    configure.add_argument(
+        "--replace-key", action="store_true", help="overwrite the private key secret if it's set"
+    )
+    configure.set_defaults(handler=_configure)
 
     bootstrap = sub.add_parser("bootstrap", help="install + configure + doctor")
     bootstrap.add_argument("--profile", default="dev-main", choices=["dev-main"])

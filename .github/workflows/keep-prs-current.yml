@@ -1,0 +1,31 @@
+# repo-kit's own caller of update-prs, written by hand until Phase 1D generates it. It runs only once the
+# repo is enrolled: `rk configure` sets the GTH_PR_BOT_CLIENT_ID variable and GTH_PR_BOT_PRIVATE_KEY secret.
+name: keep PRs current
+
+on:
+  push:
+  pull_request:
+    types: [edited, ready_for_review, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Report what would happen and write nothing
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  update-prs:
+    if: vars.GTH_PR_BOT_CLIENT_ID != ''
+    permissions:
+      contents: read
+    # The documented local form: it resolves to this same commit, and actionlint checks it.
+    uses: ./.github/workflows/update-prs.yml # zizmor: ignore[self-repository]
+    with:
+      # The default branch's rk, so only merged code ever runs with the App token.
+      ref: ${{ github.event.repository.default_branch }}
+      client-id: ${{ vars.GTH_PR_BOT_CLIENT_ID }}
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+    secrets:
+      PR_BOT_PRIVATE_KEY: ${{ secrets.GTH_PR_BOT_PRIVATE_KEY }}

@@ -144,8 +144,32 @@ class NoGitHub:
         return None
 
 
+class RepoSetup(Protocol):
+    """The repo-level settings `rk configure` reads and writes."""
+
+    def labels(self) -> list[str]:
+        """The names of every label in the repo."""
+        ...
+
+    def create_label(self, name: str, color: str, description: str) -> None: ...
+
+    def variables(self) -> dict[str, str]:
+        """Every Actions variable in the repo, by name."""
+        ...
+
+    def set_variable(self, name: str, value: str) -> None: ...
+
+    def secret_names(self) -> list[str]:
+        """The names of the repo's Actions secrets. Their values can't be read back."""
+        ...
+
+    def set_secret(self, name: str, value: str) -> None:
+        """Store an Actions secret. The value goes to `gh` on stdin, never as an argument."""
+        ...
+
+
 class GhCliGitHub:
-    """`GitHub` backed by the `gh` CLI, which handles auth and hosts."""
+    """`GitHub` and `RepoSetup` backed by the `gh` CLI, which handles auth and hosts."""
 
     def __init__(self, owner: str, repo: str) -> None:
         self.owner = owner
@@ -155,10 +179,12 @@ class GhCliGitHub:
     def _repo(self) -> str:
         return f"repos/{self.owner}/{self.repo}"
 
-    def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
+    def _gh(self, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+        """Run `gh <args>`. Anything secret goes in `stdin`, never in `args`."""
         try:
             return subprocess.run(
-                ["gh", "api", *args],
+                ["gh", *args],
+                input=stdin,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -168,6 +194,15 @@ class GhCliGitHub:
             raise GitHubError(
                 "gh is not on PATH: install the GitHub CLI and `gh auth login`"
             ) from exc
+
+    def _gh_ok(self, *args: str, stdin: str | None = None) -> str:
+        proc = self._gh(*args, stdin=stdin)
+        if proc.returncode != 0:
+            raise GitHubError(f"`gh {' '.join(args)}` failed:\n{proc.stderr.strip()}")
+        return proc.stdout
+
+    def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
+        return self._gh("api", *args)
 
     def _api(self, *args: str, allow_404: bool = False) -> Any:
         proc = self._run(*args)
@@ -252,3 +287,40 @@ class GhCliGitHub:
         if data is None:
             return None
         return base64.b64decode(data["content"]).decode("utf-8")
+
+    # --- RepoSetup ---
+
+    @property
+    def _full_name(self) -> str:
+        return f"{self.owner}/{self.repo}"
+
+    def labels(self) -> list[str]:
+        return [label["name"] for label in self._paged(f"{self._repo}/labels")]
+
+    def create_label(self, name: str, color: str, description: str) -> None:
+        self._api(
+            "-X",
+            "POST",
+            f"{self._repo}/labels",
+            "-f",
+            f"name={name}",
+            "-f",
+            f"color={color}",
+            "-f",
+            f"description={description}",
+        )
+
+    def variables(self) -> dict[str, str]:
+        out = self._gh_ok("variable", "list", "--repo", self._full_name, "--json", "name,value")
+        return {item["name"]: item["value"] for item in json.loads(out or "[]")}
+
+    def set_variable(self, name: str, value: str) -> None:
+        self._gh_ok("variable", "set", name, "--repo", self._full_name, "--body", value)
+
+    def secret_names(self) -> list[str]:
+        out = self._gh_ok("secret", "list", "--repo", self._full_name, "--json", "name")
+        return [item["name"] for item in json.loads(out or "[]")]
+
+    def set_secret(self, name: str, value: str) -> None:
+        # Without --body, gh reads the value from stdin: it never appears in a process listing.
+        self._gh_ok("secret", "set", name, "--repo", self._full_name, stdin=value)
