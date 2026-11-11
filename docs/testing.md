@@ -57,4 +57,6 @@ Once, against real GitHub, in Phase 2:
 
 ## CI
 
-ruff (lint and format), `actionlint`, `claude plugin validate`. Worktree and sync scenarios run on Linux and Windows.
+ruff (lint and format), mypy (strict, on `src/`), `actionlint`, `zizmor` (a security audit of the workflows) and
+`claude plugin validate`. Worktree and sync scenarios run on Linux and Windows. Third-party actions are pinned to a
+full commit SHA, and Dependabot moves the pins.

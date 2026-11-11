@@ -10,7 +10,7 @@ after Phase 4, to keep scope in check.
 Done when scenarios 8, 11 and 12 pass ([docs/testing.md](docs/testing.md)), the skills load, and CI is green on Linux
 and Windows.
 
-- [ ] CI green on Linux and Windows, including the new `actionlint` and `plugin` jobs (first push of
+- [ ] CI green on Linux and Windows, including the `actionlint`, `zizmor` and `plugin` jobs and the mypy step (first push of
   `feat/worktree-commands`)
 
 ## Phase 1B: `gth-pr-bot` and `update-prs`
