@@ -23,6 +23,32 @@ def commit(cwd: Path, name: str, content: str | None = None, message: str | None
     return git(cwd, "rev-parse", "HEAD")
 
 
+def push_branch(
+    work: Path,
+    name: str,
+    start: str = "origin/dev",
+    filename: str | None = None,
+    content: str = "feature\n",
+) -> str:
+    """Create `name` from `start` with one commit and push it; returns the commit's SHA."""
+    git(work, "fetch", "-q", "origin")
+    git(work, "switch", "-q", "-c", name, start)
+    sha = commit(work, filename or f"{name.replace('/', '-')}.txt", content)
+    git(work, "push", "-q", "origin", name)
+    return sha
+
+
+def advance(
+    work: Path, branch: str = "dev", filename: str = "base.txt", content: str = "base\n"
+) -> str:
+    """Add one commit to `branch` on origin; returns the commit's SHA."""
+    git(work, "fetch", "-q", "origin")
+    git(work, "switch", "-q", "--detach", f"origin/{branch}")
+    sha = commit(work, filename, content)
+    git(work, "push", "-q", "origin", f"HEAD:{branch}")
+    return sha
+
+
 def remote_sha(cwd: Path, branch: str) -> str | None:
     out = git(cwd, "ls-remote", "origin", f"refs/heads/{branch}")
     return out.split()[0] if out else None

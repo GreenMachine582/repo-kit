@@ -10,7 +10,6 @@ after Phase 4, to keep scope in check.
 Done when scenarios 1–7, 9 and 10 pass.
 
 - [ ] Create the `gth-pr-bot` App ([docs/github-app.md](docs/github-app.md))
-- [ ] `reconcile.py` and `rk update-prs` ([docs/pr-updates.md](docs/pr-updates.md))
 - [ ] Reusable `.github/workflows/update-prs.yml`
 
 ## Phase 1C: `sync`, install, configure, upgrade, doctor

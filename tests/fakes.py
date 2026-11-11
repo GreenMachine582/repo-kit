@@ -22,6 +22,7 @@ class FakeGitHub:
         self.removed_labels: list[tuple[int, str]] = []
         self.added_labels: list[tuple[int, str]] = []
         self.comments: dict[int, list[str]] = {}
+        self.files: dict[str, str] = {}
 
     def add_pr(
         self,
@@ -48,6 +49,11 @@ class FakeGitHub:
 
     def get(self, number: int) -> PullRequest:
         return next(pr for pr in self.prs if pr.number == number)
+
+    def retarget(self, number: int, base: str) -> None:
+        self.prs = [
+            dataclasses.replace(pr, base_ref=base) if pr.number == number else pr for pr in self.prs
+        ]
 
     def _bare(self) -> Path:
         assert self.origin is not None, "this call needs FakeGitHub(origin)"
@@ -116,3 +122,6 @@ class FakeGitHub:
                 comments[index] = text
                 return
         comments.append(text)
+
+    def read_file(self, path: str) -> str | None:
+        return self.files.get(path)

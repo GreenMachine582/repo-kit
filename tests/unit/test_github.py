@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 
@@ -133,6 +134,18 @@ def test_upsert_comment_edits_the_marked_comment(client, monkeypatch):
         "-f",
         "body=<!-- m -->\nnew",
     ]
+
+
+def test_read_file_decodes_the_contents_api(client, monkeypatch):
+    encoded = base64.b64encode(b'version = "1.0.0"\n').decode() + "\n"
+    gh = FakeGh(monkeypatch, {"content": encoded})
+    assert client.read_file(".repo-kit.toml") == 'version = "1.0.0"\n'
+    assert gh.calls == [["repos/o/r/contents/.repo-kit.toml"]]
+
+
+def test_read_file_missing_is_none(client, monkeypatch):
+    FakeGh(monkeypatch, failure("gh: Not Found (HTTP 404)"))
+    assert client.read_file(".repo-kit.toml") is None
 
 
 def test_upsert_comment_leaves_an_unchanged_comment_alone(client, monkeypatch):

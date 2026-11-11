@@ -24,6 +24,9 @@ USER_CONFIG_ENV = "REPO_KIT_CONFIG"
 # The branch `wt start` comes off when `--from` isn't given, per profile.
 PROFILE_DEFAULT_BASE = {"dev-main": "dev"}
 
+# Branches that only change through PRs, per profile: never a PR head that the bot updates.
+PROFILE_LONG_LIVED = {"dev-main": ("dev", "main")}
+
 # Folder names of sync clients that break venvs and Git internals.
 _SYNCED_PREFIXES = ("onedrive", "dropbox", "icloud")
 
@@ -93,6 +96,10 @@ class RepoConfig:
     def default_base(self) -> str:
         return PROFILE_DEFAULT_BASE[self.profile]
 
+    @property
+    def long_lived_branches(self) -> tuple[str, ...]:
+        return PROFILE_LONG_LIVED[self.profile]
+
 
 @dataclass(frozen=True)
 class UserConfig:
@@ -158,6 +165,15 @@ def parse_repo_config(data: dict[str, Any], source: Path) -> RepoConfig:
         if mode != "unmanaged":
             raise ConfigError(f'{source}: `overrides.files."{path}"` must be "unmanaged"')
     return config
+
+
+def parse_repo_config_text(text: str, source: Path) -> RepoConfig:
+    """Parse `.repo-kit.toml` text that didn't come from a local file, such as from the API."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"{source}: {exc}") from exc
+    return parse_repo_config(data, source)
 
 
 def load_repo_config(repo_root: Path) -> RepoConfig:
