@@ -127,7 +127,7 @@ These come from GTH's `CONTRIBUTING.md` and shape everything rk does:
 |---|---|
 | A generated ruleset locks you out or blocks merges | `diff` is the default; `apply` asks; admin pull-request bypass kept; live check in the pilot |
 | Required-check names drift from workflow job names | Both generated from one place; the pilot confirms |
-| Adoption overwrites GTH's tuned files | `--adopt` shows every difference and writes nothing until confirmed; manifest and CHANGELOG are seeded or consumer-owned |
+| Adoption overwrites GTH's tuned files | `sync` takes over an existing file only if it already matches, and refuses with the diff otherwise; manifest and CHANGELOG are seeded or consumer-owned |
 | Managed files edited by hand go unnoticed | `managed-files` check in every PR |
 | The bot races an active session | Drafts skipped; non-force pushes; `wt sync` catches up |
 | Dropped workflow events | Full reconcile every run |

@@ -25,8 +25,10 @@ Done when scenarios 1–7, 9 and 10 pass.
 
 Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one `bootstrap`.
 
-- [ ] `files.py`: render, `.repo-kit.lock`, ownership modes, `--check`, `--adopt` ([docs/shared-files.md](docs/shared-files.md))
-- [ ] `rk install` (including creating `dev` and retargeting PRs), `configure`, `bootstrap`, `upgrade`
+- [ ] `files.py`: render, `.repo-kit.lock`, ownership modes, `--check`; an existing file is taken over only if it
+  already matches ([docs/shared-files.md](docs/shared-files.md))
+- [ ] `rk install` (including creating `dev` and retargeting PRs), `configure` (reports missing secrets, doesn't
+  store them), `bootstrap`, `upgrade` (added templates only)
 - [ ] `rk doctor` ([docs/adoption.md](docs/adoption.md))
 - [ ] `templates/common/`: callers, `.gitignore` block, CONTRIBUTING blocks
 - [ ] `templates/extras/use-local-gth/`
@@ -78,7 +80,7 @@ Done when `doctor` is all-OK in each, one release is cut per repo through the ne
 worktree links a Core worktree.
 
 - [ ] `local_gth.py` resolution order change in greentechhub-core ([docs/worktrees.md](docs/worktrees.md#-local-gth-mode))
-- [ ] `rk sync --adopt` in core, then fastapi, then ui
+- [ ] `rk sync` in core, then fastapi, then ui, settling each refused file by hand
 - [ ] Delete the old scripts and ruleset JSON in each ([docs/adoption.md](docs/adoption.md#gth-repos))
 
 ## Phase 4: remaining repos
@@ -99,6 +101,11 @@ Done when each has had one `bootstrap`.
 
 Registered, not planned. Each is picked up on its own, after Phase 4.
 
+- **Interactive `rk sync --adopt`:** show each difference and take ownership after confirming, if settling refused
+  files by hand proves slow.
+- **Renamed and removed templates in `rk upgrade`:** move or delete the file and update the lock.
+- **`rk configure` stores credentials:** ask for each App's Client ID and key, validate by minting a token, then set
+  the variables and secrets (key on stdin).
 - **`main-only` profile**, if a repo ever needs a trunk-only flow: ruleset builder and templates without `dev` or
   back-merge.
 - **Daily safety-net run** of `update-prs`, if missed events ever show up in practice.

@@ -31,7 +31,7 @@ In Markdown files the markers sit inside HTML comments, so they don't render.
 |---|---|
 | `rk sync` | Render and write. Prints a per-file summary: created, updated, unchanged or refused |
 | `rk sync --check` | No writes. Non-zero if any managed file or block differs from what the pinned version would render. Run in CI by `pr-checks / managed-files` |
-| `rk sync --adopt` | For repos that already have these files (GTH). Compares each existing file to the rendered one, shows the differences, and takes ownership only after you confirm. A difference worth keeping becomes either a config value or an `[overrides]` entry |
+| `rk sync --adopt` | **Future item.** For repos that already have these files (GTH). Compares each existing file to the rendered one, shows the differences, and takes ownership only after you confirm. Until then, plain `rk sync` takes over an existing file only if it already matches the render, and refuses with the diff otherwise. A difference worth keeping becomes either a config value or an `[overrides]` entry |
 
 ## Rules
 
@@ -39,4 +39,5 @@ In Markdown files the markers sit inside HTML comments, so they don't render.
 - Never touch `seeded` files after creation.
 - Refuse (don't merge) when a `managed` file has local edits. The fix is to move the change upstream into repo-kit,
   or to mark the file `unmanaged` in `[overrides]`, which `doctor` flags.
-- An upgrade that adds, renames or removes a template adds, moves or deletes the file, and updates the lock.
+- An upgrade that adds a template adds the file and updates the lock. Renamed and removed templates are a Future
+  item: until then the migration notes say which file to move or delete by hand.
