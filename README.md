@@ -21,10 +21,9 @@ It fixes three problems:
   hand, and the copies drift.
 
 > [!NOTE]
-> **Status: pre-alpha.** The worktree commands (`rk wt start / sync / done`), `rk update-prs`, `rk configure` and the
-> plugin's skills work, and the `update-prs` reusable workflow keeps PRs current. Every other command says which phase
-> delivers it.
-> Next is Phase 1C (shared files and adoption). See [TODO.md](TODO.md).
+> **Status: pre-alpha.** The worktree commands (`rk wt start / sync / done`), `rk update-prs`, `rk configure`,
+> `rk sync [--check]` and the plugin's skills work, and the `update-prs` reusable workflow keeps PRs current. Every
+> other command says which phase delivers it. Phase 1C (adoption) is in progress. See [TODO.md](TODO.md).
 
 ## 🧩 Scope
 
@@ -82,7 +81,7 @@ uv pip install -e ".[dev]"
 | `rk wt sync [branch]` | Merge `origin/<branch>`, then the PR base; check; push without force |
 | `rk wt done [branch]` | Remove a finished worktree, refusing every unsafe state |
 | `rk update-prs` | Reconcile every open PR against its base (run by the reusable workflow) |
-| `rk sync [--check \| --adopt]` | Render managed files and blocks; check drift; take over existing files |
+| `rk sync [--check]` | Render managed files and blocks; check drift. An existing file is taken over only if it matches |
 | `rk github diff \| apply` | Compare or apply rulesets and repo settings |
 | `rk branches prune [--apply]` | List or delete branches whose PR is merged |
 | `rk check commits \| commit-msg \| pr-title` | The commit and title rules `pr-checks` runs |

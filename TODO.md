@@ -9,11 +9,10 @@ after Phase 4, to keep scope in check.
 
 Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one `bootstrap`.
 
-- [ ] `files.py`: render, `.repo-kit.lock`, ownership modes, `--check`; an existing file is taken over only if it
-  already matches ([docs/shared-files.md](docs/shared-files.md))
-- [ ] `rk install` (including creating `dev` and retargeting PRs), `bootstrap`, `upgrade` (added templates only)
+- [ ] `rk install` (including creating `dev` and retargeting PRs) and `bootstrap` (scenario 13)
+- [ ] `rk upgrade`, added templates only (scenario 18)
 - [ ] `rk doctor` ([docs/adoption.md](docs/adoption.md))
-- [ ] `templates/common/`: callers, `.gitignore` block, CONTRIBUTING blocks
+- [ ] `templates/common/`: the CONTRIBUTING blocks (the `pr-checks` and `release` callers come with Phase 1D)
 - [ ] `templates/extras/use-local-gth/`
 
 ## Phase 1D: `pr-checks`, `release`, `rk github`, `branches prune`, the `dev-main` profile
