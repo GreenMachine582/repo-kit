@@ -106,7 +106,7 @@ def _type_name(tp: Any) -> str:
 def _convert(value: Any, tp: Any, key: str, source: Path) -> Any:
     """Check `value` against the annotation `tp` and convert lists to tuples."""
     origin = typing.get_origin(tp)
-    if dataclasses.is_dataclass(tp):
+    if isinstance(tp, type) and dataclasses.is_dataclass(tp):
         if not isinstance(value, dict):
             raise ConfigError(f"{source}: `{key}` must be a table")
         return _build(tp, value, source, prefix=f"{key}.")

@@ -9,16 +9,22 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from repo_kit import __version__
 from repo_kit.errors import RkError
 
 NOT_IMPLEMENTED = 2
 
+Handler = Callable[[argparse.Namespace], int]
+if TYPE_CHECKING:
+    # Subscriptable only for the type checker, not at runtime.
+    SubParsers = argparse._SubParsersAction[argparse.ArgumentParser]
 
-def _not_implemented(command: str, phase: str):
+
+def _not_implemented(command: str, phase: str) -> Handler:
     def handler(args: argparse.Namespace) -> int:
         print(f"rk {command}: not implemented yet (Phase {phase})", file=sys.stderr)
         return NOT_IMPLEMENTED
@@ -32,7 +38,7 @@ def _print_changes(changed: list[str]) -> None:
         print(f"  - {item}")
 
 
-def _wt_handler(action: str):
+def _wt_handler(action: str) -> Handler:
     def handler(args: argparse.Namespace) -> int:
         # Imported here so `rk --help` and the not-yet-built commands don't need git.
         from repo_kit import worktree
@@ -58,7 +64,7 @@ def _wt_handler(action: str):
     return handler
 
 
-def _add_worktree(sub: argparse._SubParsersAction) -> None:
+def _add_worktree(sub: SubParsers) -> None:
     wt = sub.add_parser("wt", help="one branch = one worktree = one Claude session")
     wt_sub = wt.add_subparsers(dest="wt_command", required=True, metavar="<command>")
 
@@ -98,7 +104,7 @@ def _add_worktree(sub: argparse._SubParsersAction) -> None:
     done.set_defaults(handler=_wt_handler("done"))
 
 
-def _add_pr_side(sub: argparse._SubParsersAction) -> None:
+def _add_pr_side(sub: SubParsers) -> None:
     update = sub.add_parser("update-prs", help="merge each ready PR's base into it (run by CI)")
     update.add_argument("--dry-run", action="store_true", help="report what would happen")
     update.set_defaults(handler=_not_implemented("update-prs", "1B"))
@@ -116,7 +122,7 @@ def _add_pr_side(sub: argparse._SubParsersAction) -> None:
     title.set_defaults(handler=_not_implemented("check pr-title", "1D"))
 
 
-def _add_setup_side(sub: argparse._SubParsersAction) -> None:
+def _add_setup_side(sub: SubParsers) -> None:
     sync = sub.add_parser("sync", help="render managed files and blocks into this repo")
     mode = sync.add_mutually_exclusive_group()
     mode.add_argument(
@@ -184,7 +190,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        return args.handler(args)
+        handler: Handler = args.handler
+        return handler(args)
     except RkError as exc:
         print(f"rk: {exc}", file=sys.stderr)
         return 1

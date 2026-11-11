@@ -40,7 +40,7 @@ every repo shares. Design details are in [docs/](docs/); open work and phases ar
 
 ```bash
 uv venv && uv pip install -e ".[dev]"
-.venv/bin/ruff check . && .venv/bin/ruff format --check .
+.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/mypy
 .venv/bin/pytest
 .venv/bin/rk --help
 ```
