@@ -6,7 +6,8 @@ Two files. Unknown keys in either are errors, and `rk doctor` validates both.
 
 ## Repo config: `.repo-kit.toml`
 
-Committed. The single input to everything rk generates or applies. `rk install` seeds it, and from then on it belongs
+Committed. The single input to everything rk generates or applies. A repo without one gets every default shown
+below (`profile = "dev-main"`, no setup or check, `env_dirs = [".venv"]`). `rk install` seeds it, and from then on it belongs
 to the repo (`seeded` mode: rk never rewrites it, except `rk upgrade` changing `version`).
 
 ```toml
@@ -58,13 +59,15 @@ gth_packages = ["greentechhub-core", "greentechhub-fastapi"]
 
 ## User config: `~/.config/repo-kit/config.toml`
 
-Per machine, never committed.
+Per machine, never committed. The same path on every OS; set `REPO_KIT_CONFIG` to use another file. Missing means
+the defaults.
 
 ```toml
 worktree_root = "~/dev/wt"
 ```
 
-`worktree_root` must not be inside OneDrive or any other synced folder.
+`worktree_root` must not be inside OneDrive or any other synced folder: rk refuses one under a `OneDrive*`, Dropbox or
+iCloud folder.
 
 ## Worktree-local: `.repo-kit.local.toml`
 

@@ -12,7 +12,7 @@ rk wt done [branch]
 It refuses unless all of these hold:
 
 - the worktree belongs to this repo;
-- the branch's PR is merged or closed;
+- the branch's PR is merged or closed (a branch with no PR counts as unmerged);
 - nothing is uncommitted;
 - nothing is unpushed.
 

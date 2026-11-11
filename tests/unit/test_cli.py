@@ -4,10 +4,6 @@ from repo_kit import __version__
 from repo_kit.cli import NOT_IMPLEMENTED, main
 
 COMMANDS = [
-    ["wt", "start", "feat/x"],
-    ["wt", "start", "feat/x", "--from", "feat/base", "--link", "greentechhub-core=feat/y"],
-    ["wt", "sync"],
-    ["wt", "done", "feat/x", "--allow-unmerged"],
     ["update-prs", "--dry-run"],
     ["check", "commits", "origin/dev..HEAD"],
     ["check", "commit-msg", ".git/COMMIT_EDITMSG"],

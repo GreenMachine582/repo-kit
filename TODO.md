@@ -10,13 +10,8 @@ after Phase 4, to keep scope in check.
 Done when scenarios 8, 11 and 12 pass ([docs/testing.md](docs/testing.md)), the skills load, and CI is green on Linux
 and Windows.
 
-- [ ] `config.py`: `.repo-kit.toml` and user config, unknown keys rejected ([docs/configuration.md](docs/configuration.md))
-- [ ] `git.py`, `github.py` (with a fake PR store for tests)
-- [ ] `rk wt start / sync / done` ([docs/worktrees.md](docs/worktrees.md))
-- [ ] Worktree path slug and hash
-- [ ] Scenario harness: bare origin + clones in `tmp_path`
-- [ ] Confirm the minimum Git version (2.38+ assumed)
-- [ ] `claude plugin validate` and `actionlint` in CI
+- [ ] CI green on Linux and Windows, including the new `actionlint` and `plugin` jobs (first push of
+  `feat/worktree-commands`)
 
 ## Phase 1B: `gth-pr-bot` and `update-prs`
 
