@@ -3,16 +3,25 @@
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 
-from repo_kit.github import PullRequest, pick_pr
+from repo_kit import git
+from repo_kit.github import BaseStatus, PullRequest, UpdateResult, pick_pr
 
 
 class FakeGitHub:
-    """A PR store: tests add PRs, rk reads them and removes labels."""
+    """A PR store: tests add PRs, and rk reads, labels, comments on and updates them.
 
-    def __init__(self) -> None:
+    With a bare `origin`, heads are read live and updates are real merges there. An update finishes
+    at once, where GitHub answers 202 and does the work asynchronously.
+    """
+
+    def __init__(self, origin: Path | None = None) -> None:
+        self.origin = origin
         self.prs: list[PullRequest] = []
         self.removed_labels: list[tuple[int, str]] = []
+        self.added_labels: list[tuple[int, str]] = []
+        self.comments: dict[int, list[str]] = {}
 
     def add_pr(
         self,
@@ -22,6 +31,7 @@ class FakeGitHub:
         merged: bool = False,
         draft: bool = False,
         labels: tuple[str, ...] = (),
+        from_fork: bool = False,
     ) -> PullRequest:
         pr = PullRequest(
             number=len(self.prs) + 1,
@@ -31,12 +41,30 @@ class FakeGitHub:
             base_ref=base,
             head_ref=head,
             labels=tuple(labels),
+            from_fork=from_fork,
         )
         self.prs.append(pr)
         return pr
 
     def get(self, number: int) -> PullRequest:
         return next(pr for pr in self.prs if pr.number == number)
+
+    def _bare(self) -> Path:
+        assert self.origin is not None, "this call needs FakeGitHub(origin)"
+        return self.origin
+
+    def _sha(self, branch: str) -> str:
+        return git.out(["rev-parse", f"refs/heads/{branch}"], self._bare())
+
+    def _merge_tree(self, head: str, base: str) -> str | None:
+        """The tree of merging `base` into `head`, or None on a conflict."""
+        proc = git.run(["merge-tree", "--write-tree", head, base], self._bare(), check=False)
+        return proc.stdout.splitlines()[0] if proc.returncode == 0 else None
+
+    def _set_labels(self, number: int, labels: tuple[str, ...]) -> None:
+        self.prs = [
+            dataclasses.replace(pr, labels=labels) if pr.number == number else pr for pr in self.prs
+        ]
 
     # --- the GitHub protocol ---
 
@@ -45,9 +73,46 @@ class FakeGitHub:
 
     def remove_label(self, number: int, label: str) -> None:
         self.removed_labels.append((number, label))
-        self.prs = [
-            dataclasses.replace(pr, labels=tuple(lb for lb in pr.labels if lb != label))
-            if pr.number == number
-            else pr
+        self._set_labels(number, tuple(lb for lb in self.get(number).labels if lb != label))
+
+    def list_open_prs(self) -> list[PullRequest]:
+        return [
+            dataclasses.replace(pr, head_sha=self._sha(pr.head_ref))
             for pr in self.prs
+            if pr.state == "open"
         ]
+
+    def base_status(self, pr: PullRequest) -> BaseStatus:
+        head, base = self._sha(pr.head_ref), self._sha(pr.base_ref)
+        ancestor = git.run(["merge-base", "--is-ancestor", base, head], self._bare(), check=False)
+        if ancestor.returncode == 0:
+            return BaseStatus.CURRENT
+        return BaseStatus.BEHIND if self._merge_tree(head, base) else BaseStatus.CONFLICTING
+
+    def update_branch(self, number: int, expected_head_sha: str) -> UpdateResult:
+        pr = self.get(number)
+        head, base = self._sha(pr.head_ref), self._sha(pr.base_ref)
+        if head != expected_head_sha:
+            return UpdateResult(ok=False, detail="the head moved (HTTP 422)")
+        tree = self._merge_tree(head, base)
+        if tree is None:
+            return UpdateResult(ok=False, detail="merge conflict (HTTP 422)")
+        message = f"Merge branch '{pr.base_ref}' into {pr.head_ref}"
+        merge = git.out(["commit-tree", tree, "-p", head, "-p", base, "-m", message], self._bare())
+        git.run(["update-ref", f"refs/heads/{pr.head_ref}", merge, head], self._bare())
+        return UpdateResult(ok=True)
+
+    def add_label(self, number: int, label: str) -> None:
+        self.added_labels.append((number, label))
+        labels = self.get(number).labels
+        if label not in labels:
+            self._set_labels(number, (*labels, label))
+
+    def upsert_comment(self, number: int, marker: str, body: str) -> None:
+        text = f"{marker}\n{body}"
+        comments = self.comments.setdefault(number, [])
+        for index, existing in enumerate(comments):
+            if marker in existing:
+                comments[index] = text
+                return
+        comments.append(text)

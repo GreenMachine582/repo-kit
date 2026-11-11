@@ -61,8 +61,8 @@ def wt_root(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def github() -> FakeGitHub:
-    return FakeGitHub()
+def github(origin: Path) -> FakeGitHub:
+    return FakeGitHub(origin)
 
 
 @pytest.fixture
