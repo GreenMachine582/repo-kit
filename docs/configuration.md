@@ -64,10 +64,14 @@ the defaults.
 
 ```toml
 worktree_root = "~/dev/wt"
+
+[pr_bot]                          # used by `rk configure` to enrol a repo
+client_id = "Iv23..."             # gth-pr-bot's Client ID
+private_key = "~/.ssh/gth-pr-bot.pem"
 ```
 
-`worktree_root` must not be inside OneDrive or any other synced folder: rk refuses one under a `OneDrive*`, Dropbox or
-iCloud folder.
+`worktree_root` and `pr_bot.private_key` must not be inside OneDrive or any other synced folder: rk refuses one under
+a `OneDrive*`, Dropbox or iCloud folder. See [github-app.md](github-app.md#enrolling-a-repo).
 
 ## Worktree-local: `.repo-kit.local.toml`
 

@@ -11,8 +11,7 @@ Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one
 
 - [ ] `files.py`: render, `.repo-kit.lock`, ownership modes, `--check`; an existing file is taken over only if it
   already matches ([docs/shared-files.md](docs/shared-files.md))
-- [ ] `rk install` (including creating `dev` and retargeting PRs), `configure` (reports missing secrets, doesn't
-  store them), `bootstrap`, `upgrade` (added templates only)
+- [ ] `rk install` (including creating `dev` and retargeting PRs), `bootstrap`, `upgrade` (added templates only)
 - [ ] `rk doctor` ([docs/adoption.md](docs/adoption.md))
 - [ ] `templates/common/`: callers, `.gitignore` block, CONTRIBUTING blocks
 - [ ] `templates/extras/use-local-gth/`
@@ -80,7 +79,7 @@ Done when each has had one `bootstrap`.
 ## 🙋 User-only steps
 
 - [ ] Approve creating the public repo and its first release
-- [ ] Create `gth-pr-bot`, install it and `gth-release-bot` on adopting repos, and supply keys when `rk configure` asks
+- [ ] Install `gth-pr-bot` and `gth-release-bot` on each adopting repo, then run `rk configure` there
 - [ ] Run `rk github apply` yourself (needs admin), after reading the diff
 - [ ] Approve photo-ledger's switch to `dev` (new default branch, open PRs retargeted) when `rk install` asks
 
@@ -91,8 +90,9 @@ Registered, not planned. Each is picked up on its own, after Phase 4.
 - **Interactive `rk sync --adopt`:** show each difference and take ownership after confirming, if settling refused
   files by hand proves slow.
 - **Renamed and removed templates in `rk upgrade`:** move or delete the file and update the lock.
-- **`rk configure` stores credentials:** ask for each App's Client ID and key, validate by minting a token, then set
-  the variables and secrets (key on stdin).
+- **`rk configure` for `gth-release-bot`:** store its credentials the same way as `gth-pr-bot`'s.
+- **Key validation in `rk configure`:** confirm the key and installation before storing, if a stdlib-only way to sign
+  the App's JWT turns up.
 - **`main-only` profile**, if a repo ever needs a trunk-only flow: ruleset builder and templates without `dev` or
   back-merge.
 - **Daily safety-net run** of `update-prs`, if missed events ever show up in practice.

@@ -9,6 +9,37 @@ from repo_kit import git
 from repo_kit.github import BaseStatus, PullRequest, UpdateResult, pick_pr
 
 
+class FakeRepoSetup:
+    """Repo labels, variables and secrets in memory, behind `repo_kit.github.RepoSetup`."""
+
+    def __init__(self) -> None:
+        self.label_set: dict[str, tuple[str, str]] = {}
+        self.vars: dict[str, str] = {}
+        self.secrets: dict[str, str] = {}
+        self.writes: list[str] = []
+
+    def labels(self) -> list[str]:
+        return list(self.label_set)
+
+    def create_label(self, name: str, color: str, description: str) -> None:
+        self.writes.append(f"label {name}")
+        self.label_set[name] = (color, description)
+
+    def variables(self) -> dict[str, str]:
+        return dict(self.vars)
+
+    def set_variable(self, name: str, value: str) -> None:
+        self.writes.append(f"variable {name}")
+        self.vars[name] = value
+
+    def secret_names(self) -> list[str]:
+        return list(self.secrets)
+
+    def set_secret(self, name: str, value: str) -> None:
+        self.writes.append(f"secret {name}")
+        self.secrets[name] = value
+
+
 class FakeGitHub:
     """A PR store: tests add PRs, and rk reads, labels, comments on and updates them.
 

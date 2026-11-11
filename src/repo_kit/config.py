@@ -102,8 +102,21 @@ class RepoConfig:
 
 
 @dataclass(frozen=True)
+class PrBotConfig:
+    """`gth-pr-bot`'s credentials, used by `rk configure` to enrol a repo."""
+
+    client_id: str = ""
+    private_key: str = ""  # path to the App's .pem; "~" is expanded
+
+    @property
+    def key_path(self) -> Path | None:
+        return Path(self.private_key).expanduser() if self.private_key else None
+
+
+@dataclass(frozen=True)
 class UserConfig:
     worktree_root: Path = field(default_factory=lambda: Path("~/dev/wt").expanduser())
+    pr_bot: PrBotConfig = field(default_factory=PrBotConfig)
 
 
 def _type_name(tp: Any) -> str:
@@ -211,6 +224,13 @@ def parse_user_config(data: dict[str, Any], source: Path) -> UserConfig:
         raise ConfigError(
             f"{source}: `worktree_root` ({config.worktree_root}) is inside a synced folder "
             f"({synced}). Venvs and Git internals don't survive syncing: choose a local path."
+        )
+    key = config.pr_bot.key_path
+    synced = synced_folder(key) if key else None
+    if synced:
+        raise ConfigError(
+            f"{source}: `pr_bot.private_key` ({key}) is inside a synced folder ({synced}). "
+            "A private key must not be copied to the cloud: move it to a local path."
         )
     return config
 

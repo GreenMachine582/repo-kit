@@ -21,8 +21,9 @@ It fixes three problems:
   hand, and the copies drift.
 
 > [!NOTE]
-> **Status: pre-alpha.** The worktree commands (`rk wt start / sync / done`), `rk update-prs` and the plugin's skills
-> work, and the `update-prs` reusable workflow keeps PRs current. Every other command says which phase delivers it.
+> **Status: pre-alpha.** The worktree commands (`rk wt start / sync / done`), `rk update-prs`, `rk configure` and the
+> plugin's skills work, and the `update-prs` reusable workflow keeps PRs current. Every other command says which phase
+> delivers it.
 > Next is Phase 1C (shared files and adoption). See [TODO.md](TODO.md).
 
 ## 🧩 Scope
@@ -85,7 +86,8 @@ uv pip install -e ".[dev]"
 | `rk github diff \| apply` | Compare or apply rulesets and repo settings |
 | `rk branches prune [--apply]` | List or delete branches whose PR is merged |
 | `rk check commits \| commit-msg \| pr-title` | The commit and title rules `pr-checks` runs |
-| `rk install / configure / bootstrap` | Adopt a repo |
+| `rk configure` | Enrol a repo for `gth-pr-bot`: labels, Client ID variable and key secret |
+| `rk install / bootstrap` | Adopt a repo |
 | `rk upgrade [vX.Y.Z]` | Move the one version pin and re-render everything |
 | `rk doctor` | Read-only health check |
 

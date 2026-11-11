@@ -18,11 +18,14 @@ class FakeGh:
     def __init__(self, monkeypatch: pytest.MonkeyPatch, *answers: object) -> None:
         self.answers = list(answers)
         self.calls: list[list[str]] = []
+        self.stdin: list[object] = []
         monkeypatch.setattr(github_module.subprocess, "run", self)
 
-    def __call__(self, argv: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        assert argv[:2] == ["gh", "api"]
-        self.calls.append(argv[2:])
+    def __call__(self, argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert argv[0] == "gh"
+        # `gh api` calls are recorded without the prefix; other gh commands keep theirs.
+        self.calls.append(argv[2:] if argv[1] == "api" else argv[1:])
+        self.stdin.append(kwargs.get("input"))
         answer = self.answers.pop(0)
         if isinstance(answer, subprocess.CompletedProcess):
             return answer
@@ -152,3 +155,49 @@ def test_upsert_comment_leaves_an_unchanged_comment_alone(client, monkeypatch):
     gh = FakeGh(monkeypatch, [{"id": 9, "body": "<!-- m -->\nsame"}])
     client.upsert_comment(5, "<!-- m -->", "same")
     assert len(gh.calls) == 1
+
+
+def test_set_secret_sends_the_value_on_stdin_only(client, monkeypatch):
+    gh = FakeGh(monkeypatch, subprocess.CompletedProcess([], 0, "", ""))
+    client.set_secret("GTH_PR_BOT_PRIVATE_KEY", "-----BEGIN KEY-----")
+    assert gh.calls == [["secret", "set", "GTH_PR_BOT_PRIVATE_KEY", "--repo", "o/r"]]
+    assert gh.stdin == ["-----BEGIN KEY-----"]
+    assert not any("BEGIN" in arg for arg in gh.calls[0])
+
+
+def test_a_failed_secret_set_never_shows_the_value(client, monkeypatch):
+    FakeGh(monkeypatch, failure("gh: HTTP 403"))
+    with pytest.raises(GitHubError) as exc:
+        client.set_secret("S", "the-secret-value")
+    assert "the-secret-value" not in str(exc.value)
+
+
+def test_variables_and_secret_names(client, monkeypatch):
+    gh = FakeGh(monkeypatch, [{"name": "V", "value": "1"}], [{"name": "S"}])
+    assert client.variables() == {"V": "1"}
+    assert client.secret_names() == ["S"]
+    assert gh.calls == [
+        ["variable", "list", "--repo", "o/r", "--json", "name,value"],
+        ["secret", "list", "--repo", "o/r", "--json", "name"],
+    ]
+
+
+def test_set_variable_and_create_label(client, monkeypatch):
+    done = subprocess.CompletedProcess([], 0, "", "")
+    gh = FakeGh(monkeypatch, done, {"name": "wip"})
+    client.set_variable("V", "1")
+    client.create_label("wip", "fbca04", "under rework")
+    assert gh.calls == [
+        ["variable", "set", "V", "--repo", "o/r", "--body", "1"],
+        [
+            "-X",
+            "POST",
+            "repos/o/r/labels",
+            "-f",
+            "name=wip",
+            "-f",
+            "color=fbca04",
+            "-f",
+            "description=under rework",
+        ],
+    ]

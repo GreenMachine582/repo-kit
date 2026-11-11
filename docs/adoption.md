@@ -7,7 +7,7 @@
 | Command | Does |
 |---|---|
 | `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The default-branch switch itself is a repo setting, applied by `configure` |
-| `rk configure` | Check the Apps are installed; report any missing variable or secret with the `gh` command that sets it; create labels; `github apply` ([github-app.md](github-app.md)). Asking for keys and storing them is a Future item |
+| `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot`: create the update-prs labels, and set the Client ID variable and private key secret from the user config ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
 | `rk bootstrap` | `install` + `configure` + `doctor` |
 | `rk upgrade [vX.Y.Z]` | Change `version`, run `sync`, print migration notes for every release in between, then show `github diff` |
 | `rk doctor` | Read-only health check |

@@ -18,22 +18,53 @@ Pushes and PRs made with an App token trigger CI. GitHub doesn't run CI on PRs o
 - `gth-release-bot` is the only actor allowed to create `v*` tags (the tags ruleset).
 - Neither App ever merges a PR.
 
-## Setting up a repo
+## Creating `gth-pr-bot` (once per account)
 
-Credentials are per repo: personal accounts can't share Actions secrets between repos. `rk configure` does this:
+A User-only step, done in the GitHub UI:
 
-1. Checks both Apps are installed on the repo.
-2. Checks each App's Client ID variable and private key secret exist, and prints the `gh variable set` and
-   `gh secret set` command for any that don't. The key goes to `gh secret set` on stdin (`< key.pem`), never as an
-   argument. Asking for the values, validating them by minting a token and storing them is a Future item.
-3. Creates the labels (`needs-merge`, `wip`, `no-auto-update`).
-4. Runs `rk github apply` (see [rulesets.md](rulesets.md)).
+1. GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**.
+   - Name: `gth-pr-bot`. Names are global; if it's taken, any name works, since rk uses only the Client ID.
+   - Homepage URL: the repo-kit repo.
+   - Webhook: untick **Active**.
+2. Repository permissions: **Contents**, **Pull requests** and **Issues** set to Read and write. Metadata becomes
+   Read-only automatically. Leave everything else, including Workflows, at No access.
+3. Where can this App be installed: **Only on this account**. Create it.
+4. Copy the **Client ID**. Under **Private keys**, generate a key; a `.pem` downloads.
+5. Move the `.pem` to a local folder outside OneDrive, such as `~/.ssh/gth-pr-bot.pem`, and record both in the
+   per-machine user config ([configuration.md](configuration.md#user-config-configrepo-kitconfigtoml)):
 
-To get the values by hand: GitHub → Settings → Developer settings → GitHub Apps → the App. Copy its Client ID. Under
-**Private keys**, generate a key (existing keys keep working), store it with the printed `gh secret set` command, then
-delete the downloaded `.pem`.
+   ```toml
+   [pr_bot]
+   client_id = "Iv23..."
+   private_key = "~/.ssh/gth-pr-bot.pem"
+   ```
 
-## Creating `gth-pr-bot` (once)
+## Enrolling a repo
 
-A User-only step. Create a GitHub App owned by the account with the permissions above, no webhook, installable only on
-this account. Install it on each adopting repo.
+1. Install the App on the repo: Settings → Applications → `gth-pr-bot` → Configure → **Only select repositories**,
+   and add it. rk can't check this from your `gh` login, so it prints the link instead.
+2. In the repo, run `rk configure`. It's safe to re-run, and `--dry-run` shows what it would do. It:
+   - creates the labels update-prs uses (`needs-merge`, `wip`, `no-auto-update`, or what `[update_prs]` names),
+     leaving existing ones alone;
+   - sets the `GTH_PR_BOT_CLIENT_ID` variable if it's missing or different;
+   - sets the `GTH_PR_BOT_PRIVATE_KEY` secret if it's missing. The key goes to `gh secret set` on stdin, never as an
+     argument. `--replace-key` overwrites it after a key rotation.
+3. Run the repo's update-prs caller from the Actions tab with dry-run ticked. A run that lists the open PRs proves the
+   key, Client ID and installation all work.
+
+`rk github apply` (rulesets and settings) is not part of `configure` until Phase 1D, and `gth-release-bot`'s
+credentials are still set by hand.
+
+### Why one key, kept to selected repos
+
+Personal accounts can't share Actions secrets, so every enrolled repo holds a copy of the same key. Anyone who can read
+one of those secrets can mint a token for every repo the App is installed on. So install the App only on repos that use
+it, and rotate the key (generate a new one, `rk configure --replace-key` in each repo, then delete the old key in the
+App settings) if a repo's secrets might have leaked.
+
+### Workflows permission, left out on purpose
+
+GitHub may refuse an update when the base changes files under `.github/workflows/`, unless the App has Workflows:
+write. update-prs reports such a refusal as a failed run. If it happens, grant Workflows: write in the App settings and
+add `permission-workflows: write` to the token step in `update-prs.yml`. It isn't granted up front because it would let
+a leaked key rewrite workflows.
