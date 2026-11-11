@@ -68,7 +68,7 @@ def slug(branch: str) -> str:
 
 def hash6(branch: str) -> str:
     """First 6 hex characters of SHA-1 of the full branch name: keeps equal slugs apart."""
-    return hashlib.sha1(branch.encode("utf-8")).hexdigest()[:6]
+    return hashlib.sha1(branch.encode("utf-8"), usedforsecurity=False).hexdigest()[:6]
 
 
 def repo_dir(root: Path, owner: str, repo: str) -> Path:
@@ -105,7 +105,7 @@ def bash() -> str:
             if candidate.is_file():
                 return str(candidate)
     found = shutil.which("bash")
-    windir = Path(os.environ.get("SystemRoot", r"C:\Windows")).resolve()
+    windir = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")).resolve()
     if found and not Path(found).resolve().is_relative_to(windir):
         return found
     raise RkError("Git Bash not found: install Git for Windows to run .sh scripts")
@@ -351,9 +351,9 @@ def sync(ctx: Context, branch: str | None = None) -> None:
 # --- wt done -------------------------------------------------------------------------------
 
 
-def _force_remove_readonly(func, path, _exc) -> None:
+def _force_remove_readonly(func: Callable[[str], object], path: str, _exc: object) -> None:
     # Windows: Git objects and some venv files are read-only, which stops rmtree.
-    os.chmod(path, stat.S_IWRITE)
+    Path(path).chmod(stat.S_IWRITE)
     func(path)
 
 
