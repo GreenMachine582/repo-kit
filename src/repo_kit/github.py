@@ -7,6 +7,7 @@ fake PR store (`tests/fakes.py`). `wt sync` and `wt done` read one PR and clear 
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 from dataclasses import dataclass, field
@@ -87,6 +88,10 @@ class GitHub(Protocol):
         """Keep one comment on PR `number`, found again by the hidden `marker`."""
         ...
 
+    def read_file(self, path: str) -> str | None:
+        """The text of `path` on the default branch, or None if it isn't there."""
+        ...
+
 
 def pick_pr(prs: list[PullRequest]) -> PullRequest | None:
     """Prefer an open PR; otherwise the most recent (highest number)."""
@@ -133,6 +138,9 @@ class NoGitHub:
         return None
 
     def upsert_comment(self, number: int, marker: str, body: str) -> None:
+        return None
+
+    def read_file(self, path: str) -> str | None:
         return None
 
 
@@ -238,3 +246,9 @@ class GhCliGitHub:
         elif existing["body"] != text:
             comment = f"{self._repo}/issues/comments/{existing['id']}"
             self._api("-X", "PATCH", comment, "-f", f"body={text}")
+
+    def read_file(self, path: str) -> str | None:
+        data = self._api(f"{self._repo}/contents/{quote(path)}", allow_404=True)
+        if data is None:
+            return None
+        return base64.b64decode(data["content"]).decode("utf-8")

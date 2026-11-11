@@ -64,6 +64,15 @@ def _wt_handler(action: str) -> Handler:
     return handler
 
 
+def _update_prs(args: argparse.Namespace) -> int:
+    # Imported here so `rk --help` and the not-yet-built commands don't load it.
+    from repo_kit import reconcile
+
+    report = reconcile.run(Path.cwd(), dry_run=args.dry_run)
+    _print_changes(report.changed)
+    return 1 if report.failed else 0
+
+
 def _add_worktree(sub: SubParsers) -> None:
     wt = sub.add_parser("wt", help="one branch = one worktree = one Claude session")
     wt_sub = wt.add_subparsers(dest="wt_command", required=True, metavar="<command>")
@@ -107,7 +116,7 @@ def _add_worktree(sub: SubParsers) -> None:
 def _add_pr_side(sub: SubParsers) -> None:
     update = sub.add_parser("update-prs", help="merge each ready PR's base into it (run by CI)")
     update.add_argument("--dry-run", action="store_true", help="report what would happen")
-    update.set_defaults(handler=_not_implemented("update-prs", "1B"))
+    update.set_defaults(handler=_update_prs)
 
     check = sub.add_parser("check", help="commit and PR title rules (used by pr-checks)")
     check_sub = check.add_subparsers(dest="check_command", required=True, metavar="<command>")

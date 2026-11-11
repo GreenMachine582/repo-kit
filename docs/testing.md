@@ -21,15 +21,15 @@ pytest against a bare origin and clones, with a fake PR store behind the `github
 | # | Scenario | Expected |
 |---|---|---|
 | 1 | Clean base merge | One merge commit pushed |
-| 2 | Conflicting base merge | No push; label; one comment |
+| 2 | Conflicting base merge | No update; label; one comment |
 | 3 | Re-run on an updated PR | No-op |
 | 4 | Two PRs sharing a base | Both updated |
-| 5 | Chain of three | Parents before children, one run |
+| 5 | Chain of three | Parents before children; one run against the fake, which merges at once (on GitHub, up to one run per link) |
 | 6 | Base retargeted after parent merges | Reconciled against the new base |
-| 7 | Head moves between check and push | Rejected, recorded, nothing lost |
+| 7 | Head moves between check and update | Refused, recorded, nothing lost |
 | 8 | Bot-updated branch, local session diverged | `wt sync` merges both and pushes |
-| 9 | Draft, fork, `wip`, release-please PRs | Skipped with the right reason |
-| 10 | Interrupted merge | Next run clean |
+| 9 | Draft, fork, `wip`, release-please and `dev` → `main` PRs | Skipped with the right reason |
+| 10 | A run that fails part-way | The other PRs still update; next run clean |
 | 11 | `wt done` on each unsafe state | Refuses with the matching message |
 | 12 | Colliding branch slugs | Distinct paths |
 
