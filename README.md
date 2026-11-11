@@ -51,9 +51,9 @@ rk bootstrap --profile dev-main   # install + configure + doctor
 rk wt start feat/my-change         # a branch in its own worktree, with its own venv
 ```
 
-In Claude Code, the plugin bundles the engine, so a session needs nothing installed: `rk install` adds the plugin
-marketplace to the repo's `.claude/settings.json`, and the skills `worktree-start`, `worktree-sync` and
-`worktree-done` call it.
+In Claude Code, `rk install` adds the plugin marketplace to the repo's `.claude/settings.json`. The plugin holds only
+the skills `worktree-start`, `worktree-sync` and `worktree-done`: they call the `rk` on your `PATH`, so there is one
+copy of the engine per machine, at the version you installed.
 
 ### Developing repo-kit
 
