@@ -119,7 +119,8 @@ def test_scenario_15_a_hand_edited_managed_file_is_refused(repo, templates):
 def test_scenario_16_text_outside_the_markers_is_kept(repo, templates):
     (repo / "CONTRIBUTING.md").write_text("# Contributing\n\nOur own intro.\n", encoding="utf-8")
     _code, first, _said = sync(repo, templates)
-    assert "updated CONTRIBUTING.md" in first  # an existing file gains a block: updated, not created
+    # An existing file that gains a block is updated, not created.
+    assert "updated CONTRIBUTING.md" in first
     text = read(repo, "CONTRIBUTING.md") + "\n## Our own section\n"
     (repo / "CONTRIBUTING.md").write_text(text, encoding="utf-8")
     set_version(repo, "1.1.0")
