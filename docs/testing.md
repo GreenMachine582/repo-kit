@@ -42,8 +42,8 @@ pytest against a bare origin and clones, with a fake PR store behind the `github
 | 15 | Managed file edited by hand | `sync` refuses with diff; `--check` fails |
 | 16 | Block edited outside the markers | Consumer's text kept |
 | 17 | Seeded file changed | Never overwritten |
-| 18 | `upgrade` across a release that adds, renames and removes a template | Added, moved, deleted; lock updated |
-| 19 | `--adopt` on a copy of a GTH repo | Differences listed; nothing written until confirmed |
+| 18 | `upgrade` across a release that adds a template | Added; lock updated. Renames and removals are a Future item |
+| 19 | `sync` in a repo that already has a managed file | Taken over if it matches the render; otherwise refused with the diff. Interactive `--adopt` is a Future item |
 
 ## 🔴 Live checks in the pilot
 

@@ -23,14 +23,15 @@ Pushes and PRs made with an App token trigger CI. GitHub doesn't run CI on PRs o
 Credentials are per repo: personal accounts can't share Actions secrets between repos. `rk configure` does this:
 
 1. Checks both Apps are installed on the repo.
-2. Asks for each App's Client ID and private key, validates them by minting a token, then stores them as repo
-   variables and secrets.
+2. Checks each App's Client ID variable and private key secret exist, and prints the `gh variable set` and
+   `gh secret set` command for any that don't. The key goes to `gh secret set` on stdin (`< key.pem`), never as an
+   argument. Asking for the values, validating them by minting a token and storing them is a Future item.
 3. Creates the labels (`needs-merge`, `wip`, `no-auto-update`).
 4. Runs `rk github apply` (see [rulesets.md](rulesets.md)).
 
 To get the values by hand: GitHub → Settings → Developer settings → GitHub Apps → the App. Copy its Client ID. Under
-**Private keys**, generate a key (existing keys keep working), hand it to `rk configure`, then delete the downloaded
-`.pem`.
+**Private keys**, generate a key (existing keys keep working), store it with the printed `gh secret set` command, then
+delete the downloaded `.pem`.
 
 ## Creating `gth-pr-bot` (once)
 
