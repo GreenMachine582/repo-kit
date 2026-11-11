@@ -5,14 +5,6 @@
 Open work only: remove an item when it ships. Shipped work is in `CHANGELOG.md`. Future items (below) start only
 after Phase 4, to keep scope in check.
 
-## Phase 1A: engine core, config, worktree commands, three skills
-
-Done when scenarios 8, 11 and 12 pass ([docs/testing.md](docs/testing.md)), the skills load, and CI is green on Linux
-and Windows.
-
-- [ ] CI green on Linux and Windows, including the `actionlint`, `zizmor` and `plugin` jobs and the mypy step (first push of
-  `feat/worktree-commands`)
-
 ## Phase 1B: `gth-pr-bot` and `update-prs`
 
 Done when scenarios 1–7, 9 and 10 pass.
@@ -40,6 +32,8 @@ Done when unit snapshots of generated rulesets and files pass, and repo-kit runs
 - [ ] `checks.py` and the `commit-msg` hook ([docs/checks-and-release.md](docs/checks-and-release.md))
 - [ ] Reusable `pr-checks.yml` and `release.yml`
 - [ ] `rulesets.py`, `settings.py`, `rk github diff / apply` ([docs/rulesets.md](docs/rulesets.md))
+- [ ] Replace repo-kit's hand-set interim required checks with the generated `pr-checks / …` names, and add the
+  `repo-kit: tags` creation rule for `gth-release-bot` before the first release
 - [ ] `rk branches prune`
 - [ ] `templates/profiles/dev-main/`, including `release-please-config.json`
 - [ ] Dogfood: `.repo-kit.toml`, `.repo-kit.lock`, generated callers replace the hand-written `ci.yml`
