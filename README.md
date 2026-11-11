@@ -21,9 +21,8 @@ It fixes three problems:
   hand, and the copies drift.
 
 > [!NOTE]
-> **Status: pre-alpha.** This is the project skeleton: the `rk` command tree, the plugin's skills and the design docs.
-> No command does anything yet; each one says which phase delivers it. Next is Phase 0, then 1A (engine core and
-> worktrees). See [TODO.md](TODO.md).
+> **Status: pre-alpha.** The worktree commands (`rk wt start / sync / done`) and the plugin's skills work. Every other
+> command says which phase delivers it. Next is Phase 1B (`update-prs`). See [TODO.md](TODO.md).
 
 ## 🧩 Scope
 
