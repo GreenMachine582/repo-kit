@@ -25,7 +25,9 @@ def test_slug(branch, expected):
 
 
 def test_hash6_is_sha1_prefix():
-    assert hash6("feat/api-v2") == hashlib.sha1(b"feat/api-v2").hexdigest()[:6]
+    assert (
+        hash6("feat/api-v2") == hashlib.sha1(b"feat/api-v2", usedforsecurity=False).hexdigest()[:6]
+    )
 
 
 def test_colliding_slugs_get_distinct_paths():

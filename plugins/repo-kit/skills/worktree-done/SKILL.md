@@ -9,6 +9,9 @@ description: Remove a finished worktree, its environment and its local branch on
 rk wt done [branch]
 ```
 
+`rk` must be on `PATH`. If it isn't, stop and give the user the install line from the repo-kit README; don't install
+it yourself.
+
 It refuses unless all of these hold:
 
 - the worktree belongs to this repo;

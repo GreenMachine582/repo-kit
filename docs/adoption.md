@@ -7,7 +7,7 @@
 | Command | Does |
 |---|---|
 | `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The default-branch switch itself is a repo setting, applied by `configure` |
-| `rk configure` | Check the Apps are installed; validate keys by minting a token, then store secrets; create labels; `github apply` ([github-app.md](github-app.md)) |
+| `rk configure` | Check the Apps are installed; report any missing variable or secret with the `gh` command that sets it; create labels; `github apply` ([github-app.md](github-app.md)). Asking for keys and storing them is a Future item |
 | `rk bootstrap` | `install` + `configure` + `doctor` |
 | `rk upgrade [vX.Y.Z]` | Change `version`, run `sync`, print migration notes for every release in between, then show `github diff` |
 | `rk doctor` | Read-only health check |
@@ -65,7 +65,9 @@ Moves from `main` only to `dev-main` (Phase 2).
 
 Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
 
-1. `rk sync --adopt` takes over the existing workflows and `use-local-gth.sh`. The existing manifest is kept (seeded).
+1. `rk sync` takes over each existing workflow and `use-local-gth.sh` once it matches the render; where one differs,
+   it refuses with the diff, and the difference is settled by hand (a config value, an `[overrides]` entry, or
+   dropping it). The existing manifest is kept (seeded).
 2. Delete `scripts/apply-rulesets.sh`, `scripts/prune-branches.sh`, `.github/rulesets/*.json` and
    `.github/repo-settings.json`.
 3. `rk github diff` must show no unexpected changes before `apply`.

@@ -1,0 +1,10 @@
+# Keeps the SHA-pinned actions in repo-kit's own workflows current.
+# Consumers don't use Dependabot for repo-kit refs: see docs/adoption.md.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

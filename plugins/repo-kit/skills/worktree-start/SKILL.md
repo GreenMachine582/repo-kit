@@ -7,6 +7,9 @@ description: Start new work on its own branch in its own worktree, with its own 
 
 One branch = one worktree = one Claude session. Never start work on a branch that another worktree has checked out.
 
+`rk` must be on `PATH`. If it isn't, stop and give the user the install line from the repo-kit README
+(`uv tool install git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z`); don't install it yourself.
+
 ## 1. Pick the branch name
 
 `<type>/<short-description>`, with a Conventional Commits type, such as `feat/api-v2` or `fix/scan-resume`.

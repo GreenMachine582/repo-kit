@@ -9,6 +9,9 @@ description: Bring the current worktree's branch up to date with its remote and 
 rk wt sync [branch]
 ```
 
+`rk` must be on `PATH`. If it isn't, stop and give the user the install line from the repo-kit README; don't install
+it yourself.
+
 With no branch, it syncs the current worktree's branch. It:
 
 1. Refuses if there are uncommitted or untracked changes. Commit them first (or ask the user what to do with them).
