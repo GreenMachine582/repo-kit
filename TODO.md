@@ -5,13 +5,6 @@
 Open work only: remove an item when it ships. Shipped work is in `CHANGELOG.md`. Future items (below) start only
 after Phase 4, to keep scope in check.
 
-## Phase 1B: `gth-pr-bot` and `update-prs`
-
-Done when scenarios 1–7, 9 and 10 pass.
-
-- [ ] Create the `gth-pr-bot` App ([docs/github-app.md](docs/github-app.md))
-- [ ] Reusable `.github/workflows/update-prs.yml`
-
 ## Phase 1C: `sync`, install, configure, upgrade, doctor
 
 Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one `bootstrap`.
@@ -35,7 +28,8 @@ Done when unit snapshots of generated rulesets and files pass, and repo-kit runs
   `repo-kit: tags` creation rule for `gth-release-bot` before the first release
 - [ ] `rk branches prune`
 - [ ] `templates/profiles/dev-main/`, including `release-please-config.json`
-- [ ] Dogfood: `.repo-kit.toml`, `.repo-kit.lock`, generated callers replace the hand-written `ci.yml`
+- [ ] Dogfood: `.repo-kit.toml`, `.repo-kit.lock`, generated callers replace the hand-written `ci.yml` and
+  `keep-prs-current.yml`
 - [ ] First release of repo-kit (User approves)
 
 ## Phase 2: pilot on photo-ledger, moving from `main` only to `dev-main`
