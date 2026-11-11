@@ -45,7 +45,7 @@ in code. No Jinja and no extra dependency.
 
 | Where | How |
 |---|---|
-| Claude plugin | The plugin bundles the engine, so a session needs nothing installed |
+| Claude plugin | Skills only. They call the `rk` on `PATH` (the standalone install below), so the engine exists once per machine |
 | Standalone | `uv tool install git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z` puts `rk` on your `PATH` |
 | CI | Reusable workflows check out repo-kit at the version the caller passes in |
 
