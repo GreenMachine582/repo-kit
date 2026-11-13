@@ -1,10 +1,10 @@
 # How `rk sync` treats each file in this layer. See docs/shared-files.md.
-# Each key is the path in the consumer repo; `source` is the template file here, when it differs.
+# Each key is the path in the consumer repo. `source` is the template file here, when it differs.
+# A block file lists its blocks instead: name = template file, in the order they are appended.
 
 [files.".github/workflows/update-prs.yml"]
 mode = "managed"
 
 [files.".gitignore"]
 mode = "block"
-block = "local"
-source = "gitignore.block"
+blocks = { local = "gitignore.block" }

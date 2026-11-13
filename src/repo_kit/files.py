@@ -21,6 +21,7 @@ from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+import repo_kit
 from repo_kit import git
 from repo_kit.config import RepoConfig, load_repo_config
 from repo_kit.errors import RkError
@@ -28,9 +29,9 @@ from repo_kit.errors import RkError
 LOCK_NAME = ".repo-kit.lock"
 MANIFEST_NAME = "_manifest.toml"
 MODES = ("managed", "block", "seeded")
-_MANIFEST_KEYS = {"mode", "block", "source"}
-# Files in a layer folder that are never templates.
-_NOT_TEMPLATES = {MANIFEST_NAME, ".gitkeep"}
+_MANIFEST_KEYS = {"mode", "blocks", "source"}
+# The version of an engine that isn't a release: a source tree, or CI running rk from a checkout.
+UNRELEASED = "0.0.0"
 
 
 class SyncError(RkError):
@@ -85,12 +86,26 @@ def template_variables(config: RepoConfig, owner: str, repo: str) -> dict[str, s
 
 
 @dataclass(frozen=True)
+class BlockTemplate:
+    name: str
+    layer: str
+    source: Path
+
+
+@dataclass(frozen=True)
 class TemplateFile:
     path: str  # target path in the consumer repo, POSIX style
     mode: str
     layer: str
-    source: Path
-    block: str | None = None
+    source: Path | None = None  # the template file of a managed or seeded target
+    blocks: tuple[BlockTemplate, ...] = ()  # the blocks of a block target, in the order appended
+
+    @property
+    def sources(self) -> tuple[Path, ...]:
+        """Every template file this target is rendered from."""
+        if self.source is not None:
+            return (self.source,)
+        return tuple(block.source for block in self.blocks)
 
 
 def templates_root() -> Path:
@@ -122,25 +137,54 @@ def load_layer(root: Path, layer: str) -> list[TemplateFile]:
         raise SyncError(f"{where}: {exc}") from exc
     if set(data) - {"files"}:
         raise SyncError(f"{where}: unknown key(s) {sorted(set(data) - {'files'})}")
+    files = data.get("files", {})
+    if not isinstance(files, dict):
+        raise SyncError(f"{where}: `files` must be a table")
     result = []
-    for raw_path, entry in data.get("files", {}).items():
+    for raw_path, entry in files.items():
         path = _safe_target(raw_path, where)
+        if not isinstance(entry, dict):
+            raise SyncError(f"{where}: `{path}` must be a table")
         unknown = set(entry) - _MANIFEST_KEYS
         if unknown:
             raise SyncError(f"{where}: `{path}` has unknown key(s) {sorted(unknown)}")
         mode = entry.get("mode")
         if mode not in MODES:
             raise SyncError(f"{where}: `{path}` mode must be one of {', '.join(MODES)}")
-        block = entry.get("block")
-        if (mode == "block") != (block is not None):
-            raise SyncError(f"{where}: `{path}` needs `block` exactly when its mode is block")
-        if block is not None and not re.fullmatch(r"[a-z][a-z0-9-]*", block):
-            raise SyncError(f"{where}: `{path}` block name must be lowercase words and dashes")
-        source = folder / _safe_target(entry.get("source", path), where)
-        if not source.is_file():
-            raise SyncError(f"{where}: `{path}` has no template file at {source}")
-        result.append(TemplateFile(path, mode, layer, source, block))
+        if (mode == "block") != ("blocks" in entry):
+            raise SyncError(f"{where}: `{path}` needs `blocks` exactly when its mode is block")
+        if mode == "block":
+            if "source" in entry:
+                raise SyncError(f"{where}: `{path}` names its templates in `blocks`, not `source`")
+            blocks = _load_blocks(folder, layer, path, entry["blocks"], where)
+            result.append(TemplateFile(path, mode, layer, blocks=blocks))
+            continue
+        source = _template_source(folder, entry.get("source", path), path, where)
+        result.append(TemplateFile(path, mode, layer, source))
     return result
+
+
+def _template_source(folder: Path, name: Any, path: str, where: str) -> Path:
+    if not isinstance(name, str):
+        raise SyncError(f"{where}: `{path}` template file must be a string")
+    source = folder / _safe_target(name, where)
+    if not source.is_file():
+        raise SyncError(f"{where}: `{path}` has no template file at {source}")
+    return source
+
+
+def _load_blocks(
+    folder: Path, layer: str, path: str, blocks: Any, where: str
+) -> tuple[BlockTemplate, ...]:
+    """A block entry's `blocks` table: block name -> template file, in the order appended."""
+    if not isinstance(blocks, dict) or not blocks:
+        raise SyncError(f"{where}: `{path}` `blocks` must be a table of name = template file")
+    result = []
+    for name, source in blocks.items():
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
+            raise SyncError(f"{where}: `{path}` block name must be lowercase words and dashes")
+        result.append(BlockTemplate(name, layer, _template_source(folder, source, path, where)))
+    return tuple(result)
 
 
 def layers_for(config: RepoConfig) -> list[str]:
@@ -154,10 +198,24 @@ def collect_templates(root: Path, config: RepoConfig) -> list[TemplateFile]:
     found: dict[str, TemplateFile] = {}
     for layer in layers_for(config):
         for template in load_layer(root, layer):
-            if template.path in found:
-                other = found[template.path].layer
-                raise SyncError(f"`{template.path}` is claimed by both {other} and {layer}")
-            found[template.path] = template
+            first = found.get(template.path)
+            if first is None:
+                found[template.path] = template
+                continue
+            # Layers may share a file only by each adding their own blocks to it.
+            if first.mode != "block" or template.mode != "block":
+                raise SyncError(f"`{template.path}` is claimed by both {first.layer} and {layer}")
+            names = {block.name for block in first.blocks}
+            for block in template.blocks:
+                if block.name in names:
+                    owner = next(b.layer for b in first.blocks if b.name == block.name)
+                    raise SyncError(
+                        f"`{template.path}` block `{block.name}` is claimed by both "
+                        f"{owner} and {layer}"
+                    )
+            found[template.path] = TemplateFile(
+                first.path, "block", first.layer, blocks=first.blocks + template.blocks
+            )
     return list(found.values())
 
 
@@ -231,8 +289,11 @@ def read_lock(repo_root: Path) -> dict[str, Any]:
         data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise SyncError(f"{LOCK_NAME}: {exc}") from exc
-    if not isinstance(data.get("files"), dict):
+    if not isinstance(data, dict) or not isinstance(data.get("files"), dict):
         raise SyncError(f"{LOCK_NAME}: expected a `files` table")
+    for path, entry in data["files"].items():
+        if not isinstance(entry, dict):
+            raise SyncError(f"{LOCK_NAME}: the entry for `{path}` must be a table")
     return data
 
 
@@ -294,53 +355,138 @@ def _plan_compare(
     return Action.UPDATE, "", diff
 
 
-def _plan_one(
-    repo_root: Path, template: TemplateFile, variables: dict[str, str], entry: dict[str, Any] | None
+_NOT_TEXT = "isn't UTF-8 text"
+
+
+def _read_target(repo_root: Path, path: str) -> tuple[str | None, str]:
+    """The target's text with LF endings (None if it isn't there), and why rk can't own it."""
+    target = repo_root / path
+    # A symlink, in the path or at its end, must not take a write outside the repo.
+    if not target.resolve().is_relative_to(repo_root.resolve()):
+        return None, "resolves to a path outside the repo"
+    if target.is_dir():
+        return None, "is a directory"
+    if not target.is_file():
+        return None, ""
+    try:
+        return lf(target.read_text(encoding="utf-8")), ""
+    except UnicodeDecodeError:
+        return None, _NOT_TEXT
+
+
+def _render_source(root: Path, source: Path, variables: dict[str, str]) -> str:
+    label = f"templates/{source.relative_to(root).as_posix()}"
+    return lf(render(source.read_text(encoding="utf-8"), variables, label))
+
+
+def _block_body(text: str) -> str:
+    """A block's contents end in exactly one newline, which is how they read back from the file."""
+    stripped = text.rstrip("\n")
+    return stripped + "\n" if stripped else ""
+
+
+def _plan_blocks(
+    template: TemplateFile,
+    bodies: dict[str, str],
+    current: str | None,
+    entry: dict[str, Any] | None,
 ) -> tuple[FilePlan, dict[str, Any]]:
-    source = f"templates/{template.layer}/{template.source.name}"
-    wanted = lf(render(template.source.read_text(encoding="utf-8"), variables, source))
-    target = repo_root / template.path
-    current = lf(target.read_text(encoding="utf-8")) if target.is_file() else None
-    recorded = entry.get("sha256") if entry else None
-    new_entry: dict[str, Any] = {"layer": template.layer, "mode": template.mode}
-
-    if template.mode == "seeded":
-        if current is None:
-            new_entry["sha256"] = digest(wanted)
-            return FilePlan(template.path, "seeded", Action.CREATE, write=wanted), new_entry
-        new_entry["sha256"] = recorded or digest(current)
-        return FilePlan(template.path, "seeded", Action.UNCHANGED), new_entry
-
-    new_entry["sha256"] = digest(wanted)
-    if template.mode == "managed":
-        if current is None:
-            return FilePlan(template.path, "managed", Action.CREATE, write=wanted), new_entry
-        action, detail, diff = _plan_compare(template.path, "file", current, wanted, recorded)
-        write = wanted if action is Action.UPDATE else None
-        return FilePlan(template.path, "managed", action, detail, write, diff), new_entry
-
-    if template.block is None:  # load_layer guarantees it; kept explicit for the type checker
-        raise SyncError(f"{template.path}: a block template needs a block name")
-    new_entry["block"] = template.block
+    """One plan for a file's blocks: refused if any block is, else every block in one write."""
+    old_blocks = entry.get("blocks") if entry else None
+    recorded: dict[str, Any] = old_blocks if isinstance(old_blocks, dict) else {}
+    # A recorded block whose template has gone is left alone, in the file and in the lock.
+    new_blocks: dict[str, Any] = dict(recorded)
     text = current or ""
-    span = find_block(text, template.path, template.block)
-    if span is None:
-        write = with_block(text, template.path, template.block, wanted, None)
-        detail = f"{template.block} block added"
+    touched: list[str] = []
+    refused: list[str] = []
+    update_diffs: list[str] = []
+    refuse_diffs: list[str] = []
+    adopted = False
+
+    for block in template.blocks:
+        wanted = bodies[block.name]
+        new_blocks[block.name] = {"layer": block.layer, "sha256": digest(wanted)}
+        span = find_block(text, template.path, block.name)
+        if span is None:
+            text = with_block(text, template.path, block.name, wanted, None)
+            touched.append(f"{block.name} block added")
+            continue
+        old = recorded.get(block.name)
+        sha = old.get("sha256") if isinstance(old, dict) else None
+        action, detail, diff = _plan_compare(
+            template.path, "block", block_inner(text, span), wanted, sha
+        )
+        if action is Action.REFUSE:
+            refused.append(f"{block.name} block: {detail}")
+            refuse_diffs.append(diff)
+        elif action is Action.UPDATE:
+            text = with_block(text, template.path, block.name, wanted, span)
+            touched.append(f"{block.name} block updated")
+            update_diffs.append(diff)
+        elif action is Action.ADOPT:
+            adopted = True
+
+    new_entry = {"mode": "block", "blocks": new_blocks}
+    if refused:
+        plan = FilePlan(
+            template.path, "block", Action.REFUSE, "; ".join(refused), diff="".join(refuse_diffs)
+        )
+    elif touched:
         action = Action.CREATE if current is None else Action.UPDATE
-        return FilePlan(template.path, "block", action, detail, write), new_entry
-    inner = block_inner(text, span)
-    action, detail, diff = _plan_compare(template.path, "block", inner, wanted, recorded)
-    write = None
-    if action is Action.UPDATE:
-        write = with_block(text, template.path, template.block, wanted, span)
-    return FilePlan(template.path, "block", action, detail, write, diff), new_entry
+        plan = FilePlan(
+            template.path, "block", action, ", ".join(touched), text, "".join(update_diffs)
+        )
+    else:
+        plan = FilePlan(template.path, "block", Action.ADOPT if adopted else Action.UNCHANGED)
+    return plan, new_entry
+
+
+def _plan_one(
+    repo_root: Path,
+    root: Path,
+    template: TemplateFile,
+    variables: dict[str, str],
+    entry: dict[str, Any] | None,
+) -> tuple[FilePlan, dict[str, Any]]:
+    path, mode = template.path, template.mode
+    # Render first, so a broken template is an error whatever state the repo is in.
+    bodies = {
+        block.name: _block_body(_render_source(root, block.source, variables))
+        for block in template.blocks
+    }
+    wanted = _render_source(root, template.source, variables) if template.source else ""
+    current, problem = _read_target(repo_root, path)
+
+    if mode == "seeded" and problem in ("", _NOT_TEXT):
+        new_entry: dict[str, Any] = {"layer": template.layer, "mode": mode}
+        recorded = entry.get("sha256") if entry else None
+        if current is None and not problem:
+            new_entry["sha256"] = digest(wanted)
+            return FilePlan(path, mode, Action.CREATE, write=wanted), new_entry
+        # It exists, so it's the consumer's: never compared, never written.
+        new_entry["sha256"] = recorded or (digest(current) if current is not None else "")
+        return FilePlan(path, mode, Action.UNCHANGED), new_entry
+
+    if problem:
+        return FilePlan(path, mode, Action.REFUSE, problem), {}
+
+    if mode == "block":
+        return _plan_blocks(template, bodies, current, entry)
+
+    new_entry = {"layer": template.layer, "mode": mode, "sha256": digest(wanted)}
+    if current is None:
+        return FilePlan(path, mode, Action.CREATE, write=wanted), new_entry
+    recorded = entry.get("sha256") if entry else None
+    action, detail, diff = _plan_compare(path, "file", current, wanted, recorded)
+    write = wanted if action is Action.UPDATE else None
+    return FilePlan(path, mode, action, detail, write, diff), new_entry
 
 
 def plan_sync(
     repo_root: Path, config: RepoConfig, owner: str, repo: str, root: Path | None = None
 ) -> SyncPlan:
-    templates = collect_templates(root or templates_root(), config)
+    root = root or templates_root()
+    templates = collect_templates(root, config)
     variables = template_variables(config, owner, repo)
     old_lock = read_lock(repo_root)
     old_files: dict[str, Any] = old_lock["files"]
@@ -354,7 +500,9 @@ def plan_sync(
             if template.path in old_files:
                 new_files[template.path] = old_files[template.path]
             continue
-        file_plan, entry = _plan_one(repo_root, template, variables, old_files.get(template.path))
+        file_plan, entry = _plan_one(
+            repo_root, root, template, variables, old_files.get(template.path)
+        )
         plan.files.append(file_plan)
         if file_plan.action is Action.REFUSE:
             if template.path in old_files:
@@ -406,13 +554,15 @@ def apply_plan(repo_root: Path, plan: SyncPlan, changed: list[str]) -> None:
         changed.append(f"backed up the replaced files to {backup_root}")
 
 
-def summary(plan: SyncPlan) -> str:
+def summary(plan: SyncPlan, *, update_diffs: bool = False) -> str:
+    """One line per file, then the diff of each refusal (and of each update, for `--check`)."""
     lines = []
     for f in plan.files:
         detail = f" ({f.detail})" if f.detail else ""
         lines.append(f"{f.action:>14}  {f.path}{detail}")
-    for f in plan.refused:
-        if f.diff:
+    shown = {Action.REFUSE, Action.UPDATE} if update_diffs else {Action.REFUSE}
+    for f in plan.files:
+        if f.action in shown and f.diff:
             lines += ["", f.diff.rstrip("\n")]
     return "\n".join(lines)
 
@@ -426,6 +576,7 @@ def run_sync(
     root: Path | None = None,
 ) -> int:
     """The command. Returns the exit code: 1 when `--check` finds drift."""
+    git.require_version(cwd)
     repo_root = git.toplevel(cwd)
     config = load_repo_config(repo_root)
     if not config.version:
@@ -433,9 +584,17 @@ def run_sync(
             "`version` is empty in .repo-kit.toml: set the repo-kit release to pin, such as "
             '`version = "1.0.0"`'
         )
+    # Another release's templates would be written under this pin, and CI's `--check`, which runs
+    # the pinned engine, would then fail. An unreleased engine can't be compared, so it's let be.
+    engine = repo_kit.__version__
+    if engine not in (UNRELEASED, config.version):
+        raise SyncError(
+            f".repo-kit.toml pins repo-kit {config.version}, but this rk is {engine}: move the "
+            f"pin with `rk upgrade`, or install rk {config.version}"
+        )
     owner, repo = git.parse_owner_repo(git.remote_url(repo_root))
     plan = plan_sync(repo_root, config, owner, repo, root)
-    say(summary(plan))
+    say(summary(plan, update_diffs=check))
     if check:
         if plan.drifted:
             say("Out of sync with repo-kit: run `rk sync` and commit the result.")

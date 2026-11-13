@@ -8,6 +8,7 @@ import pytest
 
 from repo_kit.config import ExtrasConfig, RepoConfig
 from repo_kit.files import (
+    LOCK_NAME,
     MANIFEST_NAME,
     SyncError,
     block_inner,
@@ -18,6 +19,7 @@ from repo_kit.files import (
     load_layer,
     lock_text,
     markers,
+    read_lock,
     render,
     template_variables,
     templates_root,
@@ -60,8 +62,15 @@ def test_a_layer_without_a_manifest_has_no_templates(tmp_path):
     ("manifest", "message"),
     [
         ('[files."a"]\nmode = "copied"\n', "mode must be one of"),
-        ('[files."a"]\nmode = "block"\n', "needs `block`"),
-        ('[files."a"]\nmode = "managed"\nblock = "x"\n', "needs `block`"),
+        ('[files."a"]\nmode = "block"\n', "needs `blocks`"),
+        ('[files."a"]\nmode = "managed"\nblocks = { x = "a" }\n', "needs `blocks`"),
+        ('[files."a"]\nmode = "block"\nblocks = "a"\n', "must be a table"),
+        ('[files."a"]\nmode = "block"\nblocks = {}\n', "must be a table"),
+        ('[files."a"]\nmode = "block"\nblocks = { Bad_Name = "a" }\n', "lowercase words"),
+        ('[files."a"]\nmode = "block"\nblocks = { x = "missing" }\n', "no template file"),
+        ('[files."a"]\nmode = "block"\nblocks = { x = "a" }\nsource = "a"\n', "not `source`"),
+        ('[files."a"]\nmode = "managed"\nblock = "x"\n', "unknown key"),
+        ("files = 1\n", "must be a table"),
         ('[files."a"]\nmode = "managed"\ncolour = 1\n', "unknown key"),
         ('[files."../a"]\nmode = "managed"\n', "relative path inside the repo"),
         ('[files."missing"]\nmode = "managed"\n', "no template file"),
@@ -80,6 +89,41 @@ def test_a_path_claimed_by_two_layers_is_an_error(tmp_path):
     write_layer(tmp_path, "profiles/dev-main", entry, {"a": "y\n"})
     with pytest.raises(SyncError, match="claimed by both"):
         collect_templates(tmp_path, RepoConfig())
+
+
+BLOCK_A = '[files."a"]\nmode = "block"\nblocks = { one = "one.txt" }\n'
+
+
+def test_two_layers_can_each_add_blocks_to_one_file(tmp_path):
+    write_layer(tmp_path, "common", BLOCK_A, {"one.txt": "1\n"})
+    profile = '[files."a"]\nmode = "block"\nblocks = { two = "two.txt" }\n'
+    write_layer(tmp_path, "profiles/dev-main", profile, {"two.txt": "2\n"})
+    [template] = collect_templates(tmp_path, RepoConfig())
+    assert [(b.name, b.layer) for b in template.blocks] == [
+        ("one", "common"),
+        ("two", "profiles/dev-main"),
+    ]
+
+
+def test_a_block_claimed_by_two_layers_is_an_error(tmp_path):
+    write_layer(tmp_path, "common", BLOCK_A, {"one.txt": "1\n"})
+    write_layer(tmp_path, "profiles/dev-main", BLOCK_A, {"one.txt": "2\n"})
+    with pytest.raises(SyncError, match="block `one` is claimed by both"):
+        collect_templates(tmp_path, RepoConfig())
+
+
+def test_a_block_file_and_a_managed_file_cannot_share_a_path(tmp_path):
+    write_layer(tmp_path, "common", BLOCK_A, {"one.txt": "1\n"})
+    write_layer(tmp_path, "profiles/dev-main", '[files."a"]\nmode = "managed"\n', {"a": "x\n"})
+    with pytest.raises(SyncError, match="claimed by both"):
+        collect_templates(tmp_path, RepoConfig())
+
+
+@pytest.mark.parametrize("lock", ["[]", '{"files": []}', '{"files": {"a": "managed"}}'])
+def test_a_malformed_lock_is_an_error(tmp_path, lock):
+    (tmp_path / LOCK_NAME).write_text(lock, encoding="utf-8")
+    with pytest.raises(SyncError, match=r"\.repo-kit\.lock"):
+        read_lock(tmp_path)
 
 
 def test_extras_add_their_layer():
@@ -133,7 +177,7 @@ def test_every_real_manifest_matches_its_files():
     root = templates_root()
     for manifest in root.rglob(MANIFEST_NAME):
         layer = manifest.parent.relative_to(root).as_posix()
-        listed = {t.source for t in load_layer(root, layer)}
+        listed = {source for t in load_layer(root, layer) for source in t.sources}
         present = {p for p in manifest.parent.rglob("*") if p.is_file() and p.name != MANIFEST_NAME}
         assert listed == present, layer
 
@@ -142,8 +186,9 @@ def test_every_real_template_renders():
     config = RepoConfig(version="1.2.3", extras=ExtrasConfig(use_local_gth=True))
     variables = template_variables(config, "o", "r")
     for template in collect_templates(templates_root(), config):
-        rendered = render(template.source.read_text(encoding="utf-8"), variables, template.path)
-        assert "${version}" not in rendered
+        for source in template.sources:
+            rendered = render(source.read_text(encoding="utf-8"), variables, template.path)
+            assert "${version}" not in rendered
 
 
 def test_the_update_prs_caller_pins_one_version():
@@ -153,7 +198,8 @@ def test_the_update_prs_caller_pins_one_version():
         for t in collect_templates(templates_root(), RepoConfig())
         if t.path == ".github/workflows/update-prs.yml"
     ]
-    text = render(caller.source.read_text(encoding="utf-8"), variables, caller.path)
+    [source] = caller.sources
+    text = render(source.read_text(encoding="utf-8"), variables, caller.path)
     assert "update-prs.yml@v1.2.3" in text
     assert "ref: v1.2.3" in text
     assert "${{ vars.GTH_PR_BOT_CLIENT_ID }}" in text

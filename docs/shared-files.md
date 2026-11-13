@@ -19,14 +19,21 @@ Each layer folder has a `_manifest.toml` naming its files. The key is the path i
 [files.".github/workflows/update-prs.yml"]
 mode = "managed"
 
-[files.".gitignore"]
-mode = "block"
-block = "local"                   # the block's name in its markers
-source = "gitignore.block"        # the template file here, when it isn't the target path
+[files."release-please-config.json"]
+mode = "managed"
+source = "release-please.json"    # the template file here, when it isn't the target path
+
+[files."CONTRIBUTING.md"]
+mode = "block"                    # each block: its name in the markers = its template file here
+blocks = { branches = "contributing/branches.md", releasing = "contributing/releasing.md" }
 ```
 
-Unknown keys are errors, and a test checks that every file in a layer is listed and every entry exists. A path
-claimed by two layers is an error. A layer without a manifest has no templates.
+A block file lists every block it holds, in the order they are appended to a file that has none of them yet. Unknown
+keys are errors, and a test checks that every file in a layer is listed and every entry exists. A layer without a
+manifest has no templates.
+
+Two layers may name the same path only when both add blocks to it and no block name repeats, so a profile can add
+its own section to a file `common` already has blocks in. Any other path claimed by two layers is an error.
 
 ## Placeholders
 
@@ -67,29 +74,35 @@ writes LF.
 {
   "files": {
     ".github/workflows/update-prs.yml": {"layer": "common", "mode": "managed", "sha256": "…"},
-    ".gitignore": {"block": "local", "layer": "common", "mode": "block", "sha256": "…"}
+    ".gitignore": {"blocks": {"local": {"layer": "common", "sha256": "…"}}, "mode": "block"}
   },
   "version": "1.4.0"
 }
 ```
 
 `sha256` is the hash of what rk last rendered (for a block, of its contents). Content that no longer matches it was
-edited by hand. A lock entry whose template has gone is reported and left alone.
+edited by hand. Each block is recorded and compared on its own, but a file is written whole: one refused block
+refuses the file. A lock entry whose template has gone is reported and left alone.
 
 ## Commands
 
 | Command | Does |
 |---|---|
 | `rk sync` | Render and write. Prints a per-file summary (created, updated, taken over, unchanged, refused, skipped), then the `Changed:` list |
-| `rk sync --check` | No writes. Non-zero if any managed file or block differs from what the pinned version would render, a seeded file is missing, or the lock is out of date. Run in CI by `pr-checks / managed-files` |
+| `rk sync --check` | No writes. Non-zero if any managed file or block differs from what the pinned version would render, a seeded file is missing, or the lock is out of date. Prints the diff of every file that differs. Run in CI by `pr-checks / managed-files` |
 | `rk sync --adopt` | **Future item.** For repos that already have these files (GTH). Compares each existing file to the rendered one, shows the differences, and takes ownership only after you confirm. Until then, plain `rk sync` takes over an existing file only if it already matches the render, and refuses with the diff otherwise. A difference worth keeping becomes either a config value or an `[overrides]` entry |
 
-`version` must be set: callers pin `@v${version}`.
+`version` must be set: callers pin `@v${version}`. It must also be the version of the rk that is running, because the
+templates come with the engine: with another release installed, `rk sync` refuses and names both versions, rather
+than write files that CI's `--check` (which runs the pinned engine) would reject. Move the pin with `rk upgrade`, or
+install the pinned rk. An unreleased engine (version `0.0.0`: a source checkout, or CI running rk from the tag it
+checked out) has nothing to compare and is let through.
 
 ## Rules
 
 - **All or nothing:** the whole sync is planned first; if any file is refused, nothing is written.
-- Never write outside the lock's known paths and new template paths.
+- Never write outside the lock's known paths and new template paths. A target that a symlink would take outside the
+  repo, that is a directory, or that isn't UTF-8 text is refused.
 - Never touch `seeded` files after creation.
 - Refuse (don't merge) when a `managed` file has local edits. The fix is to move the change upstream into repo-kit,
   or to mark the file `unmanaged` in `[overrides]`, which skips it and which `doctor` flags.
