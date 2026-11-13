@@ -8,9 +8,6 @@ COMMANDS = [
     ["check", "commits", "origin/dev..HEAD"],
     ["check", "commit-msg", ".git/COMMIT_EDITMSG"],
     ["check", "pr-title", "Add worktree commands"],
-    ["sync"],
-    ["sync", "--check"],
-    ["sync", "--adopt"],
     ["github", "diff"],
     ["github", "apply"],
     ["branches", "prune", "--apply"],
@@ -63,3 +60,8 @@ def test_update_prs_exits_non_zero_only_on_a_failure(monkeypatch, capsys, rows, 
 def test_every_command_parses_and_reports_its_phase(argv, capsys):
     assert main(argv) == NOT_IMPLEMENTED
     assert "not implemented yet (Phase" in capsys.readouterr().err
+
+
+def test_sync_adopt_is_a_future_item(capsys):
+    assert main(["sync", "--adopt"]) == NOT_IMPLEMENTED
+    assert "Future item" in capsys.readouterr().err
