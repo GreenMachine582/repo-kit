@@ -3,16 +3,19 @@
 `install` adopts a repo: it seeds `.repo-kit.toml`, syncs the shared files, adds the plugin
 marketplace, and creates the profile's base branch when only the release branch exists.
 `configure` enrols a repo for `gth-pr-bot`: the labels update-prs uses, and the App's Client ID and
-private key as an Actions variable and secret. `bootstrap` runs both. `upgrade` is still to come
-in Phase 1C. See docs/adoption.md.
+private key as an Actions variable and secret. `bootstrap` runs both. `upgrade` moves the version
+pin to the running rk's release and re-renders; templates new in that release are added. See
+docs/adoption.md.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -325,6 +328,119 @@ def run_install(cwd: Path, *, profile: str, changed: list[str]) -> None:
     repo_root, url, owner, repo = _origin(cwd)
     github: GitHub = GhCliGitHub(owner, repo) if git.is_github_url(url) else NoGitHub()
     install(repo_root, owner, repo, github, profile=profile, changed=changed)
+
+
+# --- upgrade -------------------------------------------------------------------------------
+
+_VERSION_RE = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
+_PIN_LINE = re.compile(r"^(\s*version\s*=\s*)([\"'])([^\"'\r\n]*)\2(.*)$", re.DOTALL)
+_PIN_KEY = re.compile(r"^\s*version\s*=")
+
+
+def parse_version(text: str) -> tuple[int, int, int]:
+    """`X.Y.Z` or `vX.Y.Z` as numbers. Anything else is refused."""
+    match = _VERSION_RE.fullmatch(text.strip())
+    if not match:
+        raise RkError(f"`{text}` isn't a release: expected vX.Y.Z or X.Y.Z, such as v1.2.3")
+    major, minor, patch = match.groups()
+    return int(major), int(minor), int(patch)
+
+
+def set_pin_text(text: str, version: str) -> str:
+    """`text` with its one top-level `version` line moved to `version`, all else kept."""
+    lines = text.splitlines(keepends=True)
+    found: list[int] = []
+    for number, line in enumerate(lines):
+        if line.lstrip().startswith("["):
+            break  # the top-level keys end at the first table
+        if _PIN_KEY.match(line):
+            found.append(number)
+    if len(found) != 1:
+        raise RkError(
+            f'{REPO_CONFIG_NAME} must have exactly one top-level `version = "X.Y.Z"` line '
+            f"(found {len(found)}): fix it by hand, then re-run"
+        )
+    match = _PIN_LINE.match(lines[found[0]])
+    if not match:
+        raise RkError(
+            f"the `version` line in {REPO_CONFIG_NAME} isn't a plain quoted string: "
+            'write it as `version = "X.Y.Z"`, then re-run'
+        )
+    head, quote, _old, rest = match.groups()
+    lines[found[0]] = f"{head}{quote}{version}{quote}{rest}"
+    return "".join(lines)
+
+
+def upgrade(
+    repo_root: Path,
+    owner: str,
+    repo: str,
+    target: str | None,
+    *,
+    changed: list[str],
+    say: Callable[[str], None] = print,
+    templates: Path | None = None,
+) -> None:
+    """Move the pin to `target` (the running rk's release) and re-render the shared files.
+
+    Everything that can refuse is checked, and the sync planned, before the first write.
+    """
+    engine = repo_kit.__version__
+    if target is None:
+        if engine == files.UNRELEASED:
+            raise RkError(
+                "this rk is an unreleased build, so it has no release to upgrade to: "
+                "give the version explicitly, such as `rk upgrade v1.2.3`"
+            )
+        target = engine
+    wanted = parse_version(target)
+    version = ".".join(str(n) for n in wanted)
+    if engine != files.UNRELEASED and version != engine:
+        raise RkError(
+            f"can't upgrade to {version}: this rk is {engine}, and the templates come with the "
+            f"engine. Install rk {version} first, then run `rk upgrade`."
+        )
+
+    config = load_repo_config(repo_root)
+    if not config.version:
+        raise RkError(f"`version` is empty in {REPO_CONFIG_NAME}")
+    current = parse_version(config.version)
+    if wanted < current:
+        raise RkError(
+            f"can't downgrade from {config.version} to {version}: rk upgrade only moves forward"
+        )
+    if wanted == current:
+        say(f"already at {version}")
+
+    config_path = repo_root / REPO_CONFIG_NAME
+    old_text = config_path.read_bytes().decode("utf-8")  # not read_text: keep CRLF as written
+    new_text = set_pin_text(old_text, version)
+
+    plan = files.plan_sync(repo_root, replace(config, version=version), owner, repo, templates)
+    say(files.summary(plan))
+    files.raise_if_refused(plan)
+
+    # The pin is written last: if applying the plan fails, the old pin stays and a re-run finishes.
+    backup_root = files.new_backup_root(repo_root)
+    files.apply_plan(repo_root, plan, changed, backup_root=backup_root)
+    if new_text != old_text:
+        backup = backup_root / REPO_CONFIG_NAME
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(config_path, backup)
+        config_path.write_text(new_text, encoding="utf-8", newline="")
+        changed.append(f"moved the version pin in {REPO_CONFIG_NAME} to {version}")
+        changed.append(f"backed up the old {REPO_CONFIG_NAME} to {backup}")
+    say(
+        "Migration notes aren't built yet (Phase 1D): see the release notes at "
+        "https://github.com/GreenMachine582/repo-kit/releases. `rk github diff` also comes in "
+        "Phase 1D. Renamed or removed templates are left in place: move them by hand."
+    )
+
+
+def run_upgrade(cwd: Path, version: str | None, *, changed: list[str]) -> None:
+    """The command: move the pin of the checkout `cwd` is in."""
+    repo_root, _url, owner, repo = _origin(cwd)
+    upgrade(repo_root, owner, repo, version, changed=changed)
 
 
 def bootstrap(

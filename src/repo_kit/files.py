@@ -539,10 +539,12 @@ def new_backup_root(repo_root: Path) -> Path:
     return git.common_dir(repo_root) / "repo-kit" / "backup" / stamp
 
 
-def apply_plan(repo_root: Path, plan: SyncPlan, changed: list[str]) -> None:
+def apply_plan(
+    repo_root: Path, plan: SyncPlan, changed: list[str], backup_root: Path | None = None
+) -> None:
     """Write the plan. Refuses to write anything if any file was refused."""
     raise_if_refused(plan)
-    backup_root = new_backup_root(repo_root)
+    backup_root = backup_root or new_backup_root(repo_root)
     backed_up = False
     for file_plan in plan.files:
         if file_plan.write is None:

@@ -122,6 +122,17 @@ def _install(args: argparse.Namespace) -> int:
     return 0
 
 
+def _upgrade(args: argparse.Namespace) -> int:
+    from repo_kit import bootstrap
+
+    changed: list[str] = []
+    try:
+        bootstrap.run_upgrade(Path.cwd(), args.version, changed=changed)
+    finally:
+        _print_changes(changed)
+    return 0
+
+
 def _bootstrap(args: argparse.Namespace) -> int:
     from repo_kit import bootstrap
 
@@ -241,9 +252,13 @@ def _add_setup_side(sub: SubParsers) -> None:
     bootstrap.add_argument("--profile", default="dev-main", choices=["dev-main"])
     bootstrap.set_defaults(handler=_bootstrap)
 
-    upgrade = sub.add_parser("upgrade", help="move the version pin and re-render everything")
-    upgrade.add_argument("version", nargs="?", help="vX.Y.Z; defaults to the latest release")
-    upgrade.set_defaults(handler=_not_implemented("upgrade", "1C"))
+    upgrade = sub.add_parser(
+        "upgrade", help="move the version pin to this rk's release and re-render"
+    )
+    upgrade.add_argument(
+        "version", nargs="?", help="vX.Y.Z, which must be this rk's release; defaults to it"
+    )
+    upgrade.set_defaults(handler=_upgrade)
 
     sub.add_parser("doctor", help="read-only health check").set_defaults(
         handler=_not_implemented("doctor", "1C")

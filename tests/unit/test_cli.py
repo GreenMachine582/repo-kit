@@ -12,7 +12,6 @@ COMMANDS = [
     ["github", "apply"],
     ["branches", "prune", "--apply"],
     ["install", "--profile", "dev-main", "--hooks"],
-    ["upgrade", "v1.2.3"],
     ["doctor"],
 ]
 
