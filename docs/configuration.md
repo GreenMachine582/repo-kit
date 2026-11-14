@@ -55,7 +55,7 @@ gth_packages = ["greentechhub-core", "greentechhub-fastapi"]
 | `[release]` | `release.yml`, the tags ruleset |
 | `[update_prs]` | `update-prs` ([pr-updates.md](pr-updates.md)) |
 | `[worktree]` | `wt start` (`setup`), `wt sync` (`check`), `wt done` (`env_dirs`) ([worktrees.md](worktrees.md)) |
-| `[extras]` | Opt-in templates, such as `use-local-gth` |
+| `[extras]` | Opt-in templates. `use_local_gth` is accepted, but adds nothing until the `use-local-gth` extra is built (a Future item) |
 | `[overrides]` | Per-file ownership changes. A file set to `unmanaged` is left alone; `doctor` warns about each one |
 
 ## User config: `~/.config/repo-kit/config.toml`
