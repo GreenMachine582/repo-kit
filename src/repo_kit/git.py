@@ -131,6 +131,17 @@ def remote_branch_exists(cwd: Path, branch: str, remote: str = "origin") -> bool
     return ref_exists(cwd, f"refs/remotes/{remote}/{branch}")
 
 
+def create_remote_branch(cwd: Path, branch: str, start_ref: str, remote: str = "origin") -> None:
+    """Create `branch` on the remote at `start_ref`. A plain push, so it never moves a branch
+    that is already there."""
+    if (
+        run(["ls-remote", "--exit-code", "--heads", remote, branch], cwd, check=False).returncode
+        == 0
+    ):
+        raise GitError(f"{remote} already has a `{branch}` branch")
+    run(["push", remote, f"{start_ref}:refs/heads/{branch}"], cwd)
+
+
 def config_get(cwd: Path, key: str) -> str | None:
     proc = run(["config", "--get", key], cwd, check=False)
     return proc.stdout.strip() or None

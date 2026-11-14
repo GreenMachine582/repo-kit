@@ -1,6 +1,6 @@
 import pytest
 
-from repo_kit import __version__, reconcile
+from repo_kit import __version__, bootstrap, reconcile
 from repo_kit.cli import NOT_IMPLEMENTED, main
 from repo_kit.reconcile import Action, Report, Row
 
@@ -12,7 +12,6 @@ COMMANDS = [
     ["github", "apply"],
     ["branches", "prune", "--apply"],
     ["install", "--profile", "dev-main", "--hooks"],
-    ["bootstrap"],
     ["upgrade", "v1.2.3"],
     ["doctor"],
 ]
@@ -65,3 +64,19 @@ def test_every_command_parses_and_reports_its_phase(argv, capsys):
 def test_sync_adopt_is_a_future_item(capsys):
     assert main(["sync", "--adopt"]) == NOT_IMPLEMENTED
     assert "Future item" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("argv", "runner"), [(["install"], "run_install"), (["bootstrap"], "run_bootstrap")]
+)
+def test_install_and_bootstrap_print_what_changed(monkeypatch, capsys, argv, runner):
+    seen = {}
+
+    def fake(_cwd, *, profile, changed):
+        seen["profile"] = profile
+        changed.append("did a thing")
+
+    monkeypatch.setattr(bootstrap, runner, fake)
+    assert main(argv) == 0
+    assert seen == {"profile": "dev-main"}
+    assert "did a thing" in capsys.readouterr().out

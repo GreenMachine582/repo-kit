@@ -6,14 +6,37 @@
 
 | Command | Does |
 |---|---|
-| `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The default-branch switch itself is a repo setting, applied by `configure` |
+| `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The steps are [below](#install-step-by-step) |
 | `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot`: create the update-prs labels, and set the Client ID variable and private key secret from the user config ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
-| `rk bootstrap` | `install` + `configure` + `doctor` |
+| `rk bootstrap` | `install` + `configure` + `doctor`. It reads `gth-pr-bot`'s key first, so a machine that can't enrol the repo stops before anything is written. `doctor` joins when it is built |
 | `rk upgrade [vX.Y.Z]` | Change `version`, run `sync`, print migration notes for every release in between, then show `github diff` |
 | `rk doctor` | Read-only health check |
 
 Every write checks tool versions and the remote, backs up what it replaces, and finishes with a list of exactly what
 changed.
+
+## `install`, step by step
+
+Run it in a checkout of the repo, on the branch the adoption PR will come from. It commits nothing: the `Changed:`
+list is what to review and commit.
+
+1. **Config.** An existing `.repo-kit.toml` is used as it is. Otherwise the first one is built: `version` is the
+   running rk's version, `[project].name` is the repo name, and `release_type` is `python` with a `pyproject.toml`,
+   `node` with a `package.json`, else `simple`. An unreleased rk (`0.0.0`) has no release to pin, so it refuses to
+   seed: install a release, or write `.repo-kit.toml` with a `version` first.
+2. **Checks, before any write.** The sync is planned (a refused file stops here, with its diff),
+   `.claude/settings.json` is read, and `origin` is fetched to see which branches exist.
+3. **Files.** The sync writes the shared files, `.repo-kit.toml` among them, and the lock
+   ([shared-files.md](shared-files.md)).
+4. **Plugin.** `.claude/settings.json` gains the `repo-kit` marketplace and plugin, only where missing: other keys,
+   a marketplace source the repo chose and a plugin it turned off are kept.
+5. **Base branch.** If `origin` has `main` but no `dev`, `dev` is created from `main` with a plain push. Making it
+   the default branch is a repo setting, applied by `rk github apply` (Phase 1D).
+6. **Open PRs.** Every open PR that targets `main` from a branch other than `dev` is listed, and retargeted to
+   `dev` only after a yes. It looks at the PRs as they are now, so a run that was declined can be finished by running
+   `install` again. With no terminal to ask on, nothing is retargeted.
+
+`--hooks` (the `commit-msg` hook) arrives with the commit rules in Phase 1D, and says so until then.
 
 ## `doctor`
 

@@ -8,3 +8,8 @@ mode = "managed"
 [files.".gitignore"]
 mode = "block"
 blocks = { local = "gitignore.block" }
+
+# Seeded by `rk install`, which builds the first config in memory and lets the sync write it.
+[files.".repo-kit.toml"]
+mode = "seeded"
+source = "repo-kit.toml"

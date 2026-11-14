@@ -9,9 +9,8 @@ after Phase 4, to keep scope in check.
 
 Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one `bootstrap`.
 
-- [ ] `rk install` (including creating `dev` and retargeting PRs) and `bootstrap` (scenario 13)
 - [ ] `rk upgrade`, added templates only (scenario 18)
-- [ ] `rk doctor` ([docs/adoption.md](docs/adoption.md))
+- [ ] `rk doctor` ([docs/adoption.md](docs/adoption.md)), and run it at the end of `bootstrap`
 - [ ] `templates/common/`: the CONTRIBUTING blocks (the `pr-checks` and `release` callers come with Phase 1D)
 - [ ] `templates/extras/use-local-gth/`
 
@@ -19,7 +18,8 @@ Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one
 
 Done when unit snapshots of generated rulesets and files pass, and repo-kit runs on its own tooling (dogfood).
 
-- [ ] `checks.py` and the `commit-msg` hook ([docs/checks-and-release.md](docs/checks-and-release.md))
+- [ ] `checks.py` and the `commit-msg` hook, installed by `rk install --hooks`
+  ([docs/checks-and-release.md](docs/checks-and-release.md))
 - [ ] Reusable `pr-checks.yml` and `release.yml`
 - [ ] `rulesets.py`, `settings.py`, `rk github diff / apply` ([docs/rulesets.md](docs/rulesets.md))
 - [ ] Replace repo-kit's hand-set interim required checks with the generated `pr-checks / …` names, and add the

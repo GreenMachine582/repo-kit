@@ -24,6 +24,9 @@ USER_CONFIG_ENV = "REPO_KIT_CONFIG"
 # The branch `wt start` comes off when `--from` isn't given, per profile.
 PROFILE_DEFAULT_BASE = {"dev-main": "dev"}
 
+# The branch releases are cut from, per profile: it only takes release PRs from the default base.
+PROFILE_RELEASE_BRANCH = {"dev-main": "main"}
+
 # Branches that only change through PRs, per profile: never a PR head that the bot updates.
 PROFILE_LONG_LIVED = {"dev-main": ("dev", "main")}
 
@@ -95,6 +98,10 @@ class RepoConfig:
     @property
     def default_base(self) -> str:
         return PROFILE_DEFAULT_BASE[self.profile]
+
+    @property
+    def release_branch(self) -> str:
+        return PROFILE_RELEASE_BRANCH[self.profile]
 
     @property
     def long_lived_branches(self) -> tuple[str, ...]:
