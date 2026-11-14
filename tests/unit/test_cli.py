@@ -1,12 +1,8 @@
 import pytest
 
-from repo_kit import __version__, bootstrap, checks, doctor, github_config, reconcile
+from repo_kit import __version__, bootstrap, branches, checks, doctor, github_config, reconcile
 from repo_kit.cli import NOT_IMPLEMENTED, main
 from repo_kit.reconcile import Action, Report, Row
-
-COMMANDS = [
-    ["branches", "prune", "--apply"],
-]
 
 
 def test_version(capsys):
@@ -45,12 +41,6 @@ def test_update_prs_exits_non_zero_only_on_a_failure(monkeypatch, capsys, rows, 
     assert main(["update-prs", "--dry-run"]) == code
     assert seen == {"dry_run": True}
     assert "did a thing" in capsys.readouterr().out
-
-
-@pytest.mark.parametrize("argv", COMMANDS, ids=" ".join)
-def test_every_command_parses_and_reports_its_phase(argv, capsys):
-    assert main(argv) == NOT_IMPLEMENTED
-    assert "not implemented yet (Phase" in capsys.readouterr().err
 
 
 def test_sync_adopt_is_a_future_item(capsys):
@@ -146,3 +136,19 @@ def test_github_commands_reach_run_github(monkeypatch, capsys, argv, applies, co
     assert main(argv) == code
     assert seen == {"apply": applies}
     assert ("created ruleset" in capsys.readouterr().out) is applies
+
+
+@pytest.mark.parametrize(("argv", "applies"), [([], False), (["--apply"], True)])
+def test_branches_prune_reaches_run_prune(monkeypatch, capsys, argv, applies):
+    seen = {}
+
+    def fake(_cwd, *, apply, changed):
+        seen["apply"] = apply
+        if apply:
+            changed.append("deleted feat/x")
+        return 0
+
+    monkeypatch.setattr(branches, "run_prune", fake)
+    assert main(["branches", "prune", *argv]) == 0
+    assert seen == {"apply": applies}
+    assert ("Changed:" in capsys.readouterr().out) is applies

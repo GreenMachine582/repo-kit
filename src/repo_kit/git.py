@@ -269,6 +269,29 @@ class PushResult:
     detail: str = ""
 
 
+def local_branches(cwd: Path) -> list[str]:
+    return out(["for-each-ref", "--format=%(refname:short)", "refs/heads"], cwd).splitlines()
+
+
+def remote_branches(cwd: Path, remote: str = "origin") -> list[str]:
+    """The remote's branches as of the last fetch, without the `<remote>/` prefix or `HEAD`."""
+    refs = out(["for-each-ref", "--format=%(refname)", f"refs/remotes/{remote}"], cwd)
+    prefix = f"refs/remotes/{remote}/"
+    return [r.removeprefix(prefix) for r in refs.splitlines() if r != f"{prefix}HEAD"]
+
+
+def is_ancestor(cwd: Path, ancestor: str, descendant: str) -> bool:
+    """Whether `ancestor` is in `descendant`'s history. A commit that isn't here counts as no."""
+    proc = run(["merge-base", "--is-ancestor", ancestor, descendant], cwd, check=False)
+    return proc.returncode == 0
+
+
+def delete_remote_branch(cwd: Path, branch: str, remote: str = "origin") -> PushResult:
+    """Delete `branch` on the remote: a plain push, never forced. A refusal is a result."""
+    proc = run(["push", remote, "--delete", branch], cwd, check=False)
+    return PushResult(proc.returncode == 0, (proc.stderr or proc.stdout).strip())
+
+
 def push(cwd: Path, branch: str, remote: str = "origin") -> PushResult:
     """Push without force. A rejection (the remote moved) is a result, not an error."""
     proc = run(["push", "-u", remote, f"{branch}:{branch}"], cwd, check=False)
