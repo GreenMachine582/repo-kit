@@ -504,12 +504,37 @@ def _plan_one(
     return FilePlan(path, mode, action, detail, write, diff), new_entry
 
 
+_PROJECT_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$")
+
+
+def project_version(repo_root: Path) -> str:
+    """The version the release manifest is seeded with: `pyproject.toml`'s `[project].version`,
+    else `package.json`'s `version`, else 0.0.0. A dynamic or odd value counts as none."""
+    found: Any = None
+    try:
+        pyproject = repo_root / "pyproject.toml"
+        package = repo_root / "package.json"
+        if pyproject.is_file():
+            found = tomllib.loads(pyproject.read_text(encoding="utf-8")).get("project", {})
+            found = found.get("version") if isinstance(found, dict) else None
+        elif package.is_file():
+            found = json.loads(package.read_text(encoding="utf-8"))
+            found = found.get("version") if isinstance(found, dict) else None
+    except (OSError, UnicodeDecodeError, ValueError):
+        found = None
+    if isinstance(found, str) and _PROJECT_VERSION.match(found):
+        return found
+    return UNRELEASED
+
+
 def plan_sync(
     repo_root: Path, config: RepoConfig, owner: str, repo: str, root: Path | None = None
 ) -> SyncPlan:
     root = root or templates_root()
     templates = collect_templates(root, config)
     variables = template_variables(config, owner, repo)
+    # Read from the repo, so not in template_variables: only the seeded release manifest uses it.
+    variables["current_version"] = project_version(repo_root)
     old_lock = read_lock(repo_root)
     old_files: dict[str, Any] = old_lock["files"]
     unmanaged = set(config.overrides.files)
