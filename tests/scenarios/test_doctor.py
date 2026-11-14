@@ -10,8 +10,8 @@ from fakes import FakeRepoSetup
 from harness import git
 
 import repo_kit
-from repo_kit import bootstrap, doctor
-from repo_kit.config import PrBotConfig, UserConfig
+from repo_kit import bootstrap, doctor, rulesets
+from repo_kit.config import PrBotConfig, RepoConfig, UserConfig
 from repo_kit.doctor import Status
 from repo_kit.files import LOCK_NAME
 from repo_kit.worktree import start
@@ -41,6 +41,8 @@ def adopted(clone, github, user_config, tmp_path):
     """A clone after `rk bootstrap`, the repo setup it enrolled, and what bootstrap said."""
     work = clone("work")
     setup = FakeRepoSetup()
+    # Applied by hand until `rk github apply` exists; the seeded config keeps every ruleset default.
+    setup.ruleset_list = rulesets.build(RepoConfig())
     said: list[str] = []
     bootstrap.bootstrap(
         work,
@@ -91,7 +93,8 @@ def test_bootstrap_ends_all_ok(adopted, github, user_config, tmp_path):
     assert not doctor.failed(checks)
     assert find(checks, "managed files:")[0].label.endswith("drifted")
     assert "[OK]   managed files:" in said
-    assert "[SKIP] rulesets and repo settings" in said
+    assert "[OK]   rulesets match: repo-kit: dev, repo-kit: main, repo-kit: tags" in said
+    assert "[SKIP] repo settings" in said
     assert "Fix the [FAIL] items" not in said
 
 
@@ -243,3 +246,34 @@ def test_missing_base_branch_fails(adopted, origin, github, user_config, tmp_pat
 
     assert base.status is Status.FAIL
     assert "rk install" in base.detail
+
+
+def test_ruleset_drift_is_a_warning_naming_the_change(adopted, github, user_config, tmp_path):
+    work, setup, _said = adopted
+    setup.ruleset_list[2]["bypass_actors"].append(
+        {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+    )
+    del setup.ruleset_list[1]
+
+    [check] = find(run(work, github, setup, user_config, tmp_path), "rulesets")
+
+    assert check.status is Status.WARN
+    assert check.label == "rulesets differ from .repo-kit.toml"
+    assert "repo-kit: main: missing (would be created)" in check.detail
+    assert "    - Integration 5058502 always, RepositoryRole 5 always" in check.detail
+    assert "rk github diff" in check.detail
+
+
+def test_unreadable_rulesets_are_a_warning(adopted, github, user_config, tmp_path, monkeypatch):
+    work, setup, _said = adopted
+
+    def refuse():
+        raise doctor.RkError("HTTP 403")
+
+    monkeypatch.setattr(setup, "rulesets", refuse)
+    [check] = find(run(work, github, setup, user_config, tmp_path), "rulesets")
+    assert (check.status, check.label, check.detail) == (
+        Status.WARN,
+        "rulesets: can't read them",
+        "HTTP 403",
+    )
