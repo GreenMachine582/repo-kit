@@ -5,6 +5,9 @@
 [files.".github/workflows/update-prs.yml"]
 mode = "managed"
 
+[files.".github/workflows/pr-checks.yml"]
+mode = "managed"
+
 [files.".gitignore"]
 mode = "block"
 blocks = { local = "gitignore.block" }

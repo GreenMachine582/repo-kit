@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
+from repo_kit.checks import REQUIRED_CHECKS
 from repo_kit.config import ChecksConfig, ExtrasConfig, RepoConfig
 from repo_kit.files import (
     LOCK_NAME,
@@ -227,3 +229,32 @@ def test_the_update_prs_caller_pins_one_version():
     assert "update-prs.yml@v1.2.3" in text
     assert "ref: v1.2.3" in text
     assert "${{ vars.GTH_PR_BOT_CLIENT_ID }}" in text
+
+
+def render_caller(path: str) -> str:
+    variables = template_variables(RepoConfig(version="1.2.3"), "o", "r")
+    [caller] = [t for t in collect_templates(templates_root(), RepoConfig()) if t.path == path]
+    [source] = caller.sources
+    return render(source.read_text(encoding="utf-8"), variables, caller.path)
+
+
+def test_the_pr_checks_caller_pins_one_version():
+    text = render_caller(".github/workflows/pr-checks.yml")
+    assert "repo-kit/.github/workflows/pr-checks.yml@v1.2.3" in text
+    assert "ref: v1.2.3" in text
+    assert "${{ github.event.pull_request.number }}" in text
+
+
+def job_ids(workflow: str) -> list[str]:
+    """The keys directly under `jobs:` (two-space indent). The stdlib has no YAML parser."""
+    jobs = workflow.split("\njobs:\n", 1)[1]
+    return re.findall(r"^  ([a-z][a-z0-9_-]*):$", jobs, flags=re.MULTILINE)
+
+
+def test_the_required_check_names_match_the_workflows():
+    caller = render_caller(".github/workflows/pr-checks.yml")
+    reusable = (Path(__file__).parents[2] / ".github/workflows/pr-checks.yml").read_text(
+        encoding="utf-8"
+    )
+    names = tuple(f"{outer} / {inner}" for outer in job_ids(caller) for inner in job_ids(reusable))
+    assert names == REQUIRED_CHECKS

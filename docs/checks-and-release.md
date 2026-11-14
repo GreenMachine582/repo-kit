@@ -14,6 +14,35 @@ Replaces GTH's `commits` check. Three jobs:
 | `pr-title` | `not-conventional`: the title must not parse as a conventional commit (stops duplicate changelog lines with merge commits). `conventional`: the title must parse (for squash repos). Release PRs (`release: …`, `chore(main): release …`) are allowed |
 | `managed-files` | `rk sync --check` passes |
 
+Every repo gets this caller, managed by `rk sync` (`.github/workflows/pr-checks.yml`):
+
+```yaml
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]   # edited: a title change re-runs pr-title
+jobs:
+  pr-checks:
+    uses: GreenMachine582/repo-kit/.github/workflows/pr-checks.yml@v1.4.0
+    with:
+      ref: v1.4.0
+```
+
+A newer push cancels the checks still running for the same PR. The reusable workflow holds no secrets and only
+reads (`contents: read`). Each job checks out the consumer and repo-kit at `ref`, and runs rk from source:
+
+| Job | Checks out | Runs |
+|---|---|---|
+| `commits` | The PR head, with every branch | `rk check commits origin/<base>..<head>`, where `<base>` is the PR's live base (`dev`, or the parent of a chained PR) |
+| `pr-title` | The merge ref, for `[checks].pr_title` | `rk check pr-title "<title>"`. The title reaches the step through `env`, never inline |
+| `managed-files` | The merge ref: what lands if the PR merges | `rk sync --check` |
+
+| Input | Default | |
+|---|---|---|
+| `ref` | (required) | The repo-kit tag to run, the same as the `@v…` pin |
+| `managed-files` | `true` | Set to `false` only by repo-kit's own caller (`pr-checks-self.yml`), until it adopts its own files |
+
+On a failure, the job summary says how to fix it.
+
 The rules are implemented once in `repo_kit/checks.py` and unit-tested, so the optional local `commit-msg` hook
 (installed by `rk install --hooks`, running `rk check commit-msg`) and CI use the same code.
 

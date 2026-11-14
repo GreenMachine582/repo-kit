@@ -29,6 +29,9 @@ TYPES = (
     "revert",
 )
 
+# The checks the generated caller reports (`<caller job> / <reusable job>`): what rulesets require.
+REQUIRED_CHECKS = ("pr-checks / commits", "pr-checks / pr-title", "pr-checks / managed-files")
+
 _HEADER = re.compile(
     r"^(?P<type>[A-Za-z]+)(?:\((?P<scope>[^()\r\n]+)\))?(?P<bang>!)?(?P<colon>:)?(?P<space> ?)"
     r"(?P<subject>.*)$"
