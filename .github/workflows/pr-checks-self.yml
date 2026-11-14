@@ -1,0 +1,24 @@
+# repo-kit's own caller of pr-checks, written by hand until Phase 1D generates it (dogfood). It runs the PR's own
+# rk: pr-checks holds no secrets and only reads, so that's safe, and every PR tests the reusable workflow.
+name: pr-checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+permissions: {}
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-checks:
+    permissions:
+      contents: read
+    # The documented local form: it resolves to this same commit, and actionlint checks it.
+    uses: ./.github/workflows/pr-checks.yml # zizmor: ignore[self-repository]
+    with:
+      ref: ${{ github.event.pull_request.head.sha }}
+      # repo-kit has no .repo-kit.toml until it adopts its own files (TODO: dogfood).
+      managed-files: false
