@@ -1,0 +1,50 @@
+{
+  "files": {
+    ".gitignore": {
+      "blocks": {
+        "local": {
+          "layer": "common",
+          "sha256": "8d0100a55ad04be1ebf7eb3c9c57cd0acf255092e2ba13d3864bee5fa58b5171"
+        }
+      },
+      "mode": "block"
+    },
+    ".release-please-manifest.json": {
+      "layer": "profiles/dev-main",
+      "mode": "seeded",
+      "sha256": "b9c66e0126774ab9fa34536f15972438356e7035724a2c0f0ca3b125967e6399"
+    },
+    ".repo-kit.toml": {
+      "layer": "common",
+      "mode": "seeded",
+      "sha256": "b06a4da97e0589c2985bf96f9f26589b17e4e178420d1fb5c8dfc1361448349f"
+    },
+    "CONTRIBUTING.md": {
+      "blocks": {
+        "branches": {
+          "layer": "profiles/dev-main",
+          "sha256": "733cd3ad5cb92f866178df6bb1b0d096f206d79473caee7d606ae26e1bc8f4aa"
+        },
+        "chained-prs": {
+          "layer": "profiles/dev-main",
+          "sha256": "d96c0d81f9495c3af8249626fa7e39b81b72c8bd8f3c64f9ef669268706a9d63"
+        },
+        "pull-requests": {
+          "layer": "profiles/dev-main",
+          "sha256": "d4c37a324ac2575b3477205f84f895daa20d71ec9dc2db3cc7d38b4c2c8eacb1"
+        },
+        "releasing": {
+          "layer": "profiles/dev-main",
+          "sha256": "a57b5893764cd4078d83a1f9c68d73b7fb4a6c837bf576a22c1ca7ef1c3b5c53"
+        }
+      },
+      "mode": "block"
+    },
+    "release-please-config.json": {
+      "layer": "profiles/dev-main",
+      "mode": "managed",
+      "sha256": "a18c130a76a8355bce2ee070dca4e04899669e546e38bc221640cd76331639a5"
+    }
+  },
+  "version": "0.1.0"
+}
