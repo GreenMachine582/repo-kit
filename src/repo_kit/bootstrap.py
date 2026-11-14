@@ -214,6 +214,52 @@ def write_plugin_settings(repo_root: Path, text: str, changed: list[str]) -> Non
     changed.append(f"added the repo-kit plugin marketplace to {SETTINGS_PATH}")
 
 
+HOOK_MARKER = "# Installed by `rk install --hooks`"
+HOOK_TEXT = f"""#!/bin/sh
+{HOOK_MARKER}: repo-kit's commit rules (checks.py).
+if ! command -v rk >/dev/null 2>&1; then
+  echo "rk isn't on PATH: commit-msg check skipped" >&2
+  exit 0
+fi
+exec rk check commit-msg "$1"
+"""
+
+
+def plan_hook(repo_root: Path) -> Path | None:
+    """Where the commit-msg hook must be written, or None if it's already there.
+
+    Refuses, before anything is written, when another tool's hook is in the way.
+    """
+    path = git.git_path(repo_root, "hooks/commit-msg")
+    if not path.is_file():
+        return path
+    current = files.lf(path.read_text(encoding="utf-8", errors="replace"))
+    if current == HOOK_TEXT:
+        return None
+    if HOOK_MARKER not in current:
+        raise RkError(
+            f"{path} is another tool's commit-msg hook, so rk won't replace it. Add "
+            '`rk check commit-msg "$1"` to it by hand, or remove it and re-run '
+            "`rk install --hooks`."
+        )
+    return path
+
+
+def write_hook(repo_root: Path, path: Path, changed: list[str]) -> None:
+    if path.is_file():
+        backup = files.new_backup_root(repo_root) / "hooks" / path.name
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, backup)
+        changed.append(f"backed up the old commit-msg hook to {backup}")
+        verb = "updated"
+    else:
+        verb = "installed"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(HOOK_TEXT, encoding="utf-8", newline="\n")
+    path.chmod(0o755)
+    changed.append(f"{verb} the commit-msg hook at {path}")
+
+
 def base_branch_missing(repo_root: Path, config: RepoConfig) -> bool:
     """Whether origin lacks the profile's base branch. Refuses if it can't be created either."""
     git.fetch(repo_root)
@@ -285,6 +331,7 @@ def install(
     *,
     profile: str,
     changed: list[str],
+    hooks: bool = False,
     confirm: Callable[[str], bool] = ask,
     say: Callable[[str], None] = print,
     templates: Path | None = None,
@@ -304,11 +351,14 @@ def install(
     say(files.summary(plan))
     files.raise_if_refused(plan)
     settings = plan_plugin_settings(repo_root)
+    hook = plan_hook(repo_root) if hooks else None
     create_base = base_branch_missing(repo_root, config)
 
     files.apply_plan(repo_root, plan, changed)
     if settings is not None:
         write_plugin_settings(repo_root, settings, changed)
+    if hook is not None:
+        write_hook(repo_root, hook, changed)
     if create_base:
         create_base_branch(repo_root, config, changed, say)
     retarget_prs(github, config, changed=changed, confirm=confirm, say=say)
@@ -324,11 +374,11 @@ def _origin(cwd: Path) -> tuple[Path, str, str, str]:
     return repo_root, url, owner, repo
 
 
-def run_install(cwd: Path, *, profile: str, changed: list[str]) -> None:
+def run_install(cwd: Path, *, profile: str, changed: list[str], hooks: bool = False) -> None:
     """The command: adopt the checkout `cwd` is in."""
     repo_root, url, owner, repo = _origin(cwd)
     github: GitHub = GhCliGitHub(owner, repo) if git.is_github_url(url) else NoGitHub()
-    install(repo_root, owner, repo, github, profile=profile, changed=changed)
+    install(repo_root, owner, repo, github, profile=profile, changed=changed, hooks=hooks)
 
 
 # --- upgrade -------------------------------------------------------------------------------

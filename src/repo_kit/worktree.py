@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from repo_kit import git
+from repo_kit.checks import TYPES
 from repo_kit.config import (
     RepoConfig,
     UserConfig,
@@ -31,8 +32,7 @@ from repo_kit.config import (
 from repo_kit.errors import RkError
 from repo_kit.github import GhCliGitHub, GitHub, NoGitHub
 
-# Conventional Commits types, as listed in CONTRIBUTING.md.
-BRANCH_TYPES = ("feat", "fix", "docs", "chore", "refactor", "test", "ci", "build", "perf", "revert")
+BRANCH_TYPES = TYPES  # a branch is named for the kind of commit it holds
 SLUG_MAX = 40
 LOCAL_CONFIG_NAME = ".repo-kit.local.toml"
 BASE_CONFIG_KEY = "rkBase"  # git config branch.<name>.rkBase: the base `wt start` used

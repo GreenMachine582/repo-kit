@@ -1,17 +1,13 @@
 import pytest
 
-from repo_kit import __version__, bootstrap, doctor, reconcile
+from repo_kit import __version__, bootstrap, checks, doctor, reconcile
 from repo_kit.cli import NOT_IMPLEMENTED, main
 from repo_kit.reconcile import Action, Report, Row
 
 COMMANDS = [
-    ["check", "commits", "origin/dev..HEAD"],
-    ["check", "commit-msg", ".git/COMMIT_EDITMSG"],
-    ["check", "pr-title", "Add worktree commands"],
     ["github", "diff"],
     ["github", "apply"],
     ["branches", "prune", "--apply"],
-    ["install", "--profile", "dev-main", "--hooks"],
 ]
 
 
@@ -70,7 +66,7 @@ def test_sync_adopt_is_a_future_item(capsys):
 def test_install_and_bootstrap_print_what_changed(monkeypatch, capsys, argv, runner):
     seen = {}
 
-    def fake(_cwd, *, profile, changed):
+    def fake(_cwd, *, profile, changed, **_hooks):
         seen["profile"] = profile
         changed.append("did a thing")
 
@@ -100,3 +96,35 @@ def test_upgrade_reaches_run_upgrade_and_prints_what_changed(monkeypatch, capsys
 def test_doctor_returns_run_doctors_exit_code(monkeypatch, code):
     monkeypatch.setattr(doctor, "run_doctor", lambda _cwd: code)
     assert main(["doctor"]) == code
+
+
+@pytest.mark.parametrize(
+    ("argv", "target", "expected"),
+    [
+        (["check", "commits", "origin/dev..HEAD"], "run_commits", "origin/dev..HEAD"),
+        (["check", "commit-msg", ".git/COMMIT_EDITMSG"], "run_commit_msg", ".git/COMMIT_EDITMSG"),
+        (["check", "pr-title", "Add worktree commands"], "run_pr_title", "Add worktree commands"),
+    ],
+)
+def test_check_commands_reach_checks_and_return_its_code(monkeypatch, argv, target, expected):
+    seen = []
+
+    def fake(_cwd, arg):
+        seen.append(str(arg))
+        return 1
+
+    monkeypatch.setattr(checks, target, fake)
+    assert main(argv) == 1
+    assert [s.replace("\\", "/") for s in seen] == [expected]
+
+
+@pytest.mark.parametrize(("argv", "hooks"), [(["install"], False), (["install", "--hooks"], True)])
+def test_install_passes_hooks_through(monkeypatch, argv, hooks):
+    seen = {}
+
+    def fake(_cwd, *, profile, changed, hooks):
+        seen["hooks"] = hooks
+
+    monkeypatch.setattr(bootstrap, "run_install", fake)
+    assert main(argv) == 0
+    assert seen == {"hooks": hooks}

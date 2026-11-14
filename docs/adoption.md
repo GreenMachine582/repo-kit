@@ -36,7 +36,8 @@ list is what to review and commit.
    `dev` only after a yes. It looks at the PRs as they are now, so a run that was declined can be finished by running
    `install` again. With no terminal to ask on, nothing is retargeted.
 
-`--hooks` (the `commit-msg` hook) arrives with the commit rules in Phase 1D, and says so until then.
+`--hooks` also installs the `commit-msg` hook ([checks-and-release.md](checks-and-release.md#the-commit-msg-hook)),
+which is checked with the other steps before anything is written.
 
 ## `upgrade`, step by step
 

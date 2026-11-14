@@ -9,8 +9,6 @@ after Phase 4, to keep scope in check.
 
 Done when unit snapshots of generated rulesets and files pass, and repo-kit runs on its own tooling (dogfood).
 
-- [ ] `checks.py` and the `commit-msg` hook, installed by `rk install --hooks`
-  ([docs/checks-and-release.md](docs/checks-and-release.md))
 - [ ] Reusable `pr-checks.yml` and `release.yml`
 - [ ] `rulesets.py`, `settings.py`, `rk github diff / apply` ([docs/rulesets.md](docs/rulesets.md))
 - [ ] Replace repo-kit's hand-set interim required checks with the generated `pr-checks / …` names, and add the
