@@ -56,9 +56,11 @@ repo-kit/
 ├── .github/workflows/
 │   ├── update-prs.yml            # reusable: keep PRs current                       (Phase 1B)
 │   ├── pr-checks.yml             # reusable: commits, pr-title, managed-files drift (Phase 1D)
-│   ├── pr-checks-self.yml        # this repo's own caller of pr-checks, until dogfood
 │   ├── release.yml               # reusable: release-please + back-merge            (Phase 1D)
-│   └── ci.yml                    # this repo's own CI; rk-managed from Phase 1D (dogfood)
+│   ├── pr-checks-self.yml        # this repo's own callers, written by hand: the generated
+│   ├── keep-prs-current.yml      #   callers' paths are the reusable workflows here, so
+│   ├── release-self.yml          #   these run them locally (`uses: ./…`)
+│   └── ci.yml                    # this repo's own CI: tests, lint, plugin validation
 ├── .claude-plugin/marketplace.json
 ├── plugins/repo-kit/
 │   ├── .claude-plugin/plugin.json
@@ -71,7 +73,8 @@ repo-kit/
 ├── tests/{unit,scenarios}/
 ├── docs/
 ├── pyproject.toml  CHANGELOG.md  README.md
-└── .repo-kit.toml                # rk manages its own repo too (Phase 1D)
+├── .repo-kit.toml  .repo-kit.lock   # rk manages its own repo too (dogfood)
+└── release-please-config.json  .release-please-manifest.json  CONTRIBUTING.md   # partly rendered by rk
 ```
 
 | Module | Responsibility | Phase |

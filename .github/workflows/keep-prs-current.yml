@@ -1,5 +1,6 @@
-# repo-kit's own caller of update-prs, written by hand until Phase 1D generates it. It runs only once the
-# repo is enrolled: `rk configure` sets the GTH_PR_BOT_CLIENT_ID variable and GTH_PR_BOT_PRIVATE_KEY secret.
+# repo-kit's own caller of update-prs, written by hand: in repo-kit, .github/workflows/update-prs.yml is the
+# reusable workflow itself (see the overrides in .repo-kit.toml). It runs only once the repo is enrolled:
+# `rk configure` sets the GTH_PR_BOT_CLIENT_ID variable and GTH_PR_BOT_PRIVATE_KEY secret.
 name: keep PRs current
 
 on:

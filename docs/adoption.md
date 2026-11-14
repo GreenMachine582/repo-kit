@@ -102,7 +102,12 @@ Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` c
 
 ## 🏷️ Versioning
 
-- repo-kit itself: release-please, immutable `vX.Y.Z` tags, no floating `v1`. It manages its own repo with `rk`.
+- repo-kit itself: release-please, immutable `vX.Y.Z` tags, no floating `v1`. It manages its own repo with `rk`:
+  the `.gitignore` block, the CONTRIBUTING blocks, `release-please-config.json` and the manifest are rendered and
+  checked by `pr-checks / managed-files` like anywhere else. Its callers can't be generated, because their paths are
+  the reusable workflows themselves, so `.repo-kit.toml` marks those three `unmanaged` and hand-written callers
+  (`pr-checks-self.yml`, `keep-prs-current.yml`, `release-self.yml`) run them locally: every PR tests its own
+  workflows. `doctor` shows the three overrides as WARN, as expected.
 - **One pin per consumer:** `version` in `.repo-kit.toml`. Every generated caller uses `@v<version>` and passes that
   same version to the engine. Bumping the pin is always `rk upgrade`, so callers, managed files and rulesets move
   together.

@@ -56,3 +56,5 @@ OneDrive. On Windows the tools are in `.venv/Scripts/`.
 - Commits are Conventional Commits. **PR titles are not** (merge-commit model). See [CONTRIBUTING.md](CONTRIBUTING.md).
 - A new command is declared in `cli.py` with its final arguments first, then built in its own module.
 - Docs change in the same PR as the behaviour they describe. [TODO.md](TODO.md) holds open work only.
+- repo-kit manages its own files (`.repo-kit.toml`). A PR that changes `templates/` also runs `rk sync` and commits
+  the result, or `pr-checks / managed-files` fails.
