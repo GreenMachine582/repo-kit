@@ -164,6 +164,16 @@ def _github(apply_changes: bool) -> Handler:
     return handler
 
 
+def _prune(args: argparse.Namespace) -> int:
+    from repo_kit import branches
+
+    changed: list[str] = []
+    code = branches.run_prune(Path.cwd(), apply=args.apply, changed=changed)
+    if args.apply:
+        _print_changes(changed)
+    return code
+
+
 def _doctor(args: argparse.Namespace) -> int:
     from repo_kit import doctor
 
@@ -257,7 +267,7 @@ def _add_setup_side(sub: SubParsers) -> None:
     br_sub = branches.add_subparsers(dest="branches_command", required=True, metavar="<command>")
     prune = br_sub.add_parser("prune", help="list (or delete) branches whose PR is merged")
     prune.add_argument("--apply", action="store_true", help="delete instead of listing")
-    prune.set_defaults(handler=_not_implemented("branches prune", "1D"))
+    prune.set_defaults(handler=_prune)
 
     install = sub.add_parser(
         "install", help="seed .repo-kit.toml, sync, add the plugin, create the base branch"

@@ -64,6 +64,10 @@ class GitHub(Protocol):
         """The PR whose head is `branch` in this repo: the open one, else the most recent."""
         ...
 
+    def prs_for_branch(self, branch: str) -> list[PullRequest]:
+        """Every PR whose head is `branch` in this repo, in any state, with its head SHA."""
+        ...
+
     def remove_label(self, number: int, label: str) -> None:
         """Remove `label` from PR `number`; a label that isn't there is not an error."""
         ...
@@ -125,6 +129,9 @@ class NoGitHub:
 
     def pr_for_branch(self, branch: str) -> PullRequest | None:
         return None
+
+    def prs_for_branch(self, branch: str) -> list[PullRequest]:
+        return []
 
     def remove_label(self, number: int, label: str) -> None:
         return None
@@ -246,10 +253,13 @@ class GhCliGitHub:
             page += 1
 
     def pr_for_branch(self, branch: str) -> PullRequest | None:
+        return pick_pr(self.prs_for_branch(branch))
+
+    def prs_for_branch(self, branch: str) -> list[PullRequest]:
         head = quote(f"{self.owner}:{branch}", safe="")
         # A head filter matches a handful of PRs at most, so one page is enough.
         data = self._api(f"repos/{self.owner}/{self.repo}/pulls?head={head}&state=all&per_page=100")
-        return pick_pr([pr_from_api(item) for item in data or []])
+        return [pr_from_api(item) for item in data or []]
 
     def remove_label(self, number: int, label: str) -> None:
         self._api(

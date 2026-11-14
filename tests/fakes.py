@@ -88,6 +88,7 @@ class FakeGitHub:
         draft: bool = False,
         labels: tuple[str, ...] = (),
         from_fork: bool = False,
+        head_sha: str = "",
     ) -> PullRequest:
         pr = PullRequest(
             number=len(self.prs) + 1,
@@ -98,6 +99,7 @@ class FakeGitHub:
             head_ref=head,
             labels=tuple(labels),
             from_fork=from_fork,
+            head_sha=head_sha,
         )
         self.prs.append(pr)
         return pr
@@ -131,6 +133,9 @@ class FakeGitHub:
 
     def pr_for_branch(self, branch: str) -> PullRequest | None:
         return pick_pr([pr for pr in self.prs if pr.head_ref == branch])
+
+    def prs_for_branch(self, branch: str) -> list[PullRequest]:
+        return [pr for pr in self.prs if pr.head_ref == branch]
 
     def remove_label(self, number: int, label: str) -> None:
         self.removed_labels.append((number, label))
