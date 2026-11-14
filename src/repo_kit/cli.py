@@ -150,6 +150,12 @@ def _check(kind: str) -> Handler:
     return handler
 
 
+def _github_diff(args: argparse.Namespace) -> int:
+    from repo_kit import rulesets
+
+    return rulesets.run_github_diff(Path.cwd())
+
+
 def _doctor(args: argparse.Namespace) -> int:
     from repo_kit import doctor
 
@@ -229,10 +235,11 @@ def _add_setup_side(sub: SubParsers) -> None:
     )
     sync.set_defaults(handler=_sync)
 
-    github = sub.add_parser("github", help="rulesets and repo settings")
-    gh_sub = github.add_subparsers(dest="github_command", required=True, metavar="<command>")
+    github = sub.add_parser("github", help="rulesets and repo settings (`diff` by default)")
+    github.set_defaults(handler=_github_diff)
+    gh_sub = github.add_subparsers(dest="github_command", metavar="<command>")
     gh_sub.add_parser("diff", help="live GitHub state vs config (read-only)").set_defaults(
-        handler=_not_implemented("github diff", "1D")
+        handler=_github_diff
     )
     gh_sub.add_parser("apply", help="apply after showing the diff and asking").set_defaults(
         handler=_not_implemented("github apply", "1D")

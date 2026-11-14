@@ -2,8 +2,8 @@
 
 Tools, both config files, the managed files, the plugin settings, the base branch, gth-pr-bot's
 enrolment and stale worktrees. It writes nothing and doesn't fetch: remote branches are read as of
-the last fetch. Rulesets, repo settings, the latest release and the App's token mint come with
-Phase 1D. See docs/adoption.md.
+the last fetch. Rulesets are compared with what the config describes; repo settings and the latest
+release come later in Phase 1D. See docs/adoption.md.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import repo_kit
-from repo_kit import bootstrap, files, git
+from repo_kit import bootstrap, files, git, rulesets
 from repo_kit.config import (
     REPO_CONFIG_NAME,
     RepoConfig,
@@ -274,6 +274,18 @@ def check_enrolment(setup: RepoSetup, config: RepoConfig, user_config: UserConfi
     return _ok("gth-pr-bot: labels, Client ID variable and private key secret present")
 
 
+def check_rulesets(setup: RepoSetup, config: RepoConfig) -> Check:
+    try:
+        result = rulesets.diff(config, setup.rulesets())
+    except RkError as exc:
+        return _warn("rulesets: can't read them", str(exc))
+    if result.drift:
+        detail = "\n".join([*rulesets.render(result), "see `rk github diff`"])
+        return _warn("rulesets differ from .repo-kit.toml", detail)
+    names = ", ".join(r.name for r in result.rulesets)
+    return _ok(f"rulesets match: {names}")
+
+
 def check_worktrees(
     repo_root: Path, owner: str, repo: str, github: GitHub, user_config: UserConfig
 ) -> list[Check]:
@@ -351,7 +363,11 @@ def doctor(
                 "run the update-prs caller with dry-run ticked",
             )
         )
-    checks.append(_skip("rulesets and repo settings", "`rk github diff` comes in Phase 1D"))
+    if config is None or setup is None:
+        checks.append(_skip("rulesets", "need a valid config and a GitHub origin"))
+    else:
+        checks.append(check_rulesets(setup, config))
+    checks.append(_skip("repo settings", "not compared yet (Phase 1D: settings.py)"))
 
     if user_config is None:
         checks.append(_skip("worktrees", "need a valid user config"))

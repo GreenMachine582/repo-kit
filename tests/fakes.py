@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 from pathlib import Path
+from typing import Any
 
 from repo_kit import git
 from repo_kit.github import BaseStatus, PullRequest, UpdateResult, pick_pr
@@ -16,6 +18,7 @@ class FakeRepoSetup:
         self.label_set: dict[str, tuple[str, str]] = {}
         self.vars: dict[str, str] = {}
         self.secrets: dict[str, str] = {}
+        self.ruleset_list: list[dict[str, Any]] = []
         self.writes: list[str] = []
 
     def labels(self) -> list[str]:
@@ -38,6 +41,9 @@ class FakeRepoSetup:
     def set_secret(self, name: str, value: str) -> None:
         self.writes.append(f"secret {name}")
         self.secrets[name] = value
+
+    def rulesets(self) -> list[dict[str, Any]]:
+        return copy.deepcopy(self.ruleset_list)
 
 
 class FakeGitHub:

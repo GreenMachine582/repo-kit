@@ -170,6 +170,10 @@ class RepoSetup(Protocol):
         """The names of the repo's Actions secrets. Their values can't be read back."""
         ...
 
+    def rulesets(self) -> list[dict[str, Any]]:
+        """The repo's own rulesets (not inherited ones), each in full detail."""
+        ...
+
     def set_secret(self, name: str, value: str) -> None:
         """Store an Actions secret. The value goes to `gh` on stdin, never as an argument."""
         ...
@@ -330,6 +334,11 @@ class GhCliGitHub:
     def secret_names(self) -> list[str]:
         out = self._gh_ok("secret", "list", "--repo", self._full_name, "--json", "name")
         return [item["name"] for item in json.loads(out or "[]")]
+
+    def rulesets(self) -> list[dict[str, Any]]:
+        # The list leaves out rules and bypass actors, so each one is read again in full.
+        listed = self._paged(f"{self._repo}/rulesets?includes_parents=false")
+        return [self._api(f"{self._repo}/rulesets/{item['id']}") for item in listed]
 
     def set_secret(self, name: str, value: str) -> None:
         # Without --body, gh reads the value from stdin: it never appears in a process listing.

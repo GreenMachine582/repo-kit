@@ -26,6 +26,7 @@ commit_header_max = 100
 
 [release]
 app = "gth-release-bot"           # the only actor allowed to create v* tags; bypasses dev for the back-merge
+app_id = 5058502                  # that App's numeric ID, for the rulesets' bypass lists
 back_merge = true                 # merge main back into dev after a release (dev-main only)
 
 [update_prs]

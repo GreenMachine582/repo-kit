@@ -72,7 +72,8 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 [OK]   base branch: origin/dev exists (as of the last fetch)
 [OK]   gth-pr-bot: labels, Client ID variable and private key secret present
 [SKIP] gth-pr-bot installed and token mint
-[SKIP] rulesets and repo settings
+[OK]   rulesets match: repo-kit: dev, repo-kit: main, repo-kit: tags
+[SKIP] repo settings
 [WARN] 1 stale worktree
        ~/dev/wt/GreenMachine582-photo-ledger/fix-x-1a2b3c (fix/x: PR #41 merged)
        remove each with `rk wt done <branch>`
@@ -91,10 +92,10 @@ command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` a
 | Plugin | WARN: `.claude/settings.json` lacks the repo-kit marketplace or plugin (`rk install`) |
 | Base branch | FAIL: origin has no profile base branch (`rk install`) |
 | gth-pr-bot | FAIL: a label, the Client ID variable or the key secret is missing, or the variable isn't the user config's Client ID (`rk configure`) |
+| Rulesets | WARN: a `repo-kit: …` ruleset is missing or differs from the config, with the same lines as `rk github diff`; or the API can't be read |
 | Worktrees | WARN: a worktree under `worktree_root` whose PR is merged or closed (`rk wt done`) |
 
-Phase 1D adds the rest: rulesets and repo settings (`rk github diff`), the latest release next to the pin, and
-`gth-release-bot`. Whether the App is installed and its token mint works can't be seen from a local run: confirm
+Phase 1D adds the rest: repo settings, the latest release next to the pin, and `gth-release-bot`. Whether the App is installed and its token mint works can't be seen from a local run: confirm
 the install at https://github.com/settings/installations and run the update-prs caller with dry-run ticked.
 
 Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` command checks it too), gh 2.40+, Python 3.11+.
@@ -146,7 +147,8 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
    `.github/repo-settings.json` and `.github/workflows/release-please.yml` (the managed `release.yml` replaces it).
    Set `gth-release-bot`'s new variable and secret, and delete the old `RELEASE_APP_*` ones
    ([github-app.md](github-app.md#releases-gth-release-bot)).
-3. `rk github diff` must show no unexpected changes before `apply`.
+3. `rk github diff` must show no unexpected changes before `apply`. After applying, delete the old `dev`, `main`
+   and `release tags` rulesets, which the diff lists as left alone.
 4. The CONTRIBUTING sections become managed blocks. GTH's Branches, Pull requests, Chained PRs and Releasing
    sections are deleted, and `rk sync` appends the blocks that replace them. Repo-specific sections such as
    *Developing against local GTH repos* and *Rules* stay outside the markers.
