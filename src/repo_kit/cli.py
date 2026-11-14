@@ -105,18 +105,11 @@ def _configure(args: argparse.Namespace) -> int:
 
 
 def _install(args: argparse.Namespace) -> int:
-    if args.hooks:
-        # The hook runs `rk check commit-msg`: installed before that exists, it would block commits.
-        print(
-            "rk install --hooks: not implemented yet (Phase 1D), with the commit rules it runs",
-            file=sys.stderr,
-        )
-        return NOT_IMPLEMENTED
     from repo_kit import bootstrap
 
     changed: list[str] = []
     try:
-        bootstrap.run_install(Path.cwd(), profile=args.profile, changed=changed)
+        bootstrap.run_install(Path.cwd(), profile=args.profile, changed=changed, hooks=args.hooks)
     finally:
         _print_changes(changed)
     return 0
@@ -142,6 +135,19 @@ def _bootstrap(args: argparse.Namespace) -> int:
     finally:
         _print_changes(changed)
     return 0
+
+
+def _check(kind: str) -> Handler:
+    def handler(args: argparse.Namespace) -> int:
+        from repo_kit import checks
+
+        if kind == "commits":
+            return checks.run_commits(Path.cwd(), args.range)
+        if kind == "commit-msg":
+            return checks.run_commit_msg(Path.cwd(), Path(args.file))
+        return checks.run_pr_title(Path.cwd(), args.title)
+
+    return handler
 
 
 def _doctor(args: argparse.Namespace) -> int:
@@ -199,13 +205,13 @@ def _add_pr_side(sub: SubParsers) -> None:
     check_sub = check.add_subparsers(dest="check_command", required=True, metavar="<command>")
     commits = check_sub.add_parser("commits", help="check every non-merge commit in a range")
     commits.add_argument("range", help="revision range, such as origin/dev..HEAD")
-    commits.set_defaults(handler=_not_implemented("check commits", "1D"))
+    commits.set_defaults(handler=_check("commits"))
     msg = check_sub.add_parser("commit-msg", help="check one message file (commit-msg hook)")
     msg.add_argument("file")
-    msg.set_defaults(handler=_not_implemented("check commit-msg", "1D"))
+    msg.set_defaults(handler=_check("commit-msg"))
     title = check_sub.add_parser("pr-title", help="check a PR title against [checks].pr_title")
     title.add_argument("title")
-    title.set_defaults(handler=_not_implemented("check pr-title", "1D"))
+    title.set_defaults(handler=_check("pr-title"))
 
 
 def _add_setup_side(sub: SubParsers) -> None:

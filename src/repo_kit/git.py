@@ -219,6 +219,21 @@ def merge_in_progress(cwd: Path) -> bool:
     return ref_exists(cwd, "MERGE_HEAD")
 
 
+def log_subjects(cwd: Path, revisions: str) -> list[tuple[str, str]]:
+    """(short sha, first line) of each non-merge commit in `revisions`, newest first."""
+    proc = run(["log", "--no-merges", "--format=%h%x00%s", revisions, "--"], cwd)
+    return [
+        (sha, subject)
+        for sha, _, subject in (line.partition("\x00") for line in proc.stdout.splitlines() if line)
+    ]
+
+
+def git_path(cwd: Path, name: str) -> Path:
+    """Where Git keeps `name` (such as `hooks/commit-msg`), honouring `core.hooksPath`."""
+    path = Path(out(["rev-parse", "--git-path", name], cwd))
+    return path if path.is_absolute() else cwd / path
+
+
 def unpushed_commits(cwd: Path, branch: str) -> list[str]:
     """Commits on `branch` that no remote-tracking ref contains, as `<sha> <subject>`."""
     proc = run(["log", "--format=%h %s", branch, "--not", "--remotes"], cwd)

@@ -40,7 +40,15 @@ def test_colliding_slugs_get_distinct_paths():
 
 
 @pytest.mark.parametrize(
-    "name", ["feat/api-v2", "fix/scan-resume", "docs/adoption", "feat/api/v2", "ci/Windows_Job.2"]
+    "name",
+    [
+        "feat/api-v2",
+        "fix/scan-resume",
+        "docs/adoption",
+        "feat/api/v2",
+        "ci/Windows_Job.2",
+        "style/ruff-format",
+    ],
 )
 def test_valid_branch_names(name):
     validate_branch(name)
