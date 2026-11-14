@@ -10,7 +10,7 @@ from fakes import FakeRepoSetup
 from harness import git
 
 import repo_kit
-from repo_kit import bootstrap, doctor, rulesets
+from repo_kit import bootstrap, doctor, rulesets, settings
 from repo_kit.config import PrBotConfig, RepoConfig, UserConfig
 from repo_kit.doctor import Status
 from repo_kit.files import LOCK_NAME
@@ -42,7 +42,8 @@ def adopted(clone, github, user_config, tmp_path):
     work = clone("work")
     setup = FakeRepoSetup()
     # Applied by hand until `rk github apply` exists; the seeded config keeps every ruleset default.
-    setup.ruleset_list = rulesets.build(RepoConfig())
+    setup.ruleset_list = [{**r, "id": i} for i, r in enumerate(rulesets.build(RepoConfig()), 1)]
+    setup.settings = settings.build(RepoConfig())
     said: list[str] = []
     bootstrap.bootstrap(
         work,
@@ -93,8 +94,10 @@ def test_bootstrap_ends_all_ok(adopted, github, user_config, tmp_path):
     assert not doctor.failed(checks)
     assert find(checks, "managed files:")[0].label.endswith("drifted")
     assert "[OK]   managed files:" in said
-    assert "[OK]   rulesets match: repo-kit: dev, repo-kit: main, repo-kit: tags" in said
-    assert "[SKIP] repo settings" in said
+    assert (
+        "[OK]   repo settings and rulesets match: repo-kit: dev, repo-kit: main, repo-kit: tags"
+        in said
+    )
     assert "Fix the [FAIL] items" not in said
 
 
@@ -254,14 +257,16 @@ def test_ruleset_drift_is_a_warning_naming_the_change(adopted, github, user_conf
         {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
     )
     del setup.ruleset_list[1]
+    setup.settings["allow_squash_merge"] = True
 
     [check] = find(run(work, github, setup, user_config, tmp_path), "rulesets")
 
     assert check.status is Status.WARN
-    assert check.label == "rulesets differ from .repo-kit.toml"
+    assert check.label == "repo settings or rulesets differ from .repo-kit.toml"
+    assert "repo settings: drifted\n  allow_squash_merge:\n    - true\n    + false" in check.detail
     assert "repo-kit: main: missing (would be created)" in check.detail
     assert "    - Integration 5058502 always, RepositoryRole 5 always" in check.detail
-    assert "rk github diff" in check.detail
+    assert "`rk github diff`, then `rk github apply`" in check.detail
 
 
 def test_unreadable_rulesets_are_a_warning(adopted, github, user_config, tmp_path, monkeypatch):
@@ -274,6 +279,6 @@ def test_unreadable_rulesets_are_a_warning(adopted, github, user_config, tmp_pat
     [check] = find(run(work, github, setup, user_config, tmp_path), "rulesets")
     assert (check.status, check.label, check.detail) == (
         Status.WARN,
-        "rulesets: can't read them",
+        "repo settings and rulesets: can't read them",
         "HTTP 403",
     )

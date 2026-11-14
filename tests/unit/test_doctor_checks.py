@@ -67,7 +67,7 @@ def test_render_aligns_status_and_indents_detail():
             Check(Status.OK, "managed files: 9 in sync, 0 drifted"),
             Check(Status.WARN, "1 stale worktree", "a (feat/x: PR #1 merged)\nrk wt done"),
             Check(Status.FAIL, "gth-pr-bot not enrolled"),
-            Check(Status.SKIP, "repo settings"),
+            Check(Status.SKIP, "repo settings and rulesets"),
         ]
     )
     assert text.splitlines() == [
@@ -76,7 +76,7 @@ def test_render_aligns_status_and_indents_detail():
         "       a (feat/x: PR #1 merged)",
         "       rk wt done",
         "[FAIL] gth-pr-bot not enrolled",
-        "[SKIP] repo settings",
+        "[SKIP] repo settings and rulesets",
     ]
 
 
