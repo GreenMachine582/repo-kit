@@ -11,7 +11,6 @@ Done when unit snapshots of generated rulesets and files pass, and repo-kit runs
 
 - [ ] Replace repo-kit's hand-set interim required checks with the generated `pr-checks / …` names, and add the
   `repo-kit: tags` creation rule for `gth-release-bot` before the first release
-- [ ] `rk branches prune`
 - [ ] Dogfood: `.repo-kit.toml`, `.repo-kit.lock`, generated callers replace the hand-written `ci.yml`,
   `keep-prs-current.yml` and `pr-checks-self.yml` (which runs with `managed-files: false` until then)
 - [ ] First release of repo-kit (User approves)

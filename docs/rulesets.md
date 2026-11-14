@@ -78,9 +78,33 @@ again when everything matches writes nothing.
 
 ## `rk branches prune`
 
-Replaces `prune-branches.sh`, with the same rules. A dry run by default; `--apply` deletes. It never deletes:
+Replaces `prune-branches.sh`, with the same rules. It fetches (with `--prune`), then lists what it would delete. A
+dry run by default; `--apply` deletes. Needs an authenticated `gh`: every branch is judged by its PRs.
 
-- `dev` or `main`;
-- the current branch;
-- a branch with an open PR, or with no PR;
-- a branch with commits beyond its merged PR.
+| Where | Deleted when | Why the difference |
+|---|---|---|
+| Local | Its PR merged, no PR for it is open, and its tip is in that PR's head | Anything else may hold work that exists nowhere else |
+| `origin` | Its PR merged **or was closed**, no PR for it is open, and its tip is in that PR's head | A closed PR's head stays on GitHub (`refs/pull/N/head`), so nothing is lost. Stale `release-please--branches--*` branches go this way |
+
+It never deletes:
+
+- the profile's long-lived branches (`dev`, `main`);
+- a branch checked out in any worktree, the main checkout included. A finished worktree is removed with
+  `rk wt done`, which deletes its branch too;
+- a branch with an open PR, or with no PR (`PR none`);
+- a branch with commits beyond every finished PR's head (`PR newer`), or whose PR head isn't in the local clone.
+
+A local branch is deleted with `git branch -D`, since its work is in the merged PR even when the local `dev` hasn't
+caught up. A remote branch is deleted with a plain `git push origin --delete`, never forced. A refused deletion is
+shown as `FAILED` and makes the exit code 1; the rest still goes.
+
+```
+$ rk branches prune
+== local
+would delete  feat/folder-picker (PR merged)
+kept          feat/export (PR open)
+kept          fix/tz (checked out in ~/dev/wt/GreenMachine582-photo-ledger/fix-tz-1a2b3c: use `rk wt done`)
+== origin
+would delete  origin/release-please--branches--main (PR closed)
+Dry run. Rerun with --apply to delete.
+```

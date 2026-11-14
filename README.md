@@ -84,7 +84,7 @@ uv pip install -e ".[dev]"
 | `rk update-prs` | Reconcile every open PR against its base (run by the reusable workflow) |
 | `rk sync [--check]` | Render managed files and blocks; check drift. An existing file is taken over only if it matches |
 | `rk github diff \| apply` | Compare or apply rulesets and repo settings |
-| `rk branches prune [--apply]` | List or delete branches whose PR is merged |
+| `rk branches prune [--apply]` | List, or delete, branches whose PR is merged (or, on origin, closed) |
 | `rk check commits \| commit-msg \| pr-title` | The commit and title rules `pr-checks` runs |
 | `rk configure` | Enrol a repo for `gth-pr-bot`: labels, Client ID variable and key secret |
 | `rk install / bootstrap` | Adopt a repo |
