@@ -14,7 +14,7 @@ every repo shares. Design details are in [docs/](docs/); open work and phases ar
    `json`, `pathlib`, `subprocess`, `argparse`. Dev tools (pytest, ruff) go in the `dev` extra only.
 2. **Merge only.** Nothing in rk rebases, or pushes with `--force` or `--force-with-lease`. The bot never merges a PR.
 3. **Never write a consumer's version or `CHANGELOG.md`.** release-please owns both. `seeded` files are never touched
-   after creation.
+   after creation, with one exception: `rk upgrade` moves the `version` line of `.repo-kit.toml`, and nothing else.
 4. **Never write outside the lock's known paths and new template paths**, and refuse (don't merge) when a `managed`
    file has local edits.
 5. **`rk github apply` never runs in CI**, and always shows the diff and asks first. `diff` is the default.

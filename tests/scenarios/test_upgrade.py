@@ -134,8 +134,21 @@ def test_scenario_18_unreleased_engine_needs_an_explicit_version(repo, templates
     monkeypatch.setattr(repo_kit, "__version__", "0.0.0")
     with pytest.raises(RkError, match="explicitly"):
         run(repo, templates, None)
-    run(repo, templates, "1.3.0")
+    said = run(repo, templates, "1.3.0")
     assert 'version = "1.3.0"' in (repo / ".repo-kit.toml").read_text(encoding="utf-8")
+    assert "warning: this rk is an unreleased build" in said
+
+
+def test_scenario_18_a_released_engine_gives_no_unreleased_warning(repo, templates):
+    assert "unreleased" not in run(repo, templates, "1.1.0")
+
+
+def test_scenario_18_a_bad_current_pin_names_the_config_file(repo, templates):
+    (repo / ".repo-kit.toml").write_bytes(TOML.replace("1.0.0", "1.0").encode())
+    before = snapshot(repo)
+    with pytest.raises(RkError, match=r"current pin in \.repo-kit\.toml, `1\.0`"):
+        run(repo, templates, "1.1.0")
+    assert snapshot(repo) == before
 
 
 def test_scenario_18_a_downgrade_is_refused(repo, templates, monkeypatch):

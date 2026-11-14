@@ -14,6 +14,7 @@ import json
 import re
 import shutil
 import sys
+import tomllib
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -368,7 +369,22 @@ def set_pin_text(text: str, version: str) -> str:
         )
     head, quote, _old, rest = match.groups()
     lines[found[0]] = f"{head}{quote}{version}{quote}{rest}"
-    return "".join(lines)
+    new_text = "".join(lines)
+    # The line scan doesn't know TOML (a multi-line string can hold a `version = …` line), so
+    # check the result parses to the new pin before anything is written.
+    try:
+        parsed = tomllib.loads(new_text)
+    except tomllib.TOMLDecodeError as exc:
+        raise RkError(
+            f"moving the pin would leave {REPO_CONFIG_NAME} invalid ({exc}): "
+            'write the pin as a plain top-level `version = "X.Y.Z"` line, then re-run'
+        ) from None
+    if parsed.get("version") != version:
+        raise RkError(
+            f"couldn't move the pin in {REPO_CONFIG_NAME} safely: the line rk found isn't its "
+            'top-level `version` key. Write it as a plain `version = "X.Y.Z"` line, then re-run'
+        )
+    return new_text
 
 
 def upgrade(
@@ -395,7 +411,13 @@ def upgrade(
         target = engine
     wanted = parse_version(target)
     version = ".".join(str(n) for n in wanted)
-    if engine != files.UNRELEASED and version != engine:
+    if engine == files.UNRELEASED:
+        say(
+            f"warning: this rk is an unreleased build, so the files rendered now are this build's "
+            f"templates, which may differ from release {version}. CI's pinned engine may then "
+            f"report drift: prefer installing rk {version} and upgrading with it."
+        )
+    elif version != engine:
         raise RkError(
             f"can't upgrade to {version}: this rk is {engine}, and the templates come with the "
             f"engine. Install rk {version} first, then run `rk upgrade`."
@@ -404,7 +426,13 @@ def upgrade(
     config = load_repo_config(repo_root)
     if not config.version:
         raise RkError(f"`version` is empty in {REPO_CONFIG_NAME}")
-    current = parse_version(config.version)
+    try:
+        current = parse_version(config.version)
+    except RkError:
+        raise RkError(
+            f"the current pin in {REPO_CONFIG_NAME}, `{config.version}`, isn't a release: "
+            'fix it by hand to `version = "X.Y.Z"`, then re-run'
+        ) from None
     if wanted < current:
         raise RkError(
             f"can't downgrade from {config.version} to {version}: rk upgrade only moves forward"

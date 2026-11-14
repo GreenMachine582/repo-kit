@@ -79,3 +79,19 @@ def test_install_and_bootstrap_print_what_changed(monkeypatch, capsys, argv, run
     assert main(argv) == 0
     assert seen == {"profile": "dev-main"}
     assert "did a thing" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    ("argv", "version"), [(["upgrade", "v1.2.3"], "v1.2.3"), (["upgrade"], None)]
+)
+def test_upgrade_reaches_run_upgrade_and_prints_what_changed(monkeypatch, capsys, argv, version):
+    seen = {}
+
+    def fake(_cwd, got, *, changed):
+        seen["version"] = got
+        changed.append("moved the pin")
+
+    monkeypatch.setattr(bootstrap, "run_upgrade", fake)
+    assert main(argv) == 0
+    assert seen == {"version": version}
+    assert "moved the pin" in capsys.readouterr().out

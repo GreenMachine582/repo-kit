@@ -56,3 +56,17 @@ def test_set_pin_refuses_a_repeated_line():
 def test_set_pin_refuses_an_odd_form():
     with pytest.raises(RkError, match="plain quoted"):
         set_pin_text("version = 1\n", "1.1.0")
+
+
+def test_set_pin_refuses_a_version_line_inside_a_multiline_string():
+    # The only `version = …` line the scan sees is text inside a string, not the key.
+    text = 'notes = """\nversion = "1.0.0"\n"""\n'
+    with pytest.raises(RkError, match="safely"):
+        set_pin_text(text, "1.1.0")
+
+
+def test_set_pin_result_is_checked_to_parse():
+    # A pin line that is fine on its own, in a file the rewrite can't leave valid.
+    text = 'version = "1.0.0"\nbroken = \n'
+    with pytest.raises(RkError, match="invalid"):
+        set_pin_text(text, "1.1.0")

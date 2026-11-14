@@ -44,8 +44,8 @@ Templates ship inside rk, so rk can only upgrade **to its own release**: install
 git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z`), then run `rk upgrade`. Like `install`, it commits nothing.
 
 1. **Target.** No argument means this rk's version. `vX.Y.Z` and `X.Y.Z` are both accepted, and must equal the running
-   rk's version. An unreleased rk (`0.0.0`) accepts any explicit target, and needs one. A target below the current
-   pin (a downgrade) is refused.
+   rk's version. An unreleased rk (`0.0.0`) accepts any explicit target, and needs one; it warns that its templates
+   may differ from that release. A target below the current pin (a downgrade) is refused.
 2. **Checks, before any write.** The sync is planned with the new pin. A managed file with local edits stops here,
    with its diff, and nothing is written. `.repo-kit.toml` must hold exactly one top-level `version = "…"` line.
 3. **Files.** The plan is applied: managed files and blocks that use the version are re-rendered, and templates that
