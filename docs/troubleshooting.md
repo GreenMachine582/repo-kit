@@ -14,8 +14,8 @@ Start with `rk doctor`: it is read-only and names most problems.
 | `rk sync` refuses a file | A managed file was edited by hand | Move the change into repo-kit (or a config value), or mark the file `unmanaged` in `[overrides]` |
 | `pr-checks / managed-files` fails | Same as above, or `version` was changed without `rk upgrade` | Install rk X.Y.Z, then `rk upgrade` (or run `rk sync`), and commit the result |
 | `pr-checks / pr-title` fails | The title is a conventional commit in a `not-conventional` repo | Write the title as a plain sentence |
-| `doctor` reports ruleset or setting drift | Something was changed in GitHub's UI | Read `rk github diff`, then `rk github apply` (admin, never CI) |
-| `doctor` lists a stale worktree | Its branch is gone or its PR has merged | `rk wt done <branch>` |
+| `doctor` reports ruleset or setting drift (Phase 1D) | Something was changed in GitHub's UI | Read `rk github diff`, then `rk github apply` (admin, never CI) |
+| `doctor` lists a stale worktree | Its PR has merged or closed | `rk wt done <branch>` |
 | `doctor` lists an override | A file is `unmanaged` in `[overrides]` | Intended? Keep it. Otherwise remove the override and `rk sync` |
 | A worktree's venv behaves oddly | It's inside OneDrive or another synced folder | Set `worktree_root` outside it in `~/.config/repo-kit/config.toml` |
 | `Fatal error in launcher` on Windows | A stale `rk` elsewhere on `PATH` | `where.exe rk`, then remove that copy or reinstall with `uv tool install` |
