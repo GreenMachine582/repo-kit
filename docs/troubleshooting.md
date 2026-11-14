@@ -12,7 +12,7 @@ Start with `rk doctor`: it is read-only and names most problems.
 | `rk wt sync` refuses | Uncommitted or untracked changes | Commit them, or ask what should happen to them |
 | `rk wt done` refuses | PR not merged or closed, uncommitted or unpushed work, or the worktree belongs to another repo | Finish the work. The overrides lose work: use them only when that's intended |
 | `rk sync` refuses a file | A managed file was edited by hand | Move the change into repo-kit (or a config value), or mark the file `unmanaged` in `[overrides]` |
-| `pr-checks / managed-files` fails | Same as above, or `version` was changed without `rk upgrade` | Run `rk upgrade <version>` or `rk sync`, and commit the result |
+| `pr-checks / managed-files` fails | Same as above, or `version` was changed without `rk upgrade` | Install rk X.Y.Z, then `rk upgrade` (or run `rk sync`), and commit the result |
 | `pr-checks / pr-title` fails | The title is a conventional commit in a `not-conventional` repo | Write the title as a plain sentence |
 | `doctor` reports ruleset or setting drift | Something was changed in GitHub's UI | Read `rk github diff`, then `rk github apply` (admin, never CI) |
 | `doctor` lists a stale worktree | Its branch is gone or its PR has merged | `rk wt done <branch>` |

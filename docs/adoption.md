@@ -9,7 +9,7 @@
 | `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The steps are [below](#install-step-by-step) |
 | `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot`: create the update-prs labels, and set the Client ID variable and private key secret from the user config ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
 | `rk bootstrap` | `install` + `configure` + `doctor`. It reads `gth-pr-bot`'s key first, so a machine that can't enrol the repo stops before anything is written. `doctor` joins when it is built |
-| `rk upgrade [vX.Y.Z]` | Change `version`, run `sync`, print migration notes for every release in between, then show `github diff` |
+| `rk upgrade [vX.Y.Z]` | Move `version` to this rk's release and re-render with the `sync` planner. Templates new in the release are added. Migration notes and `github diff` arrive in Phase 1D. The steps are [below](#upgrade-step-by-step) |
 | `rk doctor` | Read-only health check |
 
 Every write checks tool versions and the remote, backs up what it replaces, and finishes with a list of exactly what
@@ -38,6 +38,27 @@ list is what to review and commit.
 
 `--hooks` (the `commit-msg` hook) arrives with the commit rules in Phase 1D, and says so until then.
 
+## `upgrade`, step by step
+
+Templates ship inside rk, so rk can only upgrade **to its own release**: install rk X.Y.Z first (`uv tool install
+git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z`), then run `rk upgrade`. Like `install`, it commits nothing.
+
+1. **Target.** No argument means this rk's version. `vX.Y.Z` and `X.Y.Z` are both accepted, and must equal the running
+   rk's version. An unreleased rk (`0.0.0`) accepts any explicit target, and needs one. A target below the current
+   pin (a downgrade) is refused.
+2. **Checks, before any write.** The sync is planned with the new pin. A managed file with local edits stops here,
+   with its diff, and nothing is written. `.repo-kit.toml` must hold exactly one top-level `version = "…"` line.
+3. **Files.** The plan is applied: managed files and blocks that use the version are re-rendered, and templates that
+   are new in this release are created and entered in the lock.
+4. **Pin.** The `version` line of `.repo-kit.toml` is rewritten last, so a failed write leaves the old pin and a
+   re-run finishes the job. Comments, other keys and the quote style are kept. The old file is backed up to
+   `.git/repo-kit/backup/<UTC>/`.
+5. **Notices.** Migration notes and `rk github diff` are not built yet (Phase 1D): `upgrade` points to the release
+   notes. Templates renamed or removed in the release are reported as "not a template" and left in place: move or
+   delete them by hand.
+
+Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
+
 ## `doctor`
 
 ```
@@ -63,7 +84,8 @@ Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` c
   the drift check would fail. If Dependabot is enabled for other actions, rk adds an `ignore` entry for
   `GreenMachine582/repo-kit`.
 - Upgrades are one PR per repo, made with `rk upgrade`. Fanning them out automatically on release is a Future item.
-- Breaking changes are `feat!:` with migration notes, which `rk upgrade` prints.
+- Breaking changes are `feat!:` with migration notes. `rk upgrade` points to the release notes now and will print the
+  notes themselves in Phase 1D.
 
 ## Per-repo changes
 

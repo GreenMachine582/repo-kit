@@ -104,7 +104,8 @@ checked out) has nothing to compare and is let through.
 - Never write outside the lock's known paths and new template paths. A target that a symlink would take outside the
   repo, that is a directory, or that isn't UTF-8 text is refused.
 - Never touch `seeded` files after creation. `.repo-kit.toml` is one: `rk install` builds the first config and
-  the sync writes it from `templates/common/repo-kit.toml`.
+  the sync writes it from `templates/common/repo-kit.toml`. `rk upgrade` is the only writer of it afterwards, and
+  only of its `version` line ([adoption.md](adoption.md#upgrade-step-by-step)).
 - `.claude/settings.json` is the one file rk edits without owning any of it: `rk install` adds two keys where
   they are missing ([adoption.md](adoption.md#install-step-by-step)), and it isn't in the lock.
 - Refuse (don't merge) when a `managed` file has local edits. The fix is to move the change upstream into repo-kit,

@@ -9,7 +9,6 @@ after Phase 4, to keep scope in check.
 
 Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one `bootstrap`.
 
-- [ ] `rk upgrade`, added templates only (scenario 18)
 - [ ] `rk doctor` ([docs/adoption.md](docs/adoption.md)), and run it at the end of `bootstrap`
 - [ ] `templates/common/`: the CONTRIBUTING blocks (the `pr-checks` and `release` callers come with Phase 1D)
 - [ ] `templates/extras/use-local-gth/`

@@ -88,7 +88,7 @@ uv pip install -e ".[dev]"
 | `rk check commits \| commit-msg \| pr-title` | The commit and title rules `pr-checks` runs |
 | `rk configure` | Enrol a repo for `gth-pr-bot`: labels, Client ID variable and key secret |
 | `rk install / bootstrap` | Adopt a repo |
-| `rk upgrade [vX.Y.Z]` | Move the one version pin and re-render everything |
+| `rk upgrade [vX.Y.Z]` | Move the version pin to this rk's release and re-render |
 | `rk doctor` | Read-only health check |
 
 ## 📚 Docs
