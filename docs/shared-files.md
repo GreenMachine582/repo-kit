@@ -49,6 +49,8 @@ in a template must therefore be upper case, or written `$name`.
 | `${project_name}` | `[project].name`, else the repo name |
 | `${release_type}` | `[project].release_type` |
 | `${default_base}` | The profile's default branch (`dev`) |
+| `${release_branch}` | The profile's release branch (`main`) |
+| `${back_merge_into}` | `${default_base}` when `[release].back_merge` is true, else empty |
 | `${commit_header_max}` | `[checks].commit_header_max` |
 | `${pr_title_rule}` | The PR-title paragraph for `[checks].pr_title`, one of two fixed texts built in code (`files.PR_TITLE_TEXT`) |
 | `${owner}`, `${repo}` | From `origin` |

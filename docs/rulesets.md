@@ -14,7 +14,7 @@ repo.
 | `repo-kit: dev` ruleset | PR required, merge commit only, required checks, no force-push or deletion |
 | `repo-kit: main` ruleset | Same as `dev` |
 | `repo-kit: tags` ruleset | `v*`: no update or deletion; creation only by `[release].app` |
-| Bypass | Admin, pull-request bypass only (the logged emergency merge) |
+| Bypass | Admin, pull-request bypass only (the logged emergency merge). On `repo-kit: dev` also `[release].app`, always: the back-merge push after a release ([checks-and-release.md](checks-and-release.md#releaseyml)) |
 
 Required checks are listed in [checks-and-release.md](checks-and-release.md#check-names-and-rulesets-stay-in-step).
 

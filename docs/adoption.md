@@ -129,7 +129,9 @@ Moves from `main` only to `dev-main` (Phase 2).
 3. By hand:
    - `next-task` step 5 uses `worktree-start`;
    - `open-pr` targets `dev`, opens drafts, marks them ready, and syncs with `worktree-sync`;
-   - `CLAUDE.md` gets a short prose note pointing to `.repo-kit.toml`.
+   - `CLAUDE.md` gets a short prose note pointing to `.repo-kit.toml`;
+   - delete `.github/workflows/release-please.yml` (the managed `release.yml` replaces it), and set
+     `gth-release-bot`'s new variable and secret ([github-app.md](github-app.md#releases-gth-release-bot)).
 4. Local clones need `git fetch` and a checkout of `dev`.
 
 ### GTH repos
@@ -140,8 +142,10 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
    it refuses with the diff, and the difference is settled by hand (a config value, an `[overrides]` entry, or
    dropping it). The existing manifest is kept (seeded). `scripts/use-local-gth.sh` stays the repo's own until the
    `use-local-gth` extra is built (a Future item).
-2. Delete `scripts/apply-rulesets.sh`, `scripts/prune-branches.sh`, `.github/rulesets/*.json` and
-   `.github/repo-settings.json`.
+2. Delete `scripts/apply-rulesets.sh`, `scripts/prune-branches.sh`, `.github/rulesets/*.json`,
+   `.github/repo-settings.json` and `.github/workflows/release-please.yml` (the managed `release.yml` replaces it).
+   Set `gth-release-bot`'s new variable and secret, and delete the old `RELEASE_APP_*` ones
+   ([github-app.md](github-app.md#releases-gth-release-bot)).
 3. `rk github diff` must show no unexpected changes before `apply`.
 4. The CONTRIBUTING sections become managed blocks. GTH's Branches, Pull requests, Chained PRs and Releasing
    sections are deleted, and `rk sync` appends the blocks that replace them. Repo-specific sections such as
