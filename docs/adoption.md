@@ -136,9 +136,10 @@ Moves from `main` only to `dev-main` (Phase 2).
 
 Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
 
-1. `rk sync` takes over each existing workflow and `use-local-gth.sh` once it matches the render; where one differs,
+1. `rk sync` takes over each existing workflow once it matches the render; where one differs,
    it refuses with the diff, and the difference is settled by hand (a config value, an `[overrides]` entry, or
-   dropping it). The existing manifest is kept (seeded).
+   dropping it). The existing manifest is kept (seeded). `scripts/use-local-gth.sh` stays the repo's own until the
+   `use-local-gth` extra is built (a Future item).
 2. Delete `scripts/apply-rulesets.sh`, `scripts/prune-branches.sh`, `.github/rulesets/*.json` and
    `.github/repo-settings.json`.
 3. `rk github diff` must show no unexpected changes before `apply`.

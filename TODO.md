@@ -5,12 +5,6 @@
 Open work only: remove an item when it ships. Shipped work is in `CHANGELOG.md`. Future items (below) start only
 after Phase 4, to keep scope in check.
 
-## Phase 1C: `sync`, install, configure, upgrade, doctor
-
-Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one `bootstrap`.
-
-- [ ] `templates/extras/use-local-gth/`
-
 ## Phase 1D: `pr-checks`, `release`, `rk github`, `branches prune`, the `dev-main` profile
 
 Done when unit snapshots of generated rulesets and files pass, and repo-kit runs on its own tooling (dogfood).
@@ -60,7 +54,8 @@ Done when `doctor` is all-OK in each, one release is cut per repo through the ne
 worktree links a Core worktree.
 
 - [ ] `local_gth.py` resolution order change in greentechhub-core ([docs/worktrees.md](docs/worktrees.md#-local-gth-mode))
-- [ ] `rk sync` in core, then fastapi, then ui, settling each refused file by hand
+- [ ] `rk sync` in core, then fastapi, then ui, settling each refused file by hand (each keeps its own
+  `use-local-gth.sh`)
 - [ ] Delete the old scripts and ruleset JSON in each ([docs/adoption.md](docs/adoption.md#gth-repos))
 
 ## Phase 4: remaining repos
@@ -81,6 +76,8 @@ Done when each has had one `bootstrap`.
 
 Registered, not planned. Each is picked up on its own, after Phase 4.
 
+- **`use-local-gth` extra:** a managed `scripts/use-local-gth.sh` for GTH consumers, enabled by
+  `[extras].use_local_gth`. Until then each GTH repo keeps its own copy.
 - **Interactive `rk sync --adopt`:** show each difference and take ownership after confirming, if settling refused
   files by hand proves slow.
 - **Renamed and removed templates in `rk upgrade`:** move or delete the file and update the lock.
