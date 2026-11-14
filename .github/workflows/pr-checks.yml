@@ -1,0 +1,117 @@
+# Reusable: the checks every PR must pass, named `pr-checks / <job>`. See docs/checks-and-release.md.
+# Consumers call it from a thin caller pinned to @v<version>, passing the same version as `ref`. It needs no
+# secrets and reads only: each job checks out the consumer into repo/ and repo-kit at `ref` into repo-kit/, then
+# runs rk from source (standard library only, so nothing is installed).
+name: pr-checks
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: The repo-kit tag or commit to run, such as v1.4.0
+        required: true
+        type: string
+      managed-files:
+        description: Run the managed-files job (off only in repo-kit itself, until it adopts its own files)
+        required: false
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  commits:
+    name: commits
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Every branch, so the PR's live base is there as origin/<base>, whatever it is (dev, or a parent PR).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          path: repo
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: GreenMachine582/repo-kit
+          ref: ${{ inputs.ref }}
+          path: repo-kit
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Every commit is a conventional commit (merge commits are skipped)
+        working-directory: repo
+        env:
+          PYTHONPATH: ${{ github.workspace }}/repo-kit/src
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! python -m repo_kit check commits "origin/${BASE}..${HEAD_SHA}"; then
+            echo "Reword the commits listed in the log above. See CONTRIBUTING.md." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+  pr-title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Only for `.repo-kit.toml`, which sets `[checks].pr_title`.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: GreenMachine582/repo-kit
+          ref: ${{ inputs.ref }}
+          path: repo-kit
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: The PR title follows the repo's title rule
+        working-directory: repo
+        env:
+          PYTHONPATH: ${{ github.workspace }}/repo-kit/src
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if ! python -m repo_kit check pr-title "$TITLE"; then
+            echo "Edit the PR title (the log above says why): this check re-runs on the edit." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+  managed-files:
+    name: managed-files
+    if: inputs.managed-files
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # The PR merged into its base (GitHub's default ref), which is what lands if it merges.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: repo
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: GreenMachine582/repo-kit
+          ref: ${{ inputs.ref }}
+          path: repo-kit
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: The managed files match the pinned repo-kit
+        working-directory: repo
+        env:
+          PYTHONPATH: ${{ github.workspace }}/repo-kit/src
+        run: |
+          if ! python -m repo_kit sync --check; then
+            echo "Run \`rk sync\` (or \`rk upgrade\`) and commit the result. See repo-kit's docs/troubleshooting.md." >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
