@@ -1,0 +1,127 @@
+# Reusable: cut releases with release-please as gth-release-bot, then merge the release branch back into
+# the default base. See docs/checks-and-release.md.
+# Consumers call it from a thin caller pinned to @v<version>. It runs no rk code, so nothing else is checked out.
+name: release
+
+on:
+  workflow_call:
+    inputs:
+      client-id:
+        description: gth-release-bot's Client ID
+        required: true
+        type: string
+      target-branch:
+        description: The branch releases are cut from, such as main
+        required: true
+        type: string
+      back-merge-into:
+        description: The branch to merge the release branch into after a release, such as dev. Empty skips it
+        required: false
+        type: string
+        default: ""
+    secrets:
+      RELEASE_BOT_PRIVATE_KEY:
+        description: gth-release-bot's private key
+        required: true
+
+permissions: {}
+
+# A release run is never cut off half-way: a queued one waits.
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    # Every write goes through the App token: its release PR triggers CI, and it may create v* tags.
+    permissions:
+      contents: read
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - name: Check gth-release-bot is set up
+        if: inputs.client-id == ''
+        run: |
+          echo "::error::GTH_RELEASE_BOT_CLIENT_ID isn't set: install gth-release-bot and set its Client ID and key (repo-kit's docs/github-app.md)"
+          exit 1
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ inputs.client-id }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # Release PRs live on the release branch, not the repo's default branch (dev).
+          target-branch: ${{ inputs.target-branch }}
+
+  back-merge:
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true' && inputs.back-merge-into != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ inputs.client-id }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.back-merge-into }}
+          fetch-depth: 0
+          persist-credentials: false
+      # A merge commit only: never a rebase or a forced push. gth-release-bot bypasses the dev ruleset for this.
+      - name: Merge the release branch back
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          APP_SLUG: ${{ steps.token.outputs.app-slug }}
+          FROM: ${{ inputs.target-branch }}
+          INTO: ${{ inputs.back-merge-into }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          bot_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
+          gh auth setup-git
+
+          recover() {
+            {
+              echo "### Back-merge failed"
+              echo "$1"
+              echo
+              echo "Open a PR from \`$FROM\` to \`$INTO\` and merge it with a merge commit, so \`$INTO\` carries $TAG."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::$1"
+            exit 1
+          }
+
+          # Someone may merge into $INTO at the same moment: fetch, merge again and retry the push.
+          for attempt in 1 2 3; do
+            git fetch --quiet origin "$FROM" "$INTO"
+            git checkout --quiet -B "$INTO" "origin/$INTO"
+            if git merge-base --is-ancestor "origin/$FROM" HEAD; then
+              echo "$INTO already contains $FROM: nothing to merge"
+              exit 0
+            fi
+            if ! git merge --no-edit "origin/$FROM"; then
+              git merge --abort
+              recover "\`$FROM\` doesn't merge cleanly into \`$INTO\`."
+            fi
+            if git push origin "HEAD:$INTO"; then
+              echo "Merged $FROM ($TAG) into $INTO"
+              exit 0
+            fi
+            echo "Push to $INTO refused (attempt $attempt); retrying"
+          done
+          recover "The push to \`$INTO\` was refused 3 times. Check that gth-release-bot bypasses the \`$INTO\` ruleset."
