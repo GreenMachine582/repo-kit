@@ -8,7 +8,7 @@ into the repo, and records each one in **`.repo-kit.lock`** (committed).
 ```
 templates/common/                 every repo: callers, .gitignore block
 templates/profiles/dev-main/      dev + main, back-merge, the CONTRIBUTING blocks
-templates/extras/use-local-gth/   opt-in per repo
+templates/extras/use-local-gth/   opt-in per repo (Future: no templates yet)
 ```
 
 ## Layers and manifests
@@ -59,7 +59,7 @@ Anything conditional is a profile directory or built in code.
 
 | Mode | Behaviour | Used for |
 |---|---|---|
-| `managed` | Fully owned by repo-kit; rewritten on every sync. Edited by hand → sync refuses and shows the diff, and the drift check fails | Caller workflows, `release-please-config.json`, `use-local-gth.sh` |
+| `managed` | Fully owned by repo-kit; rewritten on every sync. Edited by hand → sync refuses and shows the diff, and the drift check fails | Caller workflows, `release-please-config.json` (and `use-local-gth.sh`, a Future item) |
 | `block` | Only the text between `# >>> repo-kit: <name>` and `# <<< repo-kit: <name>` markers is owned; the rest of the file is the consumer's. A file without the markers gets the block appended | `.gitignore` lines, `CONTRIBUTING.md` sections (Branches, Pull requests, Several PRs at once, Releasing) |
 | `seeded` | Created once if missing, never touched again | `.release-please-manifest.json`, `CHANGELOG.md` stub, `.repo-kit.toml` itself |
 

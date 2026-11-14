@@ -22,7 +22,7 @@ Shared logic goes to the cheapest place that keeps one copy:
 | CI logic (checks, release, PR updates) | Reusable workflows in repo-kit | A thin caller workflow, generated |
 | Scripts (`apply-rulesets.sh`, `prune-branches.sh`) | `rk` commands | Nothing |
 | GitHub-side config (rulesets, repo settings) | Built by `rk` from the profile and config, applied by API | Nothing; drift reported by `doctor` |
-| Files that must physically be in the repo (`release-please-config.json`, `use-local-gth.sh`, `.gitignore` lines, CONTRIBUTING sections) | Templates in repo-kit | The rendered file, tracked in `.repo-kit.lock` |
+| Files that must physically be in the repo (`release-please-config.json`, `.gitignore` lines, CONTRIBUTING sections; `use-local-gth.sh` is a Future item) | Templates in repo-kit | The rendered file, tracked in `.repo-kit.lock` |
 | Repo-specific state (`CHANGELOG.md`, release manifest, app code) | The consumer | Never touched after creation |
 
 ## Engine
@@ -66,7 +66,7 @@ repo-kit/
 ├── templates/
 │   ├── common/                   # every repo: callers, .gitignore block
 │   ├── profiles/dev-main/        # dev + main, back-merge, the CONTRIBUTING blocks (every repo)
-│   └── extras/use-local-gth/     # opt-in per repo
+│   └── extras/use-local-gth/     # opt-in per repo (Future: no templates yet)
 ├── tests/{unit,scenarios}/
 ├── docs/
 ├── pyproject.toml  CHANGELOG.md  README.md

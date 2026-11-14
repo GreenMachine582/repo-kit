@@ -84,7 +84,8 @@ in this order:
 3. `GTH_ROOT/<pkg>`.
 4. The sibling of the **main** checkout, found through `git rev-parse --git-common-dir`.
 
-The consumer-side wrapper `scripts/use-local-gth.sh` is identical in every GTH consumer, so it is a managed file, from
-the `extras/use-local-gth` template, enabled by `[extras].use_local_gth`.
+The consumer-side wrapper `scripts/use-local-gth.sh` is identical in every GTH consumer. Making it a managed file,
+from an `extras/use-local-gth` template enabled by `[extras].use_local_gth`, is a Future item
+([TODO.md](../TODO.md#-future)); until then each GTH repo keeps its own copy, and `--link` works without it.
 
 CI and production never use local GTH mode, and `wt done` undoes the links.
