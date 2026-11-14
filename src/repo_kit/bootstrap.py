@@ -124,7 +124,7 @@ def configure(
         f"rk can't check the App is installed on this repo: confirm it at {INSTALLATIONS_URL}, "
         "then run the update-prs caller with dry-run ticked to confirm the credentials work."
     )
-    say("`rk github apply` (rulesets and settings) is not part of configure yet (Phase 1D).")
+    say("Rulesets and repo settings aren't part of configure: run `rk github apply` (needs admin).")
 
 
 def run_configure(cwd: Path, *, changed: list[str], dry_run: bool, replace_key: bool) -> None:
@@ -282,8 +282,8 @@ def create_base_branch(
     changed.append(f"created `{base}` on origin from `{release}`")
     git.fetch(repo_root)
     say(
-        f"`{base}` isn't the default branch yet: that is a repo setting, which "
-        "`rk github apply` will set (Phase 1D). Until then, change it in the repo's settings."
+        f"`{base}` isn't the default branch yet: run `rk github apply` (needs admin rights) to "
+        "set it, with the rulesets and the other repo settings."
     )
 
 
@@ -320,7 +320,13 @@ def ask(question: str) -> bool:
     if not sys.stdin.isatty():
         print(f"{question} Not asked: there is no terminal to answer on.")
         return False
-    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+    try:
+        answer = input(f"{question} [y/N] ")
+    except EOFError:
+        # Windows reports the null device as a terminal, so isatty() alone doesn't catch it.
+        print("\nNo answer: nothing to read the answer from.")
+        return False
+    return answer.strip().lower() in ("y", "yes")
 
 
 def install(
@@ -510,8 +516,9 @@ def upgrade(
         changed.append(f"backed up the old {REPO_CONFIG_NAME} to {backup}")
     say(
         "Migration notes aren't built yet (Phase 1D): see the release notes at "
-        "https://github.com/GreenMachine582/repo-kit/releases. `rk github diff` also comes in "
-        "Phase 1D. Renamed or removed templates are left in place: move them by hand."
+        "https://github.com/GreenMachine582/repo-kit/releases. Run `rk github diff` too: the "
+        "release may change the rulesets or repo settings. Renamed or removed templates are left "
+        "in place: move them by hand."
     )
 
 

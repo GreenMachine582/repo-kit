@@ -174,6 +174,16 @@ class RepoSetup(Protocol):
         """The repo's own rulesets (not inherited ones), each in full detail."""
         ...
 
+    def create_ruleset(self, payload: dict[str, Any]) -> None: ...
+
+    def update_ruleset(self, ruleset_id: int, payload: dict[str, Any]) -> None: ...
+
+    def repo_settings(self) -> dict[str, Any]:
+        """`GET /repos/{o}/{r}`: some settings are only there for an admin."""
+        ...
+
+    def update_repo_settings(self, values: dict[str, Any]) -> None: ...
+
     def set_secret(self, name: str, value: str) -> None:
         """Store an Actions secret. The value goes to `gh` on stdin, never as an argument."""
         ...
@@ -212,11 +222,11 @@ class GhCliGitHub:
             raise GitHubError(f"`gh {' '.join(args)}` failed:\n{proc.stderr.strip()}")
         return proc.stdout
 
-    def _run(self, *args: str) -> subprocess.CompletedProcess[str]:
-        return self._gh("api", *args)
+    def _run(self, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
+        return self._gh("api", *args, stdin=stdin)
 
-    def _api(self, *args: str, allow_404: bool = False) -> Any:
-        proc = self._run(*args)
+    def _api(self, *args: str, allow_404: bool = False, stdin: str | None = None) -> Any:
+        proc = self._run(*args, stdin=stdin)
         if proc.returncode != 0:
             if allow_404 and "HTTP 404" in proc.stderr:
                 return None
@@ -339,6 +349,23 @@ class GhCliGitHub:
         # The list leaves out rules and bypass actors, so each one is read again in full.
         listed = self._paged(f"{self._repo}/rulesets?includes_parents=false")
         return [self._api(f"{self._repo}/rulesets/{item['id']}") for item in listed]
+
+    def _send(self, method: str, path: str, payload: dict[str, Any]) -> None:
+        # The body goes on stdin as JSON, so booleans, numbers and lists keep their types.
+        self._api("-X", method, path, "--input", "-", stdin=json.dumps(payload))
+
+    def create_ruleset(self, payload: dict[str, Any]) -> None:
+        self._send("POST", f"{self._repo}/rulesets", payload)
+
+    def update_ruleset(self, ruleset_id: int, payload: dict[str, Any]) -> None:
+        self._send("PUT", f"{self._repo}/rulesets/{ruleset_id}", payload)
+
+    def repo_settings(self) -> dict[str, Any]:
+        data = self._api(self._repo)
+        return data if isinstance(data, dict) else {}
+
+    def update_repo_settings(self, values: dict[str, Any]) -> None:
+        self._send("PATCH", self._repo, values)
 
     def set_secret(self, name: str, value: str) -> None:
         # Without --body, gh reads the value from stdin: it never appears in a process listing.

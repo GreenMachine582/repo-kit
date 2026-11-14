@@ -1,11 +1,10 @@
 import pytest
 
-from repo_kit import __version__, bootstrap, checks, doctor, reconcile, rulesets
+from repo_kit import __version__, bootstrap, checks, doctor, github_config, reconcile
 from repo_kit.cli import NOT_IMPLEMENTED, main
 from repo_kit.reconcile import Action, Report, Row
 
 COMMANDS = [
-    ["github", "apply"],
     ["branches", "prune", "--apply"],
 ]
 
@@ -129,8 +128,21 @@ def test_install_passes_hooks_through(monkeypatch, argv, hooks):
     assert seen == {"hooks": hooks}
 
 
-@pytest.mark.parametrize("argv", [["github"], ["github", "diff"]])
+@pytest.mark.parametrize(
+    ("argv", "applies"),
+    [(["github"], False), (["github", "diff"], False), (["github", "apply"], True)],
+)
 @pytest.mark.parametrize("code", [0, 1])
-def test_github_and_github_diff_run_the_diff(monkeypatch, argv, code):
-    monkeypatch.setattr(rulesets, "run_github_diff", lambda _cwd: code)
+def test_github_commands_reach_run_github(monkeypatch, capsys, argv, applies, code):
+    seen = {}
+
+    def fake(_cwd, *, apply_changes, changed=None):
+        seen["apply"] = apply_changes
+        if changed is not None:
+            changed.append("created ruleset `repo-kit: tags`")
+        return code
+
+    monkeypatch.setattr(github_config, "run_github", fake)
     assert main(argv) == code
+    assert seen == {"apply": applies}
+    assert ("created ruleset" in capsys.readouterr().out) is applies

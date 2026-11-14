@@ -19,6 +19,7 @@ class FakeRepoSetup:
         self.vars: dict[str, str] = {}
         self.secrets: dict[str, str] = {}
         self.ruleset_list: list[dict[str, Any]] = []
+        self.settings: dict[str, Any] = {}
         self.writes: list[str] = []
 
     def labels(self) -> list[str]:
@@ -44,6 +45,23 @@ class FakeRepoSetup:
 
     def rulesets(self) -> list[dict[str, Any]]:
         return copy.deepcopy(self.ruleset_list)
+
+    def create_ruleset(self, payload: dict[str, Any]) -> None:
+        self.writes.append(f"ruleset create {payload['name']}")
+        new_id = max((r.get("id", 0) for r in self.ruleset_list), default=0) + 1
+        self.ruleset_list.append({**copy.deepcopy(payload), "id": new_id})
+
+    def update_ruleset(self, ruleset_id: int, payload: dict[str, Any]) -> None:
+        self.writes.append(f"ruleset update {payload['name']}")
+        [index] = [i for i, r in enumerate(self.ruleset_list) if r.get("id") == ruleset_id]
+        self.ruleset_list[index] = {**copy.deepcopy(payload), "id": ruleset_id}
+
+    def repo_settings(self) -> dict[str, Any]:
+        return dict(self.settings)
+
+    def update_repo_settings(self, values: dict[str, Any]) -> None:
+        self.writes.append(f"settings {','.join(values)}")
+        self.settings.update(values)
 
 
 class FakeGitHub:

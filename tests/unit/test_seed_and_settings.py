@@ -10,6 +10,7 @@ import pytest
 import repo_kit
 from repo_kit.bootstrap import (
     SETTINGS_PATH,
+    ask,
     detect_release_type,
     plan_plugin_settings,
     seed_config,
@@ -103,3 +104,28 @@ def test_the_manifest_version_comes_from_the_project_file(tmp_path, name, text, 
 
 def test_without_a_project_file_the_manifest_starts_at_0_0_0(tmp_path):
     assert project_version(tmp_path) == "0.0.0"
+
+
+class _Terminal:
+    def isatty(self) -> bool:
+        return True
+
+
+def test_ask_is_no_when_a_terminal_gives_no_answer(monkeypatch, capsys):
+    # Windows reports the null device as a terminal; reading it gives end-of-file.
+    monkeypatch.setattr("sys.stdin", _Terminal())
+
+    def eof(_prompt):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", eof)
+    assert ask("Apply?") is False
+    assert "No answer" in capsys.readouterr().out
+
+
+def test_ask_is_yes_only_for_yes(monkeypatch):
+    monkeypatch.setattr("sys.stdin", _Terminal())
+    monkeypatch.setattr("builtins.input", lambda _prompt: " Y ")
+    assert ask("Apply?") is True
+    monkeypatch.setattr("builtins.input", lambda _prompt: "sure")
+    assert ask("Apply?") is False
