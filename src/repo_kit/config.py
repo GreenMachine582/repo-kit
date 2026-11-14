@@ -57,6 +57,8 @@ class ChecksConfig:
 @dataclass(frozen=True)
 class ReleaseConfig:
     app: str = "gth-release-bot"
+    # The App's numeric ID, for ruleset bypass lists: a private App can't be looked up by name.
+    app_id: int = 5058502
     back_merge: bool = True
 
 
