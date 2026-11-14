@@ -9,9 +9,6 @@ after Phase 4, to keep scope in check.
 
 Done when unit snapshots of generated rulesets and files pass, and repo-kit runs on its own tooling (dogfood).
 
-- [ ] Replace repo-kit's hand-set interim required checks with the generated ones: `rk github diff` in repo-kit
-  shows the swap (the `pr-checks / …` names added, `ci.yml`'s jobs kept through `[checks].required`, every check
-  pinned to GitHub Actions) and the `repo-kit: tags` creation rule for `gth-release-bot`. Then `rk github apply`
 - [ ] First release of repo-kit (User approves): set `GTH_RELEASE_BOT_CLIENT_ID` and `GTH_RELEASE_BOT_PRIVATE_KEY`,
   then a `release: …` PR from `dev` to `main`. `release-self.yml` runs release-please. If it picks a version other
   than `0.1.0`, move the pin with `rk upgrade`
