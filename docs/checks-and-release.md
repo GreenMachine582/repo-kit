@@ -122,13 +122,27 @@ may create `v*` tags. Runs in a repo queue one behind another and are never canc
    - On a conflict, or a push still refused, the run fails and its summary says how to recover: open a PR from `main`
      to `dev` and merge it with a merge commit.
 
-The config is rendered from `[project]`, so the version-bump rules are identical in every repo:
+### `release-please-config.json` and the manifest
+
+`dev-main` repos get both from `rk sync`:
+
+- **`release-please-config.json`** is managed. Only `release-type` (`[project].release_type`) and `package-name`
+  (`[project].name`) vary, so the version-bump rules are identical in every repo. The text is the config GTH repos
+  already use, so `rk sync` takes theirs over unchanged.
+- **`.release-please-manifest.json`** is seeded: created once, with the version in `pyproject.toml`
+  (`[project].version`) or `package.json`, else `0.0.0`, and release-please's from then on. A repo that already has
+  one keeps it.
+
+`CHANGELOG.md` is never written by rk: release-please creates it on the first release.
 
 | Commit | Effect |
 |---|---|
 | `feat` | Minor |
-| `fix`, `perf`, `build` | Patch |
+| `fix`, `perf`, `build`, `revert` | Patch |
 | Breaking (`!` or `BREAKING CHANGE:`) | Major, or minor below 1.0 |
 | `docs`, `test`, `refactor`, `ci`, `chore`, `style` | Hidden from the changelog |
+
+A unit test keeps the changelog sections in step with the commit types in `checks.TYPES` and the table in the
+CONTRIBUTING block.
 
 Tags are `vX.Y.Z`, never moved, created only by `gth-release-bot`.

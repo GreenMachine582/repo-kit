@@ -352,3 +352,25 @@ def test_a_symlink_never_takes_a_write_outside_the_repo(repo, templates, tmp_pat
 
     assert list(outside.iterdir()) == []
     assert "outside the repo" in sync(repo, templates, check=True)[2]
+
+
+def test_the_release_manifest_is_seeded_from_the_project_version(tmp_path, repo):
+    root = tmp_path / "manifest-templates"
+    (root / "common").mkdir(parents=True)
+    (root / "common" / MANIFEST_NAME).write_text(
+        '[files.".release-please-manifest.json"]\nmode = "seeded"\nsource = "m.json"\n',
+        encoding="utf-8",
+    )
+    (root / "common" / "m.json").write_text('{\n  ".": "${current_version}"\n}\n', encoding="utf-8")
+    pyproject = repo / "pyproject.toml"
+    pyproject.write_text('[project]\nname = "demo"\nversion = "0.5.0"\n', encoding="utf-8")
+
+    assert sync(repo, root)[0] == 0
+    assert json.loads(read(repo, ".release-please-manifest.json")) == {".": "0.5.0"}
+
+    # Seeded: once it exists it's release-please's, whatever the project file says next.
+    pyproject.write_text('[project]\nname = "demo"\nversion = "0.6.0"\n', encoding="utf-8")
+    code, changed, _ = sync(repo, root)
+    assert code == 0
+    assert ".release-please-manifest.json" not in changed
+    assert json.loads(read(repo, ".release-please-manifest.json")) == {".": "0.5.0"}

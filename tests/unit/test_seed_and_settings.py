@@ -16,7 +16,7 @@ from repo_kit.bootstrap import (
 )
 from repo_kit.config import parse_repo_config_text
 from repo_kit.errors import RkError
-from repo_kit.files import render, template_variables, templates_root
+from repo_kit.files import project_version, render, template_variables, templates_root
 
 
 @pytest.mark.parametrize(
@@ -81,3 +81,25 @@ def test_settings_that_are_a_directory_are_refused(tmp_path):
     (tmp_path / SETTINGS_PATH).mkdir(parents=True)
     with pytest.raises(RkError, match="is a directory"):
         plan_plugin_settings(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("name", "text", "expected"),
+    [
+        ("pyproject.toml", '[project]\nversion = "1.4.2"\n', "1.4.2"),
+        ("pyproject.toml", '[project]\nversion = "2.0.0-rc.1"\n', "2.0.0-rc.1"),
+        ("pyproject.toml", '[project]\ndynamic = ["version"]\n', "0.0.0"),
+        ("pyproject.toml", '[project]\nversion = "1.2"\n', "0.0.0"),
+        ("pyproject.toml", "not toml [", "0.0.0"),
+        ("package.json", '{"version": "3.1.0"}', "3.1.0"),
+        ("package.json", '{"version": "a\\"b"}', "0.0.0"),
+        ("package.json", "[]", "0.0.0"),
+    ],
+)
+def test_the_manifest_version_comes_from_the_project_file(tmp_path, name, text, expected):
+    (tmp_path / name).write_text(text, encoding="utf-8")
+    assert project_version(tmp_path) == expected
+
+
+def test_without_a_project_file_the_manifest_starts_at_0_0_0(tmp_path):
+    assert project_version(tmp_path) == "0.0.0"

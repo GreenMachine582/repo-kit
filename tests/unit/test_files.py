@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import pytest
 
-from repo_kit.checks import REQUIRED_CHECKS
-from repo_kit.config import ChecksConfig, ExtrasConfig, ReleaseConfig, RepoConfig
+from repo_kit.checks import REQUIRED_CHECKS, TYPES
+from repo_kit.config import ChecksConfig, ExtrasConfig, ProjectConfig, ReleaseConfig, RepoConfig
 from repo_kit.files import (
     LOCK_NAME,
     MANIFEST_NAME,
@@ -212,7 +213,7 @@ def test_every_real_manifest_matches_its_files():
 
 def test_every_real_template_renders():
     config = RepoConfig(version="1.2.3", extras=ExtrasConfig(use_local_gth=True))
-    variables = template_variables(config, "o", "r")
+    variables = template_variables(config, "o", "r") | {"current_version": "1.0.0"}
     for template in collect_templates(templates_root(), config):
         for source in template.sources:
             rendered = render(source.read_text(encoding="utf-8"), variables, template.path)
@@ -235,7 +236,7 @@ def test_the_update_prs_caller_pins_one_version():
 
 def render_caller(path: str, config: RepoConfig | None = None) -> str:
     config = config or RepoConfig(version="1.2.3")
-    variables = template_variables(config, "o", "r")
+    variables = template_variables(config, "o", "r") | {"current_version": "1.2.3"}
     [caller] = [t for t in collect_templates(templates_root(), config) if t.path == path]
     [source] = caller.sources
     return render(source.read_text(encoding="utf-8"), variables, caller.path)
@@ -276,3 +277,29 @@ def test_the_required_check_names_match_the_workflows():
     )
     names = tuple(f"{outer} / {inner}" for outer in job_ids(caller) for inner in job_ids(reusable))
     assert names == REQUIRED_CHECKS
+
+
+def test_the_release_please_config_is_json_for_this_project():
+    config = RepoConfig(version="1.2.3", project=ProjectConfig(name="demo", release_type="node"))
+    data = json.loads(render_caller("release-please-config.json", config))
+    assert data["release-type"] == "node"
+    assert data["packages"] == {".": {"package-name": "demo", "changelog-path": "CHANGELOG.md"}}
+    assert data["include-v-in-tag"] is True
+    assert data["bump-minor-pre-major"] is True
+
+
+def test_the_changelog_sections_match_the_commit_types_and_contributing():
+    data = json.loads(render_caller("release-please-config.json"))
+    sections = {s["type"]: s["hidden"] for s in data["changelog-sections"]}
+    assert set(sections) == set(TYPES)
+    table = (templates_root() / "profiles/dev-main/contributing/pull-requests.md").read_text(
+        encoding="utf-8"
+    )
+    in_changelog = set(re.findall(r"^\| `([a-z]+)` \|[^|]*\| Yes", table, flags=re.MULTILINE))
+    assert in_changelog == {"feat", "fix", "perf", "build", "revert"}
+    assert {kind for kind, hidden in sections.items() if not hidden} == in_changelog
+
+
+def test_the_release_manifest_is_seeded_with_the_current_version():
+    text = render_caller(".release-please-manifest.json")
+    assert json.loads(text) == {".": "1.2.3"}
