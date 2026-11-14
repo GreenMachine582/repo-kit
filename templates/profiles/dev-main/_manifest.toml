@@ -11,3 +11,14 @@ blocks = { branches = "contributing/branches.md", pull-requests = "contributing/
 # The release branch and the back-merge belong to this profile.
 [files.".github/workflows/release.yml"]
 mode = "managed"
+
+# release-please's rules, the same in every repo. The changelog sections match checks.TYPES and the
+# CONTRIBUTING table (a unit test keeps them in step).
+[files."release-please-config.json"]
+mode = "managed"
+source = "release-please.json"
+
+# The last released version: seeded from the project file, then release-please's to move.
+[files.".release-please-manifest.json"]
+mode = "seeded"
+source = "release-please-manifest.json"
