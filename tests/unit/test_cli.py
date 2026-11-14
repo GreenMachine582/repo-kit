@@ -1,11 +1,10 @@
 import pytest
 
-from repo_kit import __version__, bootstrap, checks, doctor, reconcile
+from repo_kit import __version__, bootstrap, checks, doctor, reconcile, rulesets
 from repo_kit.cli import NOT_IMPLEMENTED, main
 from repo_kit.reconcile import Action, Report, Row
 
 COMMANDS = [
-    ["github", "diff"],
     ["github", "apply"],
     ["branches", "prune", "--apply"],
 ]
@@ -128,3 +127,10 @@ def test_install_passes_hooks_through(monkeypatch, argv, hooks):
     monkeypatch.setattr(bootstrap, "run_install", fake)
     assert main(argv) == 0
     assert seen == {"hooks": hooks}
+
+
+@pytest.mark.parametrize("argv", [["github"], ["github", "diff"]])
+@pytest.mark.parametrize("code", [0, 1])
+def test_github_and_github_diff_run_the_diff(monkeypatch, argv, code):
+    monkeypatch.setattr(rulesets, "run_github_diff", lambda _cwd: code)
+    assert main(argv) == code
