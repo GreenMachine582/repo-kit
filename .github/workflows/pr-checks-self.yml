@@ -1,5 +1,7 @@
-# repo-kit's own caller of pr-checks, written by hand until Phase 1D generates it (dogfood). It runs the PR's own
-# rk: pr-checks holds no secrets and only reads, so that's safe, and every PR tests the reusable workflow.
+# repo-kit's own caller of pr-checks, written by hand: in repo-kit, .github/workflows/pr-checks.yml is the reusable
+# workflow itself (see the overrides in .repo-kit.toml). It runs the PR's own rk: pr-checks holds no secrets and only
+# reads, so that's safe, and every PR tests the reusable workflow, including managed-files against repo-kit's own
+# managed files.
 name: pr-checks
 
 on:
@@ -20,5 +22,3 @@ jobs:
     uses: ./.github/workflows/pr-checks.yml # zizmor: ignore[self-repository]
     with:
       ref: ${{ github.event.pull_request.head.sha }}
-      # repo-kit has no .repo-kit.toml until it adopts its own files (TODO: dogfood).
-      managed-files: false
