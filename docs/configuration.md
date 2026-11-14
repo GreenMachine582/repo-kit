@@ -25,7 +25,7 @@ pr_title = "not-conventional"     # or "conventional" (for squash-merge repos); 
 commit_header_max = 100
 
 [release]
-app = "gth-release-bot"           # the only actor allowed to create v* tags
+app = "gth-release-bot"           # the only actor allowed to create v* tags; bypasses dev for the back-merge
 back_merge = true                 # merge main back into dev after a release (dev-main only)
 
 [update_prs]

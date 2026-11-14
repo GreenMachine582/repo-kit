@@ -13,8 +13,9 @@ Pushes and PRs made with an App token trigger CI. GitHub doesn't run CI on PRs o
 
 ## Rules
 
-- Neither App is on a bypass list for `dev` or `main`.
-- Required checks are never bypassed by either App.
+- `gth-pr-bot` is on no bypass list. `gth-release-bot` bypasses the `dev` ruleset only, to push the back-merge of
+  `main` after a release ([checks-and-release.md](checks-and-release.md#releaseyml)). Neither App bypasses `main`.
+- Apart from that back-merge, required checks are never bypassed by either App.
 - `gth-release-bot` is the only actor allowed to create `v*` tags (the tags ruleset).
 - Neither App ever merges a PR.
 
@@ -52,8 +53,21 @@ A User-only step, done in the GitHub UI:
 3. Run the repo's update-prs caller from the Actions tab with dry-run ticked. A run that lists the open PRs proves the
    key, Client ID and installation all work.
 
-`rk github apply` (rulesets and settings) is not part of `configure` until Phase 1D, and `gth-release-bot`'s
-credentials are still set by hand.
+`rk github apply` (rulesets and settings) is not part of `configure` until Phase 1D.
+
+## Releases: `gth-release-bot`
+
+The release caller reads the variable `GTH_RELEASE_BOT_CLIENT_ID` and the secret `GTH_RELEASE_BOT_PRIVATE_KEY`.
+Until `rk configure` covers this App (a Future item), set them by hand in each repo that has it installed:
+
+```sh
+gh variable set GTH_RELEASE_BOT_CLIENT_ID --body "Iv23..."
+gh secret set GTH_RELEASE_BOT_PRIVATE_KEY < ~/.ssh/gth-release-bot.pem
+```
+
+GTH's own workflows used `RELEASE_APP_CLIENT_ID` (or `RELEASE_APP_ID`) and `RELEASE_APP_PRIVATE_KEY`. Delete those
+once the managed `release.yml` replaces `release-please.yml`. Without the new names, a push to `main` fails the
+release run with a pointer here, rather than skipping it quietly.
 
 ### Why one key, kept to selected repos
 

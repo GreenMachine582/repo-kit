@@ -96,6 +96,9 @@ def template_variables(config: RepoConfig, owner: str, repo: str) -> dict[str, s
         "project_name": config.project.name or repo,
         "release_type": config.project.release_type,
         "default_base": config.default_base,
+        "release_branch": config.release_branch,
+        # Where `release.yml` merges a release back to; empty turns the back-merge off.
+        "back_merge_into": config.default_base if config.release.back_merge else "",
         "owner": owner,
         "repo": repo,
     }

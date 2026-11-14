@@ -82,12 +82,45 @@ from the repo's own CI.
 
 ## `release.yml`
 
-Wraps the release-please action:
+Wraps the release-please action. `dev-main` repos get this caller, managed by `rk sync`
+(`.github/workflows/release.yml`):
 
-1. Mint a `gth-release-bot` token, so CI runs on the release PR.
-2. Run release-please with the consumer's `release-please-config.json` (managed) and `.release-please-manifest.json`
-   (seeded, never overwritten, so adoption keeps the current version).
-3. On release, with the `dev-main` profile and `back_merge = true`: merge `main` back into `dev` with a merge commit.
+```yaml
+on:
+  push:
+    branches: [main]
+jobs:
+  release:
+    uses: GreenMachine582/repo-kit/.github/workflows/release.yml@v1.4.0
+    with:
+      client-id: ${{ vars.GTH_RELEASE_BOT_CLIENT_ID }}
+      target-branch: main
+      back-merge-into: "dev"            # "" when [release].back_merge = false
+    secrets:
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.GTH_RELEASE_BOT_PRIVATE_KEY }}
+```
+
+| Input | Default | |
+|---|---|---|
+| `client-id` | (required) | `gth-release-bot`'s Client ID. Empty fails the run with a pointer to [github-app.md](github-app.md#releases-gth-release-bot) |
+| `target-branch` | (required) | The branch releases are cut from: the profile's release branch |
+| `back-merge-into` | `""` | The branch to merge the release back into. Empty skips the back-merge |
+
+It runs no rk code, so it checks out no repo-kit and needs no `ref`: the `@v…` pin alone fixes it. Its jobs hold only
+`contents: read`. Every write goes through a `gth-release-bot` token: CI runs on the release PR, and only that App
+may create `v*` tags. Runs in a repo queue one behind another and are never cancelled.
+
+1. **`release-please`** mints the token and runs release-please on `target-branch`, with the consumer's
+   `release-please-config.json` (managed) and `.release-please-manifest.json` (seeded, never overwritten, so adoption
+   keeps the current version).
+2. **`back-merge`**, only when a release was created and `back-merge-into` is set: merges `main` into `dev` with a
+   merge commit, as `gth-release-bot[bot]`, and pushes. `gth-release-bot` bypasses the `dev` ruleset for this one
+   push ([rulesets.md](rulesets.md)).
+   - If `dev` already contains `main`, nothing is pushed.
+   - If someone merges into `dev` at the same moment and the push is refused, it fetches, merges again and retries,
+     up to 3 times.
+   - On a conflict, or a push still refused, the run fails and its summary says how to recover: open a PR from `main`
+     to `dev` and merge it with a merge commit.
 
 The config is rendered from `[project]`, so the version-bump rules are identical in every repo:
 

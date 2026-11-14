@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from repo_kit.checks import REQUIRED_CHECKS
-from repo_kit.config import ChecksConfig, ExtrasConfig, RepoConfig
+from repo_kit.config import ChecksConfig, ExtrasConfig, ReleaseConfig, RepoConfig
 from repo_kit.files import (
     LOCK_NAME,
     MANIFEST_NAME,
@@ -45,6 +45,8 @@ def test_variables_default_the_project_name_to_the_repo():
     variables = template_variables(RepoConfig(version="1.0.0"), "o", "r")
     assert variables["project_name"] == "r"
     assert variables["default_base"] == "dev"
+    assert variables["release_branch"] == "main"
+    assert variables["back_merge_into"] == "dev"
 
 
 def test_variables_carry_the_commit_and_pr_title_rules():
@@ -231,11 +233,27 @@ def test_the_update_prs_caller_pins_one_version():
     assert "${{ vars.GTH_PR_BOT_CLIENT_ID }}" in text
 
 
-def render_caller(path: str) -> str:
-    variables = template_variables(RepoConfig(version="1.2.3"), "o", "r")
-    [caller] = [t for t in collect_templates(templates_root(), RepoConfig()) if t.path == path]
+def render_caller(path: str, config: RepoConfig | None = None) -> str:
+    config = config or RepoConfig(version="1.2.3")
+    variables = template_variables(config, "o", "r")
+    [caller] = [t for t in collect_templates(templates_root(), config) if t.path == path]
     [source] = caller.sources
     return render(source.read_text(encoding="utf-8"), variables, caller.path)
+
+
+def test_the_release_caller_pins_one_version_and_back_merges_into_dev():
+    text = render_caller(".github/workflows/release.yml")
+    assert "repo-kit/.github/workflows/release.yml@v1.2.3" in text
+    assert "branches: [main]" in text
+    assert "target-branch: main" in text
+    assert 'back-merge-into: "dev"' in text
+    assert "${{ vars.GTH_RELEASE_BOT_CLIENT_ID }}" in text
+    assert "${{ secrets.GTH_RELEASE_BOT_PRIVATE_KEY }}" in text
+
+
+def test_the_release_caller_can_turn_the_back_merge_off():
+    config = RepoConfig(version="1.2.3", release=ReleaseConfig(back_merge=False))
+    assert 'back-merge-into: ""' in render_caller(".github/workflows/release.yml", config)
 
 
 def test_the_pr_checks_caller_pins_one_version():
