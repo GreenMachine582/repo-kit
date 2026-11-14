@@ -48,6 +48,7 @@ in a template must therefore be upper case, or written `$name`.
 | `${profile}` | `profile` |
 | `${project_name}` | `[project].name`, else the repo name |
 | `${release_type}` | `[project].release_type` |
+| `${current_version}` | The version in `pyproject.toml` or `package.json`, else `0.0.0`. Read from the repo by `rk sync`, for the seeded release manifest only |
 | `${default_base}` | The profile's default branch (`dev`) |
 | `${release_branch}` | The profile's release branch (`main`) |
 | `${back_merge_into}` | `${default_base}` when `[release].back_merge` is true, else empty |
@@ -63,7 +64,7 @@ Anything conditional is a profile directory or built in code.
 |---|---|---|
 | `managed` | Fully owned by repo-kit; rewritten on every sync. Edited by hand → sync refuses and shows the diff, and the drift check fails | Caller workflows, `release-please-config.json` (and `use-local-gth.sh`, a Future item) |
 | `block` | Only the text between `# >>> repo-kit: <name>` and `# <<< repo-kit: <name>` markers is owned; the rest of the file is the consumer's. A file without the markers gets the block appended | `.gitignore` lines, `CONTRIBUTING.md` sections (Branches, Pull requests, Several PRs at once, Releasing) |
-| `seeded` | Created once if missing, never touched again | `.release-please-manifest.json`, `CHANGELOG.md` stub, `.repo-kit.toml` itself |
+| `seeded` | Created once if missing, never touched again | `.release-please-manifest.json`, `.repo-kit.toml` itself. Never `CHANGELOG.md`: release-please creates it |
 
 In Markdown files the markers sit inside HTML comments, so they don't render.
 

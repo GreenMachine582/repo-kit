@@ -13,7 +13,6 @@ Done when unit snapshots of generated rulesets and files pass, and repo-kit runs
 - [ ] Replace repo-kit's hand-set interim required checks with the generated `pr-checks / …` names, and add the
   `repo-kit: tags` creation rule for `gth-release-bot` before the first release
 - [ ] `rk branches prune`
-- [ ] `templates/profiles/dev-main/`, including `release-please-config.json`
 - [ ] Dogfood: `.repo-kit.toml`, `.repo-kit.lock`, generated callers replace the hand-written `ci.yml`,
   `keep-prs-current.yml` and `pr-checks-self.yml` (which runs with `managed-files: false` until then)
 - [ ] First release of repo-kit (User approves)
@@ -80,6 +79,8 @@ Registered, not planned. Each is picked up on its own, after Phase 4.
 - **Interactive `rk sync --adopt`:** show each difference and take ownership after confirming, if settling refused
   files by hand proves slow.
 - **Renamed and removed templates in `rk upgrade`:** move or delete the file and update the lock.
+- **`[project].extra_files`:** release-please `extra-files` in the managed config, for version files such as
+  PyFinBot's `src/pyfinbot/version.py`.
 - **`rk configure` for `gth-release-bot`:** store its credentials the same way as `gth-pr-bot`'s.
 - **Key validation in `rk configure`:** confirm the key and installation before storing, if a stdlib-only way to sign
   the App's JWT turns up.
