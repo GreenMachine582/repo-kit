@@ -150,10 +150,18 @@ def _check(kind: str) -> Handler:
     return handler
 
 
-def _github_diff(args: argparse.Namespace) -> int:
-    from repo_kit import rulesets
+def _github(apply_changes: bool) -> Handler:
+    def handler(args: argparse.Namespace) -> int:
+        from repo_kit import github_config
 
-    return rulesets.run_github_diff(Path.cwd())
+        if not apply_changes:
+            return github_config.run_github(Path.cwd(), apply_changes=False)
+        changed: list[str] = []
+        code = github_config.run_github(Path.cwd(), apply_changes=True, changed=changed)
+        _print_changes(changed)
+        return code
+
+    return handler
 
 
 def _doctor(args: argparse.Namespace) -> int:
@@ -236,13 +244,13 @@ def _add_setup_side(sub: SubParsers) -> None:
     sync.set_defaults(handler=_sync)
 
     github = sub.add_parser("github", help="rulesets and repo settings (`diff` by default)")
-    github.set_defaults(handler=_github_diff)
+    github.set_defaults(handler=_github(False))
     gh_sub = github.add_subparsers(dest="github_command", metavar="<command>")
     gh_sub.add_parser("diff", help="live GitHub state vs config (read-only)").set_defaults(
-        handler=_github_diff
+        handler=_github(False)
     )
     gh_sub.add_parser("apply", help="apply after showing the diff and asking").set_defaults(
-        handler=_not_implemented("github apply", "1D")
+        handler=_github(True)
     )
 
     branches = sub.add_parser("branches", help="branch housekeeping")

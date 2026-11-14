@@ -2,8 +2,8 @@
 
 Tools, both config files, the managed files, the plugin settings, the base branch, gth-pr-bot's
 enrolment and stale worktrees. It writes nothing and doesn't fetch: remote branches are read as of
-the last fetch. Rulesets are compared with what the config describes; repo settings and the latest
-release come later in Phase 1D. See docs/adoption.md.
+the last fetch. Repo settings and rulesets are compared with what the config describes; the latest
+release comes later. See docs/adoption.md.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import repo_kit
-from repo_kit import bootstrap, files, git, rulesets
+from repo_kit import bootstrap, files, git, github_config
 from repo_kit.config import (
     REPO_CONFIG_NAME,
     RepoConfig,
@@ -274,16 +274,16 @@ def check_enrolment(setup: RepoSetup, config: RepoConfig, user_config: UserConfi
     return _ok("gth-pr-bot: labels, Client ID variable and private key secret present")
 
 
-def check_rulesets(setup: RepoSetup, config: RepoConfig) -> Check:
+def check_github(setup: RepoSetup, config: RepoConfig) -> Check:
     try:
-        result = rulesets.diff(config, setup.rulesets())
+        result = github_config.plan(config, setup)
     except RkError as exc:
-        return _warn("rulesets: can't read them", str(exc))
+        return _warn("repo settings and rulesets: can't read them", str(exc))
     if result.drift:
-        detail = "\n".join([*rulesets.render(result), "see `rk github diff`"])
-        return _warn("rulesets differ from .repo-kit.toml", detail)
-    names = ", ".join(r.name for r in result.rulesets)
-    return _ok(f"rulesets match: {names}")
+        lines = [*github_config.render(result), "see `rk github diff`, then `rk github apply`"]
+        return _warn("repo settings or rulesets differ from .repo-kit.toml", "\n".join(lines))
+    names = ", ".join(r.name for r in result.rulesets.rulesets)
+    return _ok(f"repo settings and rulesets match: {names}")
 
 
 def check_worktrees(
@@ -364,10 +364,11 @@ def doctor(
             )
         )
     if config is None or setup is None:
-        checks.append(_skip("rulesets", "need a valid config and a GitHub origin"))
+        checks.append(
+            _skip("repo settings and rulesets", "need a valid config and a GitHub origin")
+        )
     else:
-        checks.append(check_rulesets(setup, config))
-    checks.append(_skip("repo settings", "not compared yet (Phase 1D: settings.py)"))
+        checks.append(check_github(setup, config))
 
     if user_config is None:
         checks.append(_skip("worktrees", "need a valid user config"))

@@ -54,9 +54,9 @@ git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z`), then run `rk upgrade`.
 4. **Pin.** The `version` line of `.repo-kit.toml` is rewritten last, so a failed write leaves the old pin and a
    re-run finishes the job. Comments, other keys and the quote style are kept. The old file is backed up to
    `.git/repo-kit/backup/<UTC>/`.
-5. **Notices.** Migration notes and `rk github diff` are not built yet (Phase 1D): `upgrade` points to the release
-   notes. Templates renamed or removed in the release are reported as "not a template" and left in place: move or
-   delete them by hand.
+5. **Notices.** Migration notes are not built yet: `upgrade` points to the release notes, and to `rk github diff`,
+   since a release may change the rulesets or repo settings. Templates renamed or removed in the release are reported
+   as "not a template" and left in place: move or delete them by hand.
 
 Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 
@@ -72,7 +72,7 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 [OK]   base branch: origin/dev exists (as of the last fetch)
 [OK]   gth-pr-bot: labels, Client ID variable and private key secret present
 [SKIP] gth-pr-bot installed and token mint
-[OK]   rulesets match: repo-kit: dev, repo-kit: main, repo-kit: tags
+[OK]   repo settings and rulesets match: repo-kit: dev, repo-kit: main, repo-kit: tags
 [SKIP] repo settings
 [WARN] 1 stale worktree
        ~/dev/wt/GreenMachine582-photo-ledger/fix-x-1a2b3c (fix/x: PR #41 merged)
@@ -92,10 +92,10 @@ command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` a
 | Plugin | WARN: `.claude/settings.json` lacks the repo-kit marketplace or plugin (`rk install`) |
 | Base branch | FAIL: origin has no profile base branch (`rk install`) |
 | gth-pr-bot | FAIL: a label, the Client ID variable or the key secret is missing, or the variable isn't the user config's Client ID (`rk configure`) |
-| Rulesets | WARN: a `repo-kit: …` ruleset is missing or differs from the config, with the same lines as `rk github diff`; or the API can't be read |
+| Repo settings and rulesets | WARN: a setting or a `repo-kit: …` ruleset is missing or differs from the config, with the same lines as `rk github diff` (`rk github apply`); or the API can't be read |
 | Worktrees | WARN: a worktree under `worktree_root` whose PR is merged or closed (`rk wt done`) |
 
-Phase 1D adds the rest: repo settings, the latest release next to the pin, and `gth-release-bot`. Whether the App is installed and its token mint works can't be seen from a local run: confirm
+Still to come: the latest release next to the pin, and `gth-release-bot`. Whether the App is installed and its token mint works can't be seen from a local run: confirm
 the install at https://github.com/settings/installations and run the update-prs caller with dry-run ticked.
 
 Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` command checks it too), gh 2.40+, Python 3.11+.

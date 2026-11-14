@@ -7,7 +7,7 @@ import copy
 import pytest
 
 from repo_kit.config import ChecksConfig, ReleaseConfig, RepoConfig
-from repo_kit.rulesets import State, build, canonical, diff, render, run_diff
+from repo_kit.rulesets import State, build, canonical, diff, render
 
 ADMIN = {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request"}
 RELEASE_APP = {"actor_id": 5058502, "actor_type": "Integration", "bypass_mode": "always"}
@@ -212,22 +212,3 @@ def test_render_shows_live_and_wanted():
         "repo-kit: main: missing (would be created)",
         "repo-kit: tags: matches",
     ]
-
-
-class Setup:
-    def __init__(self, live: list[dict]) -> None:
-        self.live = live
-
-    def rulesets(self) -> list[dict]:
-        return self.live
-
-
-def test_run_diff_exits_1_only_on_drift():
-    said: list[str] = []
-    assert run_diff(RepoConfig(), Setup(live_rulesets()), say=said.append) == 0  # type: ignore[arg-type]
-    assert said[-1] == "Rulesets match .repo-kit.toml."
-
-    said.clear()
-    assert run_diff(RepoConfig(), Setup([]), say=said.append) == 1  # type: ignore[arg-type]
-    assert said[0] == "repo-kit: dev: missing (would be created)"
-    assert "(- live, + wanted)" in said[-1]

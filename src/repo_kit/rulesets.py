@@ -1,24 +1,19 @@
 """Build the `repo-kit: dev`, `repo-kit: main` and `repo-kit: tags` rulesets, and diff them.
 
 Built as Python dicts from the profile and config (never templated JSON), compared with the live
-rulesets read through `gh api`. `rk github diff` and `rk doctor` report the drift; applying it is
-`rk github apply`, still to come. See docs/rulesets.md.
+rulesets read through `gh api`. `github_config.py` runs `rk github diff` and `apply`.
+See docs/rulesets.md.
 """
 
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from pathlib import Path
 from typing import Any
 
-from repo_kit import git
 from repo_kit.checks import REQUIRED_CHECKS
-from repo_kit.config import RepoConfig, load_repo_config
-from repo_kit.errors import RkError
-from repo_kit.github import GhCliGitHub, RepoSetup
+from repo_kit.config import RepoConfig
 
 # GitHub's built-in Admin repository role, as a ruleset bypass actor.
 ADMIN_ROLE = 5
@@ -212,28 +207,3 @@ def render(result: RulesetsDiff) -> list[str]:
     if result.others:
         lines.append(f"Left alone (not rk's): {', '.join(result.others)}")
     return lines
-
-
-def run_diff(config: RepoConfig, setup: RepoSetup, *, say: Callable[[str], None] = print) -> int:
-    """`rk github diff`: live rulesets against the config. Read-only; 1 if anything differs."""
-    result = diff(config, setup.rulesets())
-    for line in render(result):
-        say(line)
-    if result.drift:
-        say(
-            "Rulesets differ from .repo-kit.toml (- live, + wanted). "
-            "`rk github apply` (not built yet) will apply them."
-        )
-        return 1
-    say("Rulesets match .repo-kit.toml.")
-    return 0
-
-
-def run_github_diff(cwd: Path, *, say: Callable[[str], None] = print) -> int:
-    """The command: this repo's config against its rulesets on GitHub."""
-    repo_root = git.toplevel(cwd)
-    url = git.remote_url(repo_root)
-    if not git.is_github_url(url):
-        raise RkError(f"origin ({url}) isn't on GitHub: there are no rulesets to compare")
-    owner, repo = git.parse_owner_repo(url)
-    return run_diff(load_repo_config(repo_root), GhCliGitHub(owner, repo), say=say)
