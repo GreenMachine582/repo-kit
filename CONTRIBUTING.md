@@ -27,7 +27,8 @@ branch ──► commits ──► draft PR to dev ──► ready ──► che
 ## ✍️ Commit messages
 
 [Conventional Commits](https://www.conventionalcommits.org), with a first line of at most 100 characters and a body
-explaining why. Every commit in a PR is checked by `commits`; merge commits are skipped.
+explaining why. Every commit in a PR is checked by `commits`; merge commits are skipped. `rk install --hooks`
+installs a `commit-msg` hook that runs the same check locally.
 
 | type | for |
 |---|---|
@@ -35,6 +36,7 @@ explaining why. Every commit in a PR is checked by `commits`; merge commits are 
 | `fix` | something that was broken |
 | `docs` | documentation only |
 | `chore` | housekeeping that changes no behaviour |
+| `style` | formatting only |
 | `refactor` | restructuring with the same behaviour |
 | `test` | tests only |
 | `ci` | GitHub Actions workflows |

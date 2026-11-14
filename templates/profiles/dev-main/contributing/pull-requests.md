@@ -10,7 +10,8 @@
 
 PRs are merged with a merge commit, so every commit lands on `dev` as written and release-please reads each one.
 **Every commit** must be a [Conventional Commit](https://www.conventionalcommits.org), with a first line of at most
-${commit_header_max} characters and a body that explains why. Merge commits are skipped by the commit check.
+${commit_header_max} characters and a body that explains why. Merge commits are skipped by the `commits` check. `rk install --hooks` runs the same check on each
+commit, before it's made.
 
 | Type | For | In the changelog |
 |---|---|---|
@@ -23,6 +24,7 @@ ${commit_header_max} characters and a body that explains why. Merge commits are 
 | `test` | Tests only | No |
 | `ci` | GitHub Actions workflows | No |
 | `chore` | Housekeeping that changes no behaviour | No |
+| `style` | Formatting only | No |
 | `revert` | Undoing an earlier commit | Yes |
 
 A breaking change is `feat!:` (or any type with `!`), plus a `BREAKING CHANGE:` footer in that commit's body
