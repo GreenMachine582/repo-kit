@@ -56,6 +56,7 @@ repo-kit/
 ├── .github/workflows/
 │   ├── update-prs.yml            # reusable: keep PRs current                       (Phase 1B)
 │   ├── pr-checks.yml             # reusable: commits, pr-title, managed-files drift (Phase 1D)
+│   ├── pr-checks-self.yml        # this repo's own caller of pr-checks, until dogfood
 │   ├── release.yml               # reusable: release-please + back-merge            (Phase 1D)
 │   └── ci.yml                    # this repo's own CI; rk-managed from Phase 1D (dogfood)
 ├── .claude-plugin/marketplace.json
