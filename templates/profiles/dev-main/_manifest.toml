@@ -7,3 +7,7 @@
 [files."CONTRIBUTING.md"]
 mode = "block"
 blocks = { branches = "contributing/branches.md", pull-requests = "contributing/pull-requests.md", chained-prs = "contributing/chained-prs.md", releasing = "contributing/releasing.md" }
+
+# The release branch and the back-merge belong to this profile.
+[files.".github/workflows/release.yml"]
+mode = "managed"
