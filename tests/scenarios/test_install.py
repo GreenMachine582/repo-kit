@@ -253,7 +253,7 @@ def test_bootstrap_installs_then_enrols_the_repo(clone, github, tmp_path):
     assert setup.vars == {bootstrap.CLIENT_ID_VARIABLE: "Iv23abc"}
     assert setup.secrets == {bootstrap.PRIVATE_KEY_SECRET: KEY}
     assert changed.index("created .repo-kit.toml") < changed.index("created label needs-merge")
-    assert "`rk doctor` isn't built yet" in said
+    assert "[OK]   managed files:" in said  # doctor ran last
 
 
 def test_bootstrap_without_the_bot_credentials_writes_nothing(clone, github, only_main, tmp_path):

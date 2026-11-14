@@ -144,6 +144,12 @@ def _bootstrap(args: argparse.Namespace) -> int:
     return 0
 
 
+def _doctor(args: argparse.Namespace) -> int:
+    from repo_kit import doctor
+
+    return doctor.run_doctor(Path.cwd())
+
+
 def _add_worktree(sub: SubParsers) -> None:
     wt = sub.add_parser("wt", help="one branch = one worktree = one Claude session")
     wt_sub = wt.add_subparsers(dest="wt_command", required=True, metavar="<command>")
@@ -248,7 +254,7 @@ def _add_setup_side(sub: SubParsers) -> None:
     )
     configure.set_defaults(handler=_configure)
 
-    bootstrap = sub.add_parser("bootstrap", help="install + configure (+ doctor, once it is built)")
+    bootstrap = sub.add_parser("bootstrap", help="install + configure + doctor")
     bootstrap.add_argument("--profile", default="dev-main", choices=["dev-main"])
     bootstrap.set_defaults(handler=_bootstrap)
 
@@ -260,9 +266,7 @@ def _add_setup_side(sub: SubParsers) -> None:
     )
     upgrade.set_defaults(handler=_upgrade)
 
-    sub.add_parser("doctor", help="read-only health check").set_defaults(
-        handler=_not_implemented("doctor", "1C")
-    )
+    sub.add_parser("doctor", help="read-only health check").set_defaults(handler=_doctor)
 
 
 def build_parser() -> argparse.ArgumentParser:
