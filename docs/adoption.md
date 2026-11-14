@@ -123,7 +123,8 @@ Moves from `main` only to `dev-main` (Phase 2).
    - sets `dev` as the default branch;
    - creates `.repo-kit.toml`, `.repo-kit.lock`, the caller workflows (`update-prs`, `pr-checks`, `release`),
      `release-please-config.json`, the manifest (seeded from the current `pyproject.toml` version), the `.gitignore`
-     block and the CONTRIBUTING blocks (including the branch diagram with `dev`).
+     block and the four CONTRIBUTING blocks (Branches, with the `dev` diagram; Pull requests; Several PRs at once;
+     Releasing).
 3. By hand:
    - `next-task` step 5 uses `worktree-start`;
    - `open-pr` targets `dev`, opens drafts, marks them ready, and syncs with `worktree-sync`;
@@ -140,8 +141,9 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
 2. Delete `scripts/apply-rulesets.sh`, `scripts/prune-branches.sh`, `.github/rulesets/*.json` and
    `.github/repo-settings.json`.
 3. `rk github diff` must show no unexpected changes before `apply`.
-4. The CONTRIBUTING sections become managed blocks. Repo-specific sections such as *Developing against local GTH
-   repos* stay outside the markers.
+4. The CONTRIBUTING sections become managed blocks. GTH's Branches, Pull requests, Chained PRs and Releasing
+   sections are deleted, and `rk sync` appends the blocks that replace them. Repo-specific sections such as
+   *Developing against local GTH repos* and *Rules* stay outside the markers.
 5. greentechhub-core's `local_gth.py` gets the new resolution order ([worktrees.md](worktrees.md#-local-gth-mode)).
 
 ### Other repos

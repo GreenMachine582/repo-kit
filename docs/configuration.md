@@ -21,7 +21,7 @@ release_type = "python"           # release-please release type
 
 [checks]
 required = ["test"]               # this repo's own CI jobs that rulesets must require
-pr_title = "not-conventional"     # or "conventional" (for squash-merge repos)
+pr_title = "not-conventional"     # or "conventional" (for squash-merge repos); also picks the CONTRIBUTING text
 commit_header_max = 100
 
 [release]

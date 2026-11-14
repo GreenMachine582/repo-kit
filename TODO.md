@@ -9,7 +9,6 @@ after Phase 4, to keep scope in check.
 
 Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one `bootstrap`.
 
-- [ ] `templates/common/`: the CONTRIBUTING blocks (the `pr-checks` and `release` callers come with Phase 1D)
 - [ ] `templates/extras/use-local-gth/`
 
 ## Phase 1D: `pr-checks`, `release`, `rk github`, `branches prune`, the `dev-main` profile

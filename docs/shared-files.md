@@ -6,8 +6,8 @@
 into the repo, and records each one in **`.repo-kit.lock`** (committed).
 
 ```
-templates/common/                 every repo: callers, .gitignore block, CONTRIBUTING blocks
-templates/profiles/dev-main/      dev + main, back-merge
+templates/common/                 every repo: callers, .gitignore block
+templates/profiles/dev-main/      dev + main, back-merge, the CONTRIBUTING blocks
 templates/extras/use-local-gth/   opt-in per repo
 ```
 
@@ -23,9 +23,10 @@ mode = "managed"
 mode = "managed"
 source = "release-please.json"    # the template file here, when it isn't the target path
 
+# in profiles/dev-main/_manifest.toml
 [files."CONTRIBUTING.md"]
 mode = "block"                    # each block: its name in the markers = its template file here
-blocks = { branches = "contributing/branches.md", releasing = "contributing/releasing.md" }
+blocks = { branches = "contributing/branches.md", pull-requests = "contributing/pull-requests.md", chained-prs = "contributing/chained-prs.md", releasing = "contributing/releasing.md" }
 ```
 
 A block file lists every block it holds, in the order they are appended to a file that has none of them yet. Unknown
@@ -48,6 +49,8 @@ in a template must therefore be upper case, or written `$name`.
 | `${project_name}` | `[project].name`, else the repo name |
 | `${release_type}` | `[project].release_type` |
 | `${default_base}` | The profile's default branch (`dev`) |
+| `${commit_header_max}` | `[checks].commit_header_max` |
+| `${pr_title_rule}` | The PR-title paragraph for `[checks].pr_title`, one of two fixed texts built in code (`files.PR_TITLE_TEXT`) |
 | `${owner}`, `${repo}` | From `origin` |
 
 Anything conditional is a profile directory or built in code.
@@ -57,10 +60,18 @@ Anything conditional is a profile directory or built in code.
 | Mode | Behaviour | Used for |
 |---|---|---|
 | `managed` | Fully owned by repo-kit; rewritten on every sync. Edited by hand → sync refuses and shows the diff, and the drift check fails | Caller workflows, `release-please-config.json`, `use-local-gth.sh` |
-| `block` | Only the text between `# >>> repo-kit: <name>` and `# <<< repo-kit: <name>` markers is owned; the rest of the file is the consumer's. A file without the markers gets the block appended | `.gitignore` lines, `CONTRIBUTING.md` sections (Branches, Pull requests, Releasing, Several PRs at once) |
+| `block` | Only the text between `# >>> repo-kit: <name>` and `# <<< repo-kit: <name>` markers is owned; the rest of the file is the consumer's. A file without the markers gets the block appended | `.gitignore` lines, `CONTRIBUTING.md` sections (Branches, Pull requests, Several PRs at once, Releasing) |
 | `seeded` | Created once if missing, never touched again | `.release-please-manifest.json`, `CHANGELOG.md` stub, `.repo-kit.toml` itself |
 
 In Markdown files the markers sit inside HTML comments, so they don't render.
+
+### The CONTRIBUTING blocks
+
+The dev-main profile owns four sections of `CONTRIBUTING.md`, each with its `##` heading: `branches` (the flow and
+branch names), `pull-requests` (drafts, commits, PR titles, updating a PR), `chained-prs` (Several PRs at once) and
+`releasing`. They live in the profile, not `common`, because each describes the dev-main branch model. A repo
+without them gets all four appended in that order; after that they can be moved around the file. Everything outside
+the markers (an intro, local setup, repo-specific rules) is the repo's own.
 
 A file (or block) that isn't in the lock yet is taken over if it already matches the render, and refused with the diff
 otherwise. Content is compared with LF line endings, so CRLF from `core.autocrlf` is never mistaken for an edit; rk
