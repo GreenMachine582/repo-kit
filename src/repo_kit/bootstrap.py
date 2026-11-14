@@ -3,9 +3,9 @@
 `install` adopts a repo: it seeds `.repo-kit.toml`, syncs the shared files, adds the plugin
 marketplace, and creates the profile's base branch when only the release branch exists.
 `configure` enrols a repo for `gth-pr-bot`: the labels update-prs uses, and the App's Client ID and
-private key as an Actions variable and secret. `bootstrap` runs both. `upgrade` moves the version
-pin to the running rk's release and re-renders; templates new in that release are added. See
-docs/adoption.md.
+private key as an Actions variable and secret. `bootstrap` runs both, then `doctor`. `upgrade`
+moves the version pin to the running rk's release and re-renders; templates new in that release
+are added. See docs/adoption.md.
 """
 
 from __future__ import annotations
@@ -486,8 +486,10 @@ def bootstrap(
     say: Callable[[str], None] = print,
     templates: Path | None = None,
 ) -> None:
-    """`install`, then `configure`. The PR bot's key is read first, so a machine that can't
-    enrol the repo stops before anything is written."""
+    """`install`, then `configure`, then `doctor`. The PR bot's key is read first, so a machine
+    that can't enrol the repo stops before anything is written."""
+    from repo_kit import doctor  # here, not at the top: doctor imports this module
+
     read_private_key(user_config, source)
     config = install(
         repo_root,
@@ -501,7 +503,19 @@ def bootstrap(
         templates=templates,
     )
     configure(setup, config, user_config, source=source, changed=changed, say=say)
-    say("`rk doctor` isn't built yet (Phase 1C), so the health check is not part of bootstrap.")
+    checks = doctor.doctor(
+        repo_root,
+        owner,
+        repo,
+        github,
+        setup,
+        user_source=source,
+        user_config=user_config,
+        templates=templates,
+    )
+    say(doctor.render(checks))
+    if doctor.failed(checks):
+        say("Fix the [FAIL] items above, then re-run `rk doctor`.")
 
 
 def run_bootstrap(cwd: Path, *, profile: str, changed: list[str]) -> None:

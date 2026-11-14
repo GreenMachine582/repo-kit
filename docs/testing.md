@@ -45,6 +45,7 @@ pytest against a bare origin and clones, with a fake PR store behind the `github
 | 17 | Seeded file changed | Never overwritten |
 | 18 | `upgrade` across a release that adds a template | Added; lock updated. Renames and removals are a Future item |
 | 19 | `sync` in a repo that already has a managed file | Taken over if it matches the render; otherwise refused with the diff. Interactive `--adopt` is a Future item |
+| 20 | `doctor` after `bootstrap`, then after each kind of breakage | All OK (or SKIP for Phase 1D) after bootstrap; each break is one FAIL or WARN naming the fix; nothing written |
 
 ## 🔴 Live checks in the pilot
 

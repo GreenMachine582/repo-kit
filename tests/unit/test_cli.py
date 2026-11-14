@@ -1,6 +1,6 @@
 import pytest
 
-from repo_kit import __version__, bootstrap, reconcile
+from repo_kit import __version__, bootstrap, doctor, reconcile
 from repo_kit.cli import NOT_IMPLEMENTED, main
 from repo_kit.reconcile import Action, Report, Row
 
@@ -12,7 +12,6 @@ COMMANDS = [
     ["github", "apply"],
     ["branches", "prune", "--apply"],
     ["install", "--profile", "dev-main", "--hooks"],
-    ["doctor"],
 ]
 
 
@@ -95,3 +94,9 @@ def test_upgrade_reaches_run_upgrade_and_prints_what_changed(monkeypatch, capsys
     assert main(argv) == 0
     assert seen == {"version": version}
     assert "moved the pin" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("code", [0, 1])
+def test_doctor_returns_run_doctors_exit_code(monkeypatch, code):
+    monkeypatch.setattr(doctor, "run_doctor", lambda _cwd: code)
+    assert main(["doctor"]) == code

@@ -83,7 +83,7 @@ repo-kit/
 | `reconcile.py` | `update-prs` | 1B |
 | `files.py` | `sync`: render, lock, ownership modes, drift | 1C |
 | `bootstrap.py` | `install`, `configure`, `bootstrap`, `upgrade` | 1C |
-| `doctor.py` | Read-only health check | 1C |
+| `doctor.py` | Read-only health check | 1C (rulesets and settings: 1D) |
 | `checks.py` | Commit and PR title rules | 1D |
 | `rulesets.py`, `settings.py` | `github diff / apply`: build, diff, apply | 1D |
 | `branches.py` | `branches prune` (replaces `prune-branches.sh`) | 1D |

@@ -8,9 +8,9 @@
 |---|---|
 | `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The steps are [below](#install-step-by-step) |
 | `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot`: create the update-prs labels, and set the Client ID variable and private key secret from the user config ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
-| `rk bootstrap` | `install` + `configure` + `doctor`. It reads `gth-pr-bot`'s key first, so a machine that can't enrol the repo stops before anything is written. `doctor` joins when it is built |
+| `rk bootstrap` | `install` + `configure` + `doctor`. It reads `gth-pr-bot`'s key first, so a machine that can't enrol the repo stops before anything is written. The `doctor` report ends the run |
 | `rk upgrade [vX.Y.Z]` | Move `version` to this rk's release and re-render with the `sync` planner. Templates new in the release are added. Migration notes and `github diff` arrive in Phase 1D. The steps are [below](#upgrade-step-by-step) |
-| `rk doctor` | Read-only health check |
+| `rk doctor` | Read-only health check. The checks are [below](#doctor) |
 
 Every write checks tool versions and the remote, backs up what it replaces, and finishes with a list of exactly what
 changed.
@@ -63,14 +63,38 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 
 ```
 [OK]   git 2.47 / gh 2.63 / Python 3.12
-[OK]   .repo-kit.toml valid (profile dev-main, version 1.4.0; latest 1.5.0)
+[OK]   .repo-kit.toml valid (profile dev-main, version 1.4.0)
+[OK]   user config valid
 [OK]   managed files: 9 in sync, 0 drifted
-[OK]   rulesets: repo-kit: dev, repo-kit: main, repo-kit: tags match config
-[WARN] repo setting drift: allow_squash_merge is true (expected false)
-[OK]   gth-pr-bot, gth-release-bot installed; secrets present; token mint works
 [WARN] override in use: .github/workflows/release.yml is unmanaged
-[WARN] 1 stale worktree: ~/dev/wt/GreenMachine582-photo-ledger/fix-x-1a2b3c
+[OK]   plugin: repo-kit is in .claude/settings.json
+[OK]   base branch: origin/dev exists (as of the last fetch)
+[OK]   gth-pr-bot: labels, Client ID variable and private key secret present
+[SKIP] gth-pr-bot installed and token mint
+[SKIP] rulesets and repo settings
+[WARN] 1 stale worktree
+       ~/dev/wt/GreenMachine582-photo-ledger/fix-x-1a2b3c (fix/x: PR #41 merged)
+       remove each with `rk wt done <branch>`
 ```
+
+It writes nothing and doesn't fetch, so remote branches are as of the last `git fetch`. One line per check, with the
+command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` and `[SKIP]` don't fail it.
+
+| Check | `[FAIL]` or `[WARN]` when |
+|---|---|
+| Tools | FAIL: Git, gh or Python is below its minimum. WARN: gh isn't installed (`sync` and `install` work without it) |
+| `.repo-kit.toml` | FAIL: missing, an unknown key or a bad value, or `version` empty or not `X.Y.Z`. WARN: the pin isn't this rk's release, and the files check is skipped until `rk upgrade` |
+| User config | FAIL: an unknown key, or a synced `worktree_root` or key path |
+| Managed files | FAIL: a file is missing, differs from the render, was edited by hand, or the lock is stale: the same test as `rk sync --check`. WARN: a lock entry is no longer a template |
+| Overrides | WARN: each `unmanaged` file |
+| Plugin | WARN: `.claude/settings.json` lacks the repo-kit marketplace or plugin (`rk install`) |
+| Base branch | FAIL: origin has no profile base branch (`rk install`) |
+| gth-pr-bot | FAIL: a label, the Client ID variable or the key secret is missing, or the variable isn't the user config's Client ID (`rk configure`) |
+| Worktrees | WARN: a worktree under `worktree_root` whose PR is merged or closed (`rk wt done`) |
+
+Phase 1D adds the rest: rulesets and repo settings (`rk github diff`), the latest release next to the pin, and
+`gth-release-bot`. Whether the App is installed and its token mint works can't be seen from a local run: confirm
+the install at https://github.com/settings/installations and run the update-prs caller with dry-run ticked.
 
 Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` command checks it too), gh 2.40+, Python 3.11+.
 
