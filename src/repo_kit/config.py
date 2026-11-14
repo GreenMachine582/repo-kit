@@ -30,6 +30,9 @@ PROFILE_RELEASE_BRANCH = {"dev-main": "main"}
 # Branches that only change through PRs, per profile: never a PR head that the bot updates.
 PROFILE_LONG_LIVED = {"dev-main": ("dev", "main")}
 
+# `[checks].pr_title`: whether a PR title must not, or must, be a conventional commit.
+PR_TITLE_RULES = ("not-conventional", "conventional")
+
 # Folder names of sync clients that break venvs and Git internals.
 _SYNCED_PREFIXES = ("onedrive", "dropbox", "icloud")
 
@@ -181,6 +184,9 @@ def parse_repo_config(data: dict[str, Any], source: Path) -> RepoConfig:
     if config.profile not in PROFILE_DEFAULT_BASE:
         known = ", ".join(PROFILE_DEFAULT_BASE)
         raise ConfigError(f"{source}: unknown profile {config.profile!r} (known: {known})")
+    if config.checks.pr_title not in PR_TITLE_RULES:
+        known = ", ".join(f'"{rule}"' for rule in PR_TITLE_RULES)
+        raise ConfigError(f"{source}: `checks.pr_title` must be one of {known}")
     for path, mode in config.overrides.files.items():
         if mode != "unmanaged":
             raise ConfigError(f'{source}: `overrides.files."{path}"` must be "unmanaged"')

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from repo_kit.config import ExtrasConfig, RepoConfig
+from repo_kit.config import ChecksConfig, ExtrasConfig, RepoConfig
 from repo_kit.files import (
     LOCK_NAME,
     MANIFEST_NAME,
@@ -43,6 +43,30 @@ def test_variables_default_the_project_name_to_the_repo():
     variables = template_variables(RepoConfig(version="1.0.0"), "o", "r")
     assert variables["project_name"] == "r"
     assert variables["default_base"] == "dev"
+
+
+def test_variables_carry_the_commit_and_pr_title_rules():
+    variables = template_variables(RepoConfig(version="1.0.0"), "o", "r")
+    assert variables["commit_header_max"] == "100"
+    assert variables["pr_title_rule"].startswith("PR titles are **not** Conventional Commits")
+
+    config = RepoConfig(checks=ChecksConfig(pr_title="conventional", commit_header_max=72))
+    variables = template_variables(config, "o", "r")
+    assert variables["commit_header_max"] == "72"
+    assert variables["pr_title_rule"].startswith("PR titles are Conventional Commits too")
+
+
+def test_the_dev_main_profile_holds_the_contributing_blocks_in_reading_order():
+    (contributing,) = [
+        t for t in collect_templates(templates_root(), RepoConfig()) if t.path == "CONTRIBUTING.md"
+    ]
+    assert contributing.layer == "profiles/dev-main"
+    assert [b.name for b in contributing.blocks] == [
+        "branches",
+        "pull-requests",
+        "chained-prs",
+        "releasing",
+    ]
 
 
 def write_layer(root: Path, layer: str, manifest: str, files: dict[str, str]) -> None:
