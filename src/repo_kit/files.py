@@ -358,7 +358,7 @@ def _plan_compare(
 _NOT_TEXT = "isn't UTF-8 text"
 
 
-def _read_target(repo_root: Path, path: str) -> tuple[str | None, str]:
+def read_target(repo_root: Path, path: str) -> tuple[str | None, str]:
     """The target's text with LF endings (None if it isn't there), and why rk can't own it."""
     target = repo_root / path
     # A symlink, in the path or at its end, must not take a write outside the repo.
@@ -455,7 +455,7 @@ def _plan_one(
         for block in template.blocks
     }
     wanted = _render_source(root, template.source, variables) if template.source else ""
-    current, problem = _read_target(repo_root, path)
+    current, problem = read_target(repo_root, path)
 
     if mode == "seeded" and problem in ("", _NOT_TEXT):
         new_entry: dict[str, Any] = {"layer": template.layer, "mode": mode}
@@ -524,16 +524,25 @@ def plan_sync(
 # --- applying ------------------------------------------------------------------------------
 
 
-def apply_plan(repo_root: Path, plan: SyncPlan, changed: list[str]) -> None:
-    """Write the plan. Refuses to write anything if any file was refused."""
+def raise_if_refused(plan: SyncPlan) -> None:
     if plan.refused:
         names = ", ".join(f.path for f in plan.refused)
         raise SyncError(
             f"refused {names}: nothing was written. Move the change into repo-kit or "
             '.repo-kit.toml, or set `[overrides].files."<path>" = "unmanaged"`.'
         )
+
+
+def new_backup_root(repo_root: Path) -> Path:
+    """Where this run copies what it replaces: in the Git dir, so never in the working tree."""
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    backup_root = git.common_dir(repo_root) / "repo-kit" / "backup" / stamp
+    return git.common_dir(repo_root) / "repo-kit" / "backup" / stamp
+
+
+def apply_plan(repo_root: Path, plan: SyncPlan, changed: list[str]) -> None:
+    """Write the plan. Refuses to write anything if any file was refused."""
+    raise_if_refused(plan)
+    backup_root = new_backup_root(repo_root)
     backed_up = False
     for file_plan in plan.files:
         if file_plan.write is None:
@@ -567,18 +576,8 @@ def summary(plan: SyncPlan, *, update_diffs: bool = False) -> str:
     return "\n".join(lines)
 
 
-def run_sync(
-    cwd: Path,
-    *,
-    check: bool,
-    changed: list[str],
-    say: Callable[[str], None] = print,
-    root: Path | None = None,
-) -> int:
-    """The command. Returns the exit code: 1 when `--check` finds drift."""
-    git.require_version(cwd)
-    repo_root = git.toplevel(cwd)
-    config = load_repo_config(repo_root)
+def require_pin(config: RepoConfig) -> None:
+    """The pin must be set, and be the running engine's version if that is a release."""
     if not config.version:
         raise SyncError(
             "`version` is empty in .repo-kit.toml: set the repo-kit release to pin, such as "
@@ -592,6 +591,21 @@ def run_sync(
             f".repo-kit.toml pins repo-kit {config.version}, but this rk is {engine}: move the "
             f"pin with `rk upgrade`, or install rk {config.version}"
         )
+
+
+def run_sync(
+    cwd: Path,
+    *,
+    check: bool,
+    changed: list[str],
+    say: Callable[[str], None] = print,
+    root: Path | None = None,
+) -> int:
+    """The command. Returns the exit code: 1 when `--check` finds drift."""
+    git.require_version(cwd)
+    repo_root = git.toplevel(cwd)
+    config = load_repo_config(repo_root)
+    require_pin(config)
     owner, repo = git.parse_owner_repo(git.remote_url(repo_root))
     plan = plan_sync(repo_root, config, owner, repo, root)
     say(summary(plan, update_diffs=check))

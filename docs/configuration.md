@@ -7,8 +7,9 @@ Two files. Unknown keys in either are errors, and `rk doctor` validates both.
 ## Repo config: `.repo-kit.toml`
 
 Committed. The single input to everything rk generates or applies. A repo without one gets every default shown
-below (`profile = "dev-main"`, no setup or check, `env_dirs = [".venv"]`). `rk install` seeds it, and from then on it belongs
-to the repo (`seeded` mode: rk never rewrites it, except `rk upgrade` changing `version`).
+below (`profile = "dev-main"`, no setup or check, `env_dirs = [".venv"]`). `rk install` seeds it with `version`, `profile` and
+`[project]` ([adoption.md](adoption.md#install-step-by-step)), and from then on it belongs to the repo (`seeded`
+mode: rk never rewrites it, except `rk upgrade` changing `version`).
 
 ```toml
 version = "1.4.0"                 # the ONE pin; every generated caller uses it

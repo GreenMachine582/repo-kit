@@ -104,6 +104,35 @@ def _configure(args: argparse.Namespace) -> int:
     return 0
 
 
+def _install(args: argparse.Namespace) -> int:
+    if args.hooks:
+        # The hook runs `rk check commit-msg`: installed before that exists, it would block commits.
+        print(
+            "rk install --hooks: not implemented yet (Phase 1D), with the commit rules it runs",
+            file=sys.stderr,
+        )
+        return NOT_IMPLEMENTED
+    from repo_kit import bootstrap
+
+    changed: list[str] = []
+    try:
+        bootstrap.run_install(Path.cwd(), profile=args.profile, changed=changed)
+    finally:
+        _print_changes(changed)
+    return 0
+
+
+def _bootstrap(args: argparse.Namespace) -> int:
+    from repo_kit import bootstrap
+
+    changed: list[str] = []
+    try:
+        bootstrap.run_bootstrap(Path.cwd(), profile=args.profile, changed=changed)
+    finally:
+        _print_changes(changed)
+    return 0
+
+
 def _add_worktree(sub: SubParsers) -> None:
     wt = sub.add_parser("wt", help="one branch = one worktree = one Claude session")
     wt_sub = wt.add_subparsers(dest="wt_command", required=True, metavar="<command>")
@@ -192,10 +221,12 @@ def _add_setup_side(sub: SubParsers) -> None:
     prune.add_argument("--apply", action="store_true", help="delete instead of listing")
     prune.set_defaults(handler=_not_implemented("branches prune", "1D"))
 
-    install = sub.add_parser("install", help="seed .repo-kit.toml, sync, add the plugin")
+    install = sub.add_parser(
+        "install", help="seed .repo-kit.toml, sync, add the plugin, create the base branch"
+    )
     install.add_argument("--profile", default="dev-main", choices=["dev-main"])
     install.add_argument("--hooks", action="store_true", help="also install the commit-msg hook")
-    install.set_defaults(handler=_not_implemented("install", "1C"))
+    install.set_defaults(handler=_install)
 
     configure = sub.add_parser(
         "configure", help="enrol this repo for gth-pr-bot: labels, Client ID and key"
@@ -206,9 +237,9 @@ def _add_setup_side(sub: SubParsers) -> None:
     )
     configure.set_defaults(handler=_configure)
 
-    bootstrap = sub.add_parser("bootstrap", help="install + configure + doctor")
+    bootstrap = sub.add_parser("bootstrap", help="install + configure (+ doctor, once it is built)")
     bootstrap.add_argument("--profile", default="dev-main", choices=["dev-main"])
-    bootstrap.set_defaults(handler=_not_implemented("bootstrap", "1C"))
+    bootstrap.set_defaults(handler=_bootstrap)
 
     upgrade = sub.add_parser("upgrade", help="move the version pin and re-render everything")
     upgrade.add_argument("version", nargs="?", help="vX.Y.Z; defaults to the latest release")

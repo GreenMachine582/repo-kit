@@ -22,8 +22,9 @@ It fixes three problems:
 
 > [!NOTE]
 > **Status: pre-alpha.** The worktree commands (`rk wt start / sync / done`), `rk update-prs`, `rk configure`,
-> `rk sync [--check]` and the plugin's skills work, and the `update-prs` reusable workflow keeps PRs current. Every
-> other command says which phase delivers it. Phase 1C (adoption) is in progress. See [TODO.md](TODO.md).
+> `rk sync [--check]`, `rk install`, `rk bootstrap` and the plugin's skills work, and the `update-prs` reusable
+> workflow keeps PRs current. Every other command says which phase delivers it. Phase 1C (adoption) is in
+> progress. See [TODO.md](TODO.md).
 
 ## 🧩 Scope
 

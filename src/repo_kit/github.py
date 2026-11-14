@@ -92,6 +92,10 @@ class GitHub(Protocol):
         """The text of `path` on the default branch, or None if it isn't there."""
         ...
 
+    def retarget(self, number: int, base: str) -> None:
+        """Change PR `number`'s base branch to `base`."""
+        ...
+
 
 def pick_pr(prs: list[PullRequest]) -> PullRequest | None:
     """Prefer an open PR; otherwise the most recent (highest number)."""
@@ -142,6 +146,9 @@ class NoGitHub:
 
     def read_file(self, path: str) -> str | None:
         return None
+
+    def retarget(self, number: int, base: str) -> None:
+        raise GitHubError("origin isn't on GitHub, so there are no PRs to retarget")
 
 
 class RepoSetup(Protocol):
@@ -287,6 +294,9 @@ class GhCliGitHub:
         if data is None:
             return None
         return base64.b64decode(data["content"]).decode("utf-8")
+
+    def retarget(self, number: int, base: str) -> None:
+        self._api("-X", "PATCH", f"{self._repo}/pulls/{number}", "-f", f"base={base}")
 
     # --- RepoSetup ---
 

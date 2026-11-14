@@ -201,3 +201,9 @@ def test_set_variable_and_create_label(client, monkeypatch):
             "description=under rework",
         ],
     ]
+
+
+def test_retarget_patches_the_base(client, monkeypatch):
+    gh = FakeGh(monkeypatch, {})
+    client.retarget(7, "dev")
+    assert gh.calls == [["-X", "PATCH", "repos/o/r/pulls/7", "-f", "base=dev"]]

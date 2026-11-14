@@ -1,16 +1,26 @@
 """`rk install`, `rk configure`, `rk bootstrap` and `rk upgrade`.
 
+`install` adopts a repo: it seeds `.repo-kit.toml`, syncs the shared files, adds the plugin
+marketplace, and creates the profile's base branch when only the release branch exists.
 `configure` enrols a repo for `gth-pr-bot`: the labels update-prs uses, and the App's Client ID and
-private key as an Actions variable and secret. The rest is Phase 1C. See docs/adoption.md.
+private key as an Actions variable and secret. `bootstrap` runs both. `upgrade` is still to come
+in Phase 1C. See docs/adoption.md.
 """
 
 from __future__ import annotations
 
+import json
+import shutil
+import sys
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
-from repo_kit import git
+import repo_kit
+from repo_kit import files, git
 from repo_kit.config import (
+    REPO_CONFIG_NAME,
+    ProjectConfig,
     RepoConfig,
     UpdatePrsConfig,
     UserConfig,
@@ -19,7 +29,12 @@ from repo_kit.config import (
     user_config_path,
 )
 from repo_kit.errors import RkError
-from repo_kit.github import GhCliGitHub, RepoSetup
+from repo_kit.github import GhCliGitHub, GitHub, NoGitHub, RepoSetup
+
+SETTINGS_PATH = ".claude/settings.json"
+MARKETPLACE = "repo-kit"
+MARKETPLACE_SOURCE = {"source": "github", "repo": "GreenMachine582/repo-kit"}
+PLUGIN = "repo-kit@repo-kit"  # <plugin>@<marketplace>
 
 CLIENT_ID_VARIABLE = "GTH_PR_BOT_CLIENT_ID"
 PRIVATE_KEY_SECRET = "GTH_PR_BOT_PRIVATE_KEY"  # noqa: S105  # the secret's name, not its value
@@ -124,4 +139,243 @@ def run_configure(cwd: Path, *, changed: list[str], dry_run: bool, replace_key: 
         changed=changed,
         dry_run=dry_run,
         replace_key=replace_key,
+    )
+
+
+# --- install -------------------------------------------------------------------------------
+
+
+def detect_release_type(repo_root: Path) -> str:
+    """The release-please release type a fresh `.repo-kit.toml` starts with."""
+    if (repo_root / "pyproject.toml").is_file():
+        return "python"
+    if (repo_root / "package.json").is_file():
+        return "node"
+    return "simple"
+
+
+def seed_config(repo_root: Path, repo: str, profile: str) -> RepoConfig:
+    """The config a repo without `.repo-kit.toml` starts with, pinned to the running rk."""
+    engine = repo_kit.__version__
+    if engine == files.UNRELEASED:
+        raise RkError(
+            f"this rk is an unreleased build, so there is no release to pin in {REPO_CONFIG_NAME}. "
+            "Install a release (`uv tool install git+https://github.com/GreenMachine582/repo-kit"
+            f'@vX.Y.Z`), or write {REPO_CONFIG_NAME} with `version = "X.Y.Z"` yourself first.'
+        )
+    project = ProjectConfig(name=repo, release_type=detect_release_type(repo_root))
+    return RepoConfig(version=engine, profile=profile, project=project)
+
+
+def plan_plugin_settings(repo_root: Path) -> str | None:
+    """The new text of `.claude/settings.json`, or None when nothing needs adding.
+
+    Only the repo-kit marketplace and plugin are added, and only where missing: a source or an
+    on/off choice the repo already made is kept, as is every other key and their order.
+    """
+    current, problem = files.read_target(repo_root, SETTINGS_PATH)
+    if problem:
+        raise RkError(f"{SETTINGS_PATH} {problem}, so the plugin marketplace can't be added")
+    data: Any = {}
+    if current is not None:
+        try:
+            data = json.loads(current)
+        except json.JSONDecodeError as exc:
+            raise RkError(f"{SETTINGS_PATH} isn't valid JSON ({exc}): fix it and re-run") from exc
+    if not isinstance(data, dict):
+        raise RkError(f"{SETTINGS_PATH} must hold a JSON object")
+    before = json.dumps(data)
+    for key, name, value in (
+        ("extraKnownMarketplaces", MARKETPLACE, {"source": dict(MARKETPLACE_SOURCE)}),
+        ("enabledPlugins", PLUGIN, True),
+    ):
+        table = data.setdefault(key, {})
+        if not isinstance(table, dict):
+            raise RkError(f"{SETTINGS_PATH}: `{key}` must be an object")
+        table.setdefault(name, value)
+    if json.dumps(data) == before:
+        return None
+    return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+
+
+def write_plugin_settings(repo_root: Path, text: str, changed: list[str]) -> None:
+    target = repo_root / SETTINGS_PATH
+    if target.is_file():
+        backup = files.new_backup_root(repo_root) / SETTINGS_PATH
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(target, backup)
+        changed.append(f"backed up {SETTINGS_PATH} to {backup}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8", newline="\n")
+    changed.append(f"added the repo-kit plugin marketplace to {SETTINGS_PATH}")
+
+
+def base_branch_missing(repo_root: Path, config: RepoConfig) -> bool:
+    """Whether origin lacks the profile's base branch. Refuses if it can't be created either."""
+    git.fetch(repo_root)
+    base, release = config.default_base, config.release_branch
+    if git.remote_branch_exists(repo_root, base):
+        return False
+    if not git.remote_branch_exists(repo_root, release):
+        raise RkError(
+            f"origin has neither `{base}` nor `{release}`: the {config.profile} profile creates "
+            f"`{base}` from `{release}`, so push `{release}` first"
+        )
+    return True
+
+
+def create_base_branch(
+    repo_root: Path, config: RepoConfig, changed: list[str], say: Callable[[str], None]
+) -> None:
+    base, release = config.default_base, config.release_branch
+    git.create_remote_branch(repo_root, base, f"refs/remotes/origin/{release}")
+    changed.append(f"created `{base}` on origin from `{release}`")
+    git.fetch(repo_root)
+    say(
+        f"`{base}` isn't the default branch yet: that is a repo setting, which "
+        "`rk github apply` will set (Phase 1D). Until then, change it in the repo's settings."
+    )
+
+
+def retarget_prs(
+    github: GitHub,
+    config: RepoConfig,
+    *,
+    changed: list[str],
+    confirm: Callable[[str], bool],
+    say: Callable[[str], None],
+) -> None:
+    """Offer to move open PRs off the release branch, which only takes release PRs.
+
+    It looks at the PRs as they are now, not at whether the base branch was just created, so a
+    run that was declined or cut short can be finished by running install again.
+    """
+    base, release = config.default_base, config.release_branch
+    prs = [pr for pr in github.list_open_prs() if pr.base_ref == release and pr.head_ref != base]
+    if not prs:
+        return
+    say(f"Open PRs that target `{release}`, which only takes release PRs from `{base}`:")
+    for pr in prs:
+        say(f"  #{pr.number}  {pr.head_ref}")
+    if not confirm(f"Retarget these {len(prs)} to `{base}`?"):
+        say("Left as they are. Run `rk install` again to retarget them.")
+        return
+    for pr in prs:
+        github.retarget(pr.number, base)
+        changed.append(f"retargeted #{pr.number} ({pr.head_ref}) to `{base}`")
+
+
+def ask(question: str) -> bool:
+    """Yes only when a person types it: with no terminal to ask on, the answer is no."""
+    if not sys.stdin.isatty():
+        print(f"{question} Not asked: there is no terminal to answer on.")
+        return False
+    return input(f"{question} [y/N] ").strip().lower() in ("y", "yes")
+
+
+def install(
+    repo_root: Path,
+    owner: str,
+    repo: str,
+    github: GitHub,
+    *,
+    profile: str,
+    changed: list[str],
+    confirm: Callable[[str], bool] = ask,
+    say: Callable[[str], None] = print,
+    templates: Path | None = None,
+) -> RepoConfig:
+    """Adopt the repo at `repo_root`. Safe to re-run: only what's missing is written.
+
+    Everything that can refuse is checked before the first write, and the working tree is
+    written before anything on origin or GitHub changes.
+    """
+    if (repo_root / REPO_CONFIG_NAME).is_file():
+        config = load_repo_config(repo_root)
+    else:
+        # `.repo-kit.toml` is itself a seeded template, so the sync below creates it.
+        config = seed_config(repo_root, repo, profile)
+    files.require_pin(config)
+    plan = files.plan_sync(repo_root, config, owner, repo, templates)
+    say(files.summary(plan))
+    files.raise_if_refused(plan)
+    settings = plan_plugin_settings(repo_root)
+    create_base = base_branch_missing(repo_root, config)
+
+    files.apply_plan(repo_root, plan, changed)
+    if settings is not None:
+        write_plugin_settings(repo_root, settings, changed)
+    if create_base:
+        create_base_branch(repo_root, config, changed, say)
+    retarget_prs(github, config, changed=changed, confirm=confirm, say=say)
+    return config
+
+
+def _origin(cwd: Path) -> tuple[Path, str, str, str]:
+    """The checkout rk was run in, its origin URL, and the owner and repo that names."""
+    git.require_version(cwd)
+    repo_root = git.toplevel(cwd)
+    url = git.remote_url(repo_root)
+    owner, repo = git.parse_owner_repo(url)
+    return repo_root, url, owner, repo
+
+
+def run_install(cwd: Path, *, profile: str, changed: list[str]) -> None:
+    """The command: adopt the checkout `cwd` is in."""
+    repo_root, url, owner, repo = _origin(cwd)
+    github: GitHub = GhCliGitHub(owner, repo) if git.is_github_url(url) else NoGitHub()
+    install(repo_root, owner, repo, github, profile=profile, changed=changed)
+
+
+def bootstrap(
+    repo_root: Path,
+    owner: str,
+    repo: str,
+    github: GitHub,
+    setup: RepoSetup,
+    user_config: UserConfig,
+    *,
+    source: Path,
+    profile: str,
+    changed: list[str],
+    confirm: Callable[[str], bool] = ask,
+    say: Callable[[str], None] = print,
+    templates: Path | None = None,
+) -> None:
+    """`install`, then `configure`. The PR bot's key is read first, so a machine that can't
+    enrol the repo stops before anything is written."""
+    read_private_key(user_config, source)
+    config = install(
+        repo_root,
+        owner,
+        repo,
+        github,
+        profile=profile,
+        changed=changed,
+        confirm=confirm,
+        say=say,
+        templates=templates,
+    )
+    configure(setup, config, user_config, source=source, changed=changed, say=say)
+    say("`rk doctor` isn't built yet (Phase 1C), so the health check is not part of bootstrap.")
+
+
+def run_bootstrap(cwd: Path, *, profile: str, changed: list[str]) -> None:
+    """The command: install, then enrol the repo for gth-pr-bot."""
+    repo_root, url, owner, repo = _origin(cwd)
+    if not git.is_github_url(url):
+        raise RkError(
+            f"origin isn't on GitHub ({url}), so there's nothing to configure: use `rk install`"
+        )
+    client = GhCliGitHub(owner, repo)
+    bootstrap(
+        repo_root,
+        owner,
+        repo,
+        client,
+        client,
+        load_user_config(),
+        source=user_config_path(),
+        profile=profile,
+        changed=changed,
     )
