@@ -12,6 +12,7 @@ Tests only ever touch `tmp_path`: never a real repo, never GitHub.
 - Commit and title rules: a table of valid and invalid examples, including GitHub's merge-commit formats
 - Ruleset and settings builders: a snapshot per profile
 - `string.Template` rendering
+- Version pin parsing and rewrite
 - The CLI command tree
 
 ## Git scenarios (`tests/scenarios/`)
