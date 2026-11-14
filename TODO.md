@@ -9,8 +9,6 @@ after Phase 4, to keep scope in check.
 
 Done when unit snapshots of generated rulesets and files pass, and repo-kit runs on its own tooling (dogfood).
 
-- [ ] `settings.py` (repo settings in `rk github diff` and `doctor`) and `rk github apply`
-  ([docs/rulesets.md](docs/rulesets.md))
 - [ ] Replace repo-kit's hand-set interim required checks with the generated `pr-checks / …` names, and add the
   `repo-kit: tags` creation rule for `gth-release-bot` before the first release
 - [ ] `rk branches prune`

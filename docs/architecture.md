@@ -86,7 +86,8 @@ repo-kit/
 | `bootstrap.py` | `install`, `configure`, `bootstrap`, `upgrade` | 1C |
 | `doctor.py` | Read-only health check | 1C (rulesets and settings: 1D) |
 | `checks.py` | Commit and PR title rules | 1D |
-| `rulesets.py`, `settings.py` | `github diff / apply`: build, diff, apply | 1D |
+| `rulesets.py`, `settings.py` | Build the rulesets and repo settings, and diff them against GitHub | 1D |
+| `github_config.py` | `github diff / apply`: read, diff, back up, apply | 1D |
 | `branches.py` | `branches prune` (replaces `prune-branches.sh`) | 1D |
 
 ## Constraints carried over
