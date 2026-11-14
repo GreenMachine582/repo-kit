@@ -64,8 +64,8 @@ repo-kit/
 │   └── skills/{worktree-start,worktree-sync,worktree-done}/SKILL.md
 ├── src/repo_kit/                 # see the module table
 ├── templates/
-│   ├── common/                   # every repo: callers, .gitignore block, CONTRIBUTING blocks
-│   ├── profiles/dev-main/        # dev + main, back-merge (every repo, repo-kit included)
+│   ├── common/                   # every repo: callers, .gitignore block
+│   ├── profiles/dev-main/        # dev + main, back-merge, the CONTRIBUTING blocks (every repo)
 │   └── extras/use-local-gth/     # opt-in per repo
 ├── tests/{unit,scenarios}/
 ├── docs/

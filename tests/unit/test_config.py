@@ -106,6 +106,11 @@ def test_unknown_profile_is_an_error():
         parse_repo_config({"profile": "main-only"}, SRC)
 
 
+def test_unknown_pr_title_rule_is_an_error():
+    with pytest.raises(ConfigError, match="`checks.pr_title` must be one of"):
+        parse_repo_config({"checks": {"pr_title": "squash"}}, SRC)
+
+
 def test_override_mode_must_be_unmanaged():
     with pytest.raises(ConfigError, match='must be "unmanaged"'):
         parse_repo_config({"overrides": {"files": {"a.yml": "managed"}}}, SRC)

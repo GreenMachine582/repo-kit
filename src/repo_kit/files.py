@@ -70,8 +70,27 @@ def render(text: str, variables: dict[str, str], source: str) -> str:
         ) from exc
 
 
+# The PR-title paragraph of the CONTRIBUTING blocks, by `[checks].pr_title`. Built here because
+# templates can't branch.
+PR_TITLE_TEXT = {
+    "not-conventional": (
+        "PR titles are **not** Conventional Commits: write a plain sentence, such as "
+        "`Add the folder picker`. The merge commit carries the title, and release-please reads a "
+        "conventional line there as one more change, so a `feat: …` title would list that change "
+        "twice. GitHub suggests a one-commit PR's subject as its title, so rewrite it. Release PRs "
+        "(`release: …`, `chore(main): release …`) are allowed."
+    ),
+    "conventional": (
+        "PR titles are Conventional Commits too, such as `feat: add the folder picker`, checked "
+        "the same way as the commits."
+    ),
+}
+
+
 def template_variables(config: RepoConfig, owner: str, repo: str) -> dict[str, str]:
     return {
+        "commit_header_max": str(config.checks.commit_header_max),
+        "pr_title_rule": PR_TITLE_TEXT[config.checks.pr_title],
         "version": config.version,
         "profile": config.profile,
         "project_name": config.project.name or repo,

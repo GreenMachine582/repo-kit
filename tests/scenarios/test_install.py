@@ -84,6 +84,48 @@ def test_a_fresh_install_writes_the_config_the_files_and_the_lock(clone, github)
     assert not any("created `dev`" in line for line in changed)
 
 
+BLOCKS = ("branches", "pull-requests", "chained-prs", "releasing")
+
+
+def test_a_fresh_install_writes_the_contributing_blocks_in_order(clone, github):
+    work = clone("work")
+
+    install(work, github)
+
+    text = read(work, "CONTRIBUTING.md")
+    starts = [text.index(f"<!-- >>> repo-kit: {name} -->") for name in BLOCKS]
+    assert starts == sorted(starts)
+    assert text.startswith("<!-- >>> repo-kit: branches -->\n## 🔀 Branches\n")
+    assert "at most\n100 characters" in text
+    assert "PR titles are **not** Conventional Commits" in text
+    assert "retargets B's PR to `dev`" in text
+    assert "${" not in text
+    entry = json.loads(read(work, LOCK_NAME))["files"]["CONTRIBUTING.md"]
+    assert entry["mode"] == "block"
+    assert sorted(entry["blocks"]) == sorted(BLOCKS)
+    assert {b["layer"] for b in entry["blocks"].values()} == {"profiles/dev-main"}
+
+
+def test_an_existing_contributing_keeps_its_own_sections(clone, github):
+    work = clone("work")
+    own = "# Contributing\n\nOur intro.\n\n## Developing locally\n\nRun `make dev`.\n"
+    (work / "CONTRIBUTING.md").write_text(own, encoding="utf-8")
+
+    changed, _said, _asked = install(work, github)
+
+    text = read(work, "CONTRIBUTING.md")
+    assert text.startswith(own)
+    assert all(f"<!-- <<< repo-kit: {name} -->" in text for name in BLOCKS)
+    assert "updated CONTRIBUTING.md" in changed
+
+    # The repo's own text can change around the blocks; the next install leaves it be.
+    edited = text.replace("Our intro.", "Our longer intro.") + "\n## Our own rules\n"
+    (work / "CONTRIBUTING.md").write_text(edited, encoding="utf-8")
+    changed, _said, _asked = install(work, github)
+    assert changed == []
+    assert read(work, "CONTRIBUTING.md") == edited
+
+
 def test_a_second_install_changes_nothing(clone, github, only_main):
     work = clone("work")
     install(work, github)
