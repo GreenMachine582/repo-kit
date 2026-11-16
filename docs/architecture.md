@@ -22,7 +22,7 @@ Shared logic goes to the cheapest place that keeps one copy:
 | CI logic (checks, release, PR updates) | Reusable workflows in repo-kit | A thin caller workflow, generated |
 | Scripts (`apply-rulesets.sh`, `prune-branches.sh`) | `rk` commands | Nothing |
 | GitHub-side config (rulesets, repo settings) | Built by `rk` from the profile and config, applied by API | Nothing; drift reported by `doctor` |
-| Files that must physically be in the repo (`release-please-config.json`, `use-local-gth.sh`, `.gitignore` lines, CONTRIBUTING sections) | Templates in repo-kit | The rendered file, tracked in `.repo-kit.lock` |
+| Files that must physically be in the repo (`release-please-config.json`, `.gitignore` lines, CONTRIBUTING sections; `use-local-gth.sh` is a Future item) | Templates in repo-kit | The rendered file, tracked in `.repo-kit.lock` |
 | Repo-specific state (`CHANGELOG.md`, release manifest, app code) | The consumer | Never touched after creation |
 
 ## Engine
@@ -45,7 +45,7 @@ in code. No Jinja and no extra dependency.
 
 | Where | How |
 |---|---|
-| Claude plugin | The plugin bundles the engine, so a session needs nothing installed |
+| Claude plugin | Skills only. They call the `rk` on `PATH` (the standalone install below), so the engine exists once per machine |
 | Standalone | `uv tool install git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z` puts `rk` on your `PATH` |
 | CI | Reusable workflows check out repo-kit at the version the caller passes in |
 
@@ -57,20 +57,24 @@ repo-kit/
 │   ├── update-prs.yml            # reusable: keep PRs current                       (Phase 1B)
 │   ├── pr-checks.yml             # reusable: commits, pr-title, managed-files drift (Phase 1D)
 │   ├── release.yml               # reusable: release-please + back-merge            (Phase 1D)
-│   └── ci.yml                    # this repo's own CI; rk-managed from Phase 1D (dogfood)
+│   ├── pr-checks-self.yml        # this repo's own callers, written by hand: the generated
+│   ├── keep-prs-current.yml      #   callers' paths are the reusable workflows here, so
+│   ├── release-self.yml          #   these run them locally (`uses: ./…`)
+│   └── ci.yml                    # this repo's own CI: tests, lint, plugin validation
 ├── .claude-plugin/marketplace.json
 ├── plugins/repo-kit/
 │   ├── .claude-plugin/plugin.json
 │   └── skills/{worktree-start,worktree-sync,worktree-done}/SKILL.md
 ├── src/repo_kit/                 # see the module table
 ├── templates/
-│   ├── common/                   # every repo: callers, .gitignore block, CONTRIBUTING blocks
-│   ├── profiles/dev-main/        # dev + main, back-merge (every repo, repo-kit included)
-│   └── extras/use-local-gth/     # opt-in per repo
+│   ├── common/                   # every repo: callers, .gitignore block
+│   ├── profiles/dev-main/        # dev + main, back-merge, the CONTRIBUTING blocks (every repo)
+│   └── extras/use-local-gth/     # opt-in per repo (Future: no templates yet)
 ├── tests/{unit,scenarios}/
 ├── docs/
 ├── pyproject.toml  CHANGELOG.md  README.md
-└── .repo-kit.toml                # rk manages its own repo too (Phase 1D)
+├── .repo-kit.toml  .repo-kit.lock   # rk manages its own repo too (dogfood)
+└── release-please-config.json  .release-please-manifest.json  CONTRIBUTING.md   # partly rendered by rk
 ```
 
 | Module | Responsibility | Phase |
@@ -83,10 +87,12 @@ repo-kit/
 | `reconcile.py` | `update-prs` | 1B |
 | `files.py` | `sync`: render, lock, ownership modes, drift | 1C |
 | `bootstrap.py` | `install`, `configure`, `bootstrap`, `upgrade` | 1C |
-| `doctor.py` | Read-only health check | 1C |
+| `doctor.py` | Read-only health check | 1C (rulesets and settings: 1D) |
 | `checks.py` | Commit and PR title rules | 1D |
-| `rulesets.py`, `settings.py` | `github diff / apply`: build, diff, apply | 1D |
+| `rulesets.py`, `settings.py` | Build the rulesets and repo settings, and diff them against GitHub | 1D |
+| `github_config.py` | `github diff / apply`: read, diff, back up, apply | 1D |
 | `branches.py` | `branches prune` (replaces `prune-branches.sh`) | 1D |
+| `credentials.py` | The Apps' credentials in a sops + age file, `rk secrets`; sops faked in tests | 1D |
 
 ## Constraints carried over
 
@@ -127,7 +133,7 @@ These come from GTH's `CONTRIBUTING.md` and shape everything rk does:
 |---|---|
 | A generated ruleset locks you out or blocks merges | `diff` is the default; `apply` asks; admin pull-request bypass kept; live check in the pilot |
 | Required-check names drift from workflow job names | Both generated from one place; the pilot confirms |
-| Adoption overwrites GTH's tuned files | `--adopt` shows every difference and writes nothing until confirmed; manifest and CHANGELOG are seeded or consumer-owned |
+| Adoption overwrites GTH's tuned files | `sync` takes over an existing file only if it already matches, and refuses with the diff otherwise; manifest and CHANGELOG are seeded or consumer-owned |
 | Managed files edited by hand go unnoticed | `managed-files` check in every PR |
 | The bot races an active session | Drafts skipped; non-force pushes; `wt sync` catches up |
 | Dropped workflow events | Full reconcile every run |

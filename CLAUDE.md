@@ -14,7 +14,7 @@ every repo shares. Design details are in [docs/](docs/); open work and phases ar
    `json`, `pathlib`, `subprocess`, `argparse`. Dev tools (pytest, ruff) go in the `dev` extra only.
 2. **Merge only.** Nothing in rk rebases, or pushes with `--force` or `--force-with-lease`. The bot never merges a PR.
 3. **Never write a consumer's version or `CHANGELOG.md`.** release-please owns both. `seeded` files are never touched
-   after creation.
+   after creation, with one exception: `rk upgrade` moves the `version` line of `.repo-kit.toml`, and nothing else.
 4. **Never write outside the lock's known paths and new template paths**, and refuse (don't merge) when a `managed`
    file has local edits.
 5. **`rk github apply` never runs in CI**, and always shows the diff and asks first. `diff` is the default.
@@ -40,13 +40,17 @@ every repo shares. Design details are in [docs/](docs/); open work and phases ar
 
 ```bash
 uv venv && uv pip install -e ".[dev]"
-.venv/bin/ruff check . && .venv/bin/ruff format --check .
+.venv/bin/ruff check . && .venv/bin/ruff format --check . && .venv/bin/mypy
 .venv/bin/pytest
 .venv/bin/rk --help
 ```
 
 `.venv` belongs to one machine: build it with uv on each device, and never keep it in a synced folder such as
 OneDrive. On Windows the tools are in `.venv/Scripts/`.
+
+`rk configure`, `rk bootstrap` and `rk secrets` also call the `sops` (3.10+) and `age-keygen` binaries, like `gh`.
+They're not Python dependencies, so hard rule 1 holds. Tests use `FakeSops`; one round trip runs real sops when
+it's installed.
 
 ## Conventions
 
@@ -56,3 +60,5 @@ OneDrive. On Windows the tools are in `.venv/Scripts/`.
 - Commits are Conventional Commits. **PR titles are not** (merge-commit model). See [CONTRIBUTING.md](CONTRIBUTING.md).
 - A new command is declared in `cli.py` with its final arguments first, then built in its own module.
 - Docs change in the same PR as the behaviour they describe. [TODO.md](TODO.md) holds open work only.
+- repo-kit manages its own files (`.repo-kit.toml`). A PR that changes `templates/` also runs `rk sync` and commits
+  the result, or `pr-checks / managed-files` fails.

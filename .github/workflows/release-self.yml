@@ -1,0 +1,23 @@
+# repo-kit's own caller of release, written by hand: in repo-kit, .github/workflows/release.yml is the reusable
+# workflow itself, so the generated caller can't live there (see the overrides in .repo-kit.toml). It runs the
+# release workflow from the pushed commit on main, which only merged code reaches.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  release:
+    permissions:
+      contents: read
+    # The documented local form: it resolves to this same commit, and actionlint checks it.
+    uses: ./.github/workflows/release.yml # zizmor: ignore[self-repository]
+    with:
+      client-id: ${{ vars.GTH_RELEASE_BOT_CLIENT_ID }}
+      target-branch: main
+      back-merge-into: dev
+    secrets:
+      RELEASE_BOT_PRIVATE_KEY: ${{ secrets.GTH_RELEASE_BOT_PRIVATE_KEY }}

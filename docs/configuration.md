@@ -6,8 +6,10 @@ Two files. Unknown keys in either are errors, and `rk doctor` validates both.
 
 ## Repo config: `.repo-kit.toml`
 
-Committed. The single input to everything rk generates or applies. `rk install` seeds it, and from then on it belongs
-to the repo (`seeded` mode: rk never rewrites it, except `rk upgrade` changing `version`).
+Committed. The single input to everything rk generates or applies. A repo without one gets every default shown
+below (`profile = "dev-main"`, no setup or check, `env_dirs = [".venv"]`). `rk install` seeds it with `version`, `profile` and
+`[project]` ([adoption.md](adoption.md#install-step-by-step)), and from then on it belongs to the repo (`seeded`
+mode: rk never rewrites it, except `rk upgrade` changing `version`).
 
 ```toml
 version = "1.4.0"                 # the ONE pin; every generated caller uses it
@@ -19,11 +21,12 @@ release_type = "python"           # release-please release type
 
 [checks]
 required = ["test"]               # this repo's own CI jobs that rulesets must require
-pr_title = "not-conventional"     # or "conventional" (for squash-merge repos)
+pr_title = "not-conventional"     # or "conventional" (for squash-merge repos); also picks the CONTRIBUTING text
 commit_header_max = 100
 
 [release]
-app = "gth-release-bot"           # the only actor allowed to create v* tags
+app = "gth-release-bot"           # the only actor allowed to create v* tags; bypasses dev for the back-merge
+app_id = 5058502                  # that App's numeric ID, for the rulesets' bypass lists
 back_merge = true                 # merge main back into dev after a release (dev-main only)
 
 [update_prs]
@@ -53,18 +56,26 @@ gth_packages = ["greentechhub-core", "greentechhub-fastapi"]
 | `[release]` | `release.yml`, the tags ruleset |
 | `[update_prs]` | `update-prs` ([pr-updates.md](pr-updates.md)) |
 | `[worktree]` | `wt start` (`setup`), `wt sync` (`check`), `wt done` (`env_dirs`) ([worktrees.md](worktrees.md)) |
-| `[extras]` | Opt-in templates, such as `use-local-gth` |
+| `[extras]` | Opt-in templates. `use_local_gth` is accepted, but adds nothing until the `use-local-gth` extra is built (a Future item) |
 | `[overrides]` | Per-file ownership changes. A file set to `unmanaged` is left alone; `doctor` warns about each one |
 
 ## User config: `~/.config/repo-kit/config.toml`
 
-Per machine, never committed.
+Per machine, never committed. The same path on every OS; set `REPO_KIT_CONFIG` to use another file. Missing means
+the defaults.
 
 ```toml
 worktree_root = "~/dev/wt"
+secrets_file = "~/OneDrive/repo-kit/secrets.sops.json"   # the Apps' credentials, sops + age encrypted
 ```
 
-`worktree_root` must not be inside OneDrive or any other synced folder.
+`worktree_root` must not be inside OneDrive or any other synced folder: rk refuses one under a `OneDrive*`, Dropbox
+or iCloud folder. `secrets_file` may be, since it's encrypted. The age key that decrypts it must not be; `rk secrets`
+refuses one that is. `rk secrets init` writes the `secrets_file` line, creating this file if needed. See
+[github-app.md](github-app.md#credentials-sops--age).
+
+The old `[pr_bot]` table is an error that names the migration
+([github-app.md](github-app.md#moving-from-pr_bot)).
 
 ## Worktree-local: `.repo-kit.local.toml`
 

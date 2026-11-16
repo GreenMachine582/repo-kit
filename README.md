@@ -21,9 +21,10 @@ It fixes three problems:
   hand, and the copies drift.
 
 > [!NOTE]
-> **Status: pre-alpha.** This is the project skeleton: the `rk` command tree, the plugin's skills and the design docs.
-> No command does anything yet; each one says which phase delivers it. Next is Phase 0, then 1A (engine core and
-> worktrees). See [TODO.md](TODO.md).
+> **Status: pre-alpha.** The worktree commands (`rk wt start / sync / done`), `rk update-prs`, `rk configure`,
+> `rk sync [--check]`, `rk install`, `rk bootstrap` and the plugin's skills work, and the `update-prs` reusable
+> workflow keeps PRs current. Every other command says which phase delivers it. Phase 1C (adoption) is in
+> progress. See [TODO.md](TODO.md).
 
 ## 🧩 Scope
 
@@ -44,6 +45,10 @@ Install `rk` on your `PATH`, pinned to a release:
 uv tool install git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z
 ```
 
+`rk configure` and `rk bootstrap` also need [sops](https://github.com/getsops/sops) 3.10+ and
+[age](https://github.com/FiloSottile/age), which hold the GitHub Apps' credentials. Set them up once per machine with
+`rk secrets init` ([docs/github-app.md](docs/github-app.md#credentials-sops--age)).
+
 Then, in a repo you want to adopt:
 
 ```bash
@@ -51,9 +56,9 @@ rk bootstrap --profile dev-main   # install + configure + doctor
 rk wt start feat/my-change         # a branch in its own worktree, with its own venv
 ```
 
-In Claude Code, the plugin bundles the engine, so a session needs nothing installed: `rk install` adds the plugin
-marketplace to the repo's `.claude/settings.json`, and the skills `worktree-start`, `worktree-sync` and
-`worktree-done` call it.
+In Claude Code, `rk install` adds the plugin marketplace to the repo's `.claude/settings.json`. The plugin holds only
+the skills `worktree-start`, `worktree-sync` and `worktree-done`: they call the `rk` on your `PATH`, so there is one
+copy of the engine per machine, at the version you installed.
 
 ### Developing repo-kit
 
@@ -81,12 +86,14 @@ uv pip install -e ".[dev]"
 | `rk wt sync [branch]` | Merge `origin/<branch>`, then the PR base; check; push without force |
 | `rk wt done [branch]` | Remove a finished worktree, refusing every unsafe state |
 | `rk update-prs` | Reconcile every open PR against its base (run by the reusable workflow) |
-| `rk sync [--check \| --adopt]` | Render managed files and blocks; check drift; take over existing files |
+| `rk sync [--check]` | Render managed files and blocks; check drift. An existing file is taken over only if it matches |
 | `rk github diff \| apply` | Compare or apply rulesets and repo settings |
-| `rk branches prune [--apply]` | List or delete branches whose PR is merged |
+| `rk branches prune [--apply]` | List, or delete, branches whose PR is merged (or, on origin, closed) |
 | `rk check commits \| commit-msg \| pr-title` | The commit and title rules `pr-checks` runs |
-| `rk install / configure / bootstrap` | Adopt a repo |
-| `rk upgrade [vX.Y.Z]` | Move the one version pin and re-render everything |
+| `rk secrets init / set-app / add-recipient / show` | Keep both Apps' credentials in one sops + age encrypted file |
+| `rk configure` | Enrol a repo for `gth-pr-bot` and `gth-release-bot`: labels, Client ID variables and key secrets |
+| `rk install / bootstrap` | Adopt a repo |
+| `rk upgrade [vX.Y.Z]` | Move the version pin to this rk's release and re-render |
 | `rk doctor` | Read-only health check |
 
 ## 📚 Docs

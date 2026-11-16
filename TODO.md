@@ -5,48 +5,12 @@
 Open work only: remove an item when it ships. Shipped work is in `CHANGELOG.md`. Future items (below) start only
 after Phase 4, to keep scope in check.
 
-## Phase 1A: engine core, config, worktree commands, three skills
-
-Done when scenarios 8, 11 and 12 pass ([docs/testing.md](docs/testing.md)), the skills load, and CI is green on Linux
-and Windows.
-
-- [ ] `config.py`: `.repo-kit.toml` and user config, unknown keys rejected ([docs/configuration.md](docs/configuration.md))
-- [ ] `git.py`, `github.py` (with a fake PR store for tests)
-- [ ] `rk wt start / sync / done` ([docs/worktrees.md](docs/worktrees.md))
-- [ ] Worktree path slug and hash
-- [ ] Scenario harness: bare origin + clones in `tmp_path`
-- [ ] Confirm the minimum Git version (2.38+ assumed)
-- [ ] `claude plugin validate` and `actionlint` in CI
-
-## Phase 1B: `gth-pr-bot` and `update-prs`
-
-Done when scenarios 1–7, 9 and 10 pass.
-
-- [ ] Create the `gth-pr-bot` App ([docs/github-app.md](docs/github-app.md))
-- [ ] `reconcile.py` and `rk update-prs` ([docs/pr-updates.md](docs/pr-updates.md))
-- [ ] Reusable `.github/workflows/update-prs.yml`
-
-## Phase 1C: `sync`, install, configure, upgrade, doctor
-
-Done when scenarios 13–19 pass and a fresh repo reaches `doctor` all-OK in one `bootstrap`.
-
-- [ ] `files.py`: render, `.repo-kit.lock`, ownership modes, `--check`, `--adopt` ([docs/shared-files.md](docs/shared-files.md))
-- [ ] `rk install` (including creating `dev` and retargeting PRs), `configure`, `bootstrap`, `upgrade`
-- [ ] `rk doctor` ([docs/adoption.md](docs/adoption.md))
-- [ ] `templates/common/`: callers, `.gitignore` block, CONTRIBUTING blocks
-- [ ] `templates/extras/use-local-gth/`
-
 ## Phase 1D: `pr-checks`, `release`, `rk github`, `branches prune`, the `dev-main` profile
 
 Done when unit snapshots of generated rulesets and files pass, and repo-kit runs on its own tooling (dogfood).
 
-- [ ] `checks.py` and the `commit-msg` hook ([docs/checks-and-release.md](docs/checks-and-release.md))
-- [ ] Reusable `pr-checks.yml` and `release.yml`
-- [ ] `rulesets.py`, `settings.py`, `rk github diff / apply` ([docs/rulesets.md](docs/rulesets.md))
-- [ ] `rk branches prune`
-- [ ] `templates/profiles/dev-main/`, including `release-please-config.json`
-- [ ] Dogfood: `.repo-kit.toml`, `.repo-kit.lock`, generated callers replace the hand-written `ci.yml`
-- [ ] First release of repo-kit (User approves)
+- [ ] First release of repo-kit (User approves): a `release: …` PR from `dev` to `main`. `release-self.yml` runs
+  release-please. If it picks a version other than `0.1.0`, move the pin with `rk upgrade`
 
 ## Phase 2: pilot on photo-ledger, moving from `main` only to `dev-main`
 
@@ -76,6 +40,14 @@ Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Done when every 
   - [ ] A release cut through `release.yml` behaves exactly as before
 - **Live checks** ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot))
   - [ ] All five pass
+- **From the pre-release review**
+  - [ ] A closer review of `worktree.py`, `files.py` and `reconcile.py` before the pilot (the review only skimmed
+    them through their tests)
+  - [ ] Key fingerprints: `configure` stores each App key's fingerprint in a repo variable, so `doctor` catches a
+    repo still holding a key that was rotated out, before revoking it breaks CI everywhere
+  - [ ] Warn about OneDrive conflict copies of the credentials file (`secrets-<machine>.sops.json`)
+  - [ ] Less `update-prs` push noise
+  - [ ] `rk wt list`: this repo's worktrees with their branch, PR and state
 
 ## Phase 3: GTH repos (`dev-main`, migrating)
 
@@ -83,8 +55,14 @@ Done when `doctor` is all-OK in each, one release is cut per repo through the ne
 worktree links a Core worktree.
 
 - [ ] `local_gth.py` resolution order change in greentechhub-core ([docs/worktrees.md](docs/worktrees.md#-local-gth-mode))
-- [ ] `rk sync --adopt` in core, then fastapi, then ui
+- [ ] `rk sync` in core, then fastapi, then ui, settling each refused file by hand (each keeps its own
+  `use-local-gth.sh`)
 - [ ] Delete the old scripts and ruleset JSON in each ([docs/adoption.md](docs/adoption.md#gth-repos))
+- [ ] `rk fleet`: `doctor`, `configure`, `sync --check` and `upgrade` across every adopting repo, which also makes key
+  rotation and upgrade fan-out simpler
+- [ ] `rk doctor --json`
+- [ ] `rk secrets recipients` and `remove-recipient`, to list and drop machines
+- [ ] Better `.pem` handling in `rk secrets set-app` (from the review)
 
 ## Phase 4: remaining repos
 
@@ -92,11 +70,13 @@ Done when each has had one `bootstrap`.
 
 - [ ] PyFinBot
 - [ ] Any other repo still carrying its own copies
+- [ ] `rk secrets rotate`: store a new App key, then `configure --replace-key` across the fleet
+- [ ] A key-age warning in `doctor`
 
 ## 🙋 User-only steps
 
 - [ ] Approve creating the public repo and its first release
-- [ ] Create `gth-pr-bot`, install it and `gth-release-bot` on adopting repos, and supply keys when `rk configure` asks
+- [ ] Install `gth-pr-bot` and `gth-release-bot` on each adopting repo, then run `rk configure` there
 - [ ] Run `rk github apply` yourself (needs admin), after reading the diff
 - [ ] Approve photo-ledger's switch to `dev` (new default branch, open PRs retargeted) when `rk install` asks
 
@@ -104,13 +84,27 @@ Done when each has had one `bootstrap`.
 
 Registered, not planned. Each is picked up on its own, after Phase 4.
 
+- **`use-local-gth` extra:** a managed `scripts/use-local-gth.sh` for GTH consumers, enabled by
+  `[extras].use_local_gth`. Until then each GTH repo keeps its own copy.
+- **Interactive `rk sync --adopt`:** show each difference and take ownership after confirming, if settling refused
+  files by hand proves slow.
+- **Renamed and removed templates in `rk upgrade`:** move or delete the file and update the lock.
+- **`[project].extra_files`:** release-please `extra-files` in the managed config, for version files such as
+  PyFinBot's `src/pyfinbot/version.py`.
+- **Key validation in `rk configure`:** confirm the key and installation before storing, if a stdlib-only way to sign
+  the App's JWT turns up.
 - **`main-only` profile**, if a repo ever needs a trunk-only flow: ruleset builder and templates without `dev` or
   back-merge.
 - **Daily safety-net run** of `update-prs`, if missed events ever show up in practice.
-- **Upgrade fan-out:** on a repo-kit release, `gth-pr-bot` opens an `rk upgrade` PR in every adopting repo.
+- **Upgrade fan-out:** on a repo-kit release, `gth-pr-bot` opens an `rk upgrade` PR in every adopting repo. `rk fleet`
+  (Phase 3) covers most of this by hand.
+- **`rk status`:** one summary across worktrees, PRs and doctor.
+- **zizmor in consumers:** run it on each consumer's workflows, as repo-kit's own CI does.
+- **SHA-pinned callers:** generated callers pin repo-kit by commit SHA as well as tag.
 - **Private-branch rebase** in `wt sync`: rebase only branches nothing depends on.
 - **Deterministic conflict handling:** `rerere`, lockfile regeneration, per-path rules.
 - **AI-assisted conflict resolution:** a local Haiku-class agent first; in CI only as resolve (no GitHub credentials)
   → verify (no secrets) → publish (App token), in `suggest` mode.
 - **Move `next-task` and `open-pr` into the plugin**, with per-repo specifics from config.
-- **More managed files** as patterns repeat: `ruff`/pytest config blocks, PR template, issue templates, `CODEOWNERS`.
+- **More managed files** as patterns repeat: `ruff`/pytest config blocks, PR template, issue templates, `CODEOWNERS`,
+  `SECURITY.md`.

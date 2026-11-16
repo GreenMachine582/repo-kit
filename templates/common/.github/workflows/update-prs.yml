@@ -1,0 +1,30 @@
+# Managed by repo-kit: `rk sync` rewrites this file. Change .repo-kit.toml or repo-kit, not this file.
+# Keeps every ready PR current with its base, as gth-pr-bot. See repo-kit's docs/pr-updates.md.
+name: update-prs
+
+on:
+  push:
+  pull_request:
+    types: [edited, ready_for_review, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Report what would happen and write nothing
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  update-prs:
+    # Idle until `rk configure` has enrolled this repo.
+    if: vars.GTH_PR_BOT_CLIENT_ID != ''
+    permissions:
+      contents: read
+    uses: GreenMachine582/repo-kit/.github/workflows/update-prs.yml@v${version}
+    with:
+      ref: v${version}
+      client-id: ${{ vars.GTH_PR_BOT_CLIENT_ID }}
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+    secrets:
+      PR_BOT_PRIVATE_KEY: ${{ secrets.GTH_PR_BOT_PRIVATE_KEY }}

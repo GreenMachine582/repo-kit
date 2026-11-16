@@ -22,9 +22,6 @@ htmlcov/
 !.env.example
 *.pem
 
-# repo-kit: per-worktree links written by `rk wt start --link`
-.repo-kit.local.toml
-
 # IDE and OS
 .idea/
 .vscode/
@@ -33,3 +30,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# >>> repo-kit: local
+# Worktree-local links written by `rk wt start --link`
+.repo-kit.local.toml
+# <<< repo-kit: local

@@ -1,0 +1,21 @@
+# repo-kit's config for this repo: the one input to everything rk generates or applies.
+# repo-kit runs on its own tooling. Every key and its default: docs/configuration.md
+
+version = "0.1.0"                 # the first release: release-please's first bump from 0.0.0
+profile = "dev-main"
+
+[project]
+name = "repo-kit"
+release_type = "python"
+
+[checks]
+# This repo's own CI jobs (ci.yml), required next to the pr-checks ones.
+required = ["test (ubuntu-latest)", "test (windows-latest)", "actionlint", "zizmor", "plugin"]
+
+[overrides]
+# In repo-kit these paths are the reusable workflows themselves, not their callers. The local callers
+# (pr-checks-self.yml, keep-prs-current.yml, release-self.yml) run them with `uses: ./…`, so every PR
+# tests its own workflows.
+files.".github/workflows/pr-checks.yml" = "unmanaged"
+files.".github/workflows/update-prs.yml" = "unmanaged"
+files.".github/workflows/release.yml" = "unmanaged"

@@ -9,14 +9,22 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from repo_kit import __version__
+from repo_kit.errors import RkError
 
 NOT_IMPLEMENTED = 2
 
+Handler = Callable[[argparse.Namespace], int]
+if TYPE_CHECKING:
+    # Subscriptable only for the type checker, not at runtime.
+    SubParsers = argparse._SubParsersAction[argparse.ArgumentParser]
 
-def _not_implemented(command: str, phase: str):
+
+def _not_implemented(command: str, phase: str) -> Handler:
     def handler(args: argparse.Namespace) -> int:
         print(f"rk {command}: not implemented yet (Phase {phase})", file=sys.stderr)
         return NOT_IMPLEMENTED
@@ -24,7 +32,179 @@ def _not_implemented(command: str, phase: str):
     return handler
 
 
-def _add_worktree(sub: argparse._SubParsersAction) -> None:
+def _print_changes(changed: list[str]) -> None:
+    print("Changed:" if changed else "Changed: nothing")
+    for item in changed:
+        print(f"  - {item}")
+
+
+def _wt_handler(action: str) -> Handler:
+    def handler(args: argparse.Namespace) -> int:
+        # Imported here so `rk --help` and the not-yet-built commands don't need git.
+        from repo_kit import worktree
+
+        ctx = worktree.Context.load(Path.cwd())
+        try:
+            if action == "start":
+                worktree.start(ctx, args.branch, args.from_branch, args.link, args.no_setup)
+            elif action == "sync":
+                worktree.sync(ctx, args.branch)
+            else:
+                worktree.done(
+                    ctx,
+                    args.branch,
+                    allow_unmerged=args.allow_unmerged,
+                    discard_changes=args.discard_changes,
+                    delete_unpushed=args.delete_unpushed,
+                )
+        finally:
+            _print_changes(ctx.changed)
+        return 0
+
+    return handler
+
+
+def _update_prs(args: argparse.Namespace) -> int:
+    # Imported here so `rk --help` and the not-yet-built commands don't load it.
+    from repo_kit import reconcile
+
+    report = reconcile.run(Path.cwd(), dry_run=args.dry_run)
+    _print_changes(report.changed)
+    return 1 if report.failed else 0
+
+
+def _sync(args: argparse.Namespace) -> int:
+    if args.adopt:
+        print(
+            "rk sync --adopt: a Future item (see TODO.md). Plain `rk sync` takes over a file only "
+            "if it already matches, and refuses with the diff otherwise.",
+            file=sys.stderr,
+        )
+        return NOT_IMPLEMENTED
+    from repo_kit import files
+
+    changed: list[str] = []
+    try:
+        return files.run_sync(Path.cwd(), check=args.check, changed=changed)
+    finally:
+        if not args.check:
+            _print_changes(changed)
+
+
+def _configure(args: argparse.Namespace) -> int:
+    from repo_kit import bootstrap
+
+    changed: list[str] = []
+    try:
+        bootstrap.run_configure(
+            Path.cwd(), changed=changed, dry_run=args.dry_run, replace_key=args.replace_key
+        )
+    finally:
+        _print_changes(changed)
+    return 0
+
+
+def _secrets(action: str) -> Handler:
+    def handler(args: argparse.Namespace) -> int:
+        from repo_kit import credentials
+
+        if action == "show":
+            return credentials.run_show()
+        changed: list[str] = []
+        code = 0
+        try:
+            if action == "init":
+                code = credentials.run_init(file=args.file, changed=changed)
+            elif action == "set-app":
+                credentials.run_set_app(
+                    args.app, client_id=args.client_id, pem=Path(args.pem), changed=changed
+                )
+            else:
+                credentials.run_add_recipient(args.recipient, changed=changed)
+        finally:
+            _print_changes(changed)
+        return code
+
+    return handler
+
+
+def _install(args: argparse.Namespace) -> int:
+    from repo_kit import bootstrap
+
+    changed: list[str] = []
+    try:
+        bootstrap.run_install(Path.cwd(), profile=args.profile, changed=changed, hooks=args.hooks)
+    finally:
+        _print_changes(changed)
+    return 0
+
+
+def _upgrade(args: argparse.Namespace) -> int:
+    from repo_kit import bootstrap
+
+    changed: list[str] = []
+    try:
+        bootstrap.run_upgrade(Path.cwd(), args.version, changed=changed)
+    finally:
+        _print_changes(changed)
+    return 0
+
+
+def _bootstrap(args: argparse.Namespace) -> int:
+    from repo_kit import bootstrap
+
+    changed: list[str] = []
+    try:
+        bootstrap.run_bootstrap(Path.cwd(), profile=args.profile, changed=changed)
+    finally:
+        _print_changes(changed)
+    return 0
+
+
+def _check(kind: str) -> Handler:
+    def handler(args: argparse.Namespace) -> int:
+        from repo_kit import checks
+
+        if kind == "commits":
+            return checks.run_commits(Path.cwd(), args.range)
+        if kind == "commit-msg":
+            return checks.run_commit_msg(Path.cwd(), Path(args.file))
+        return checks.run_pr_title(Path.cwd(), args.title)
+
+    return handler
+
+
+def _github(apply_changes: bool) -> Handler:
+    def handler(args: argparse.Namespace) -> int:
+        from repo_kit import github_config
+
+        if not apply_changes:
+            return github_config.run_github(Path.cwd(), apply_changes=False)
+        changed: list[str] = []
+        code = github_config.run_github(Path.cwd(), apply_changes=True, changed=changed)
+        _print_changes(changed)
+        return code
+
+    return handler
+
+
+def _prune(args: argparse.Namespace) -> int:
+    from repo_kit import branches
+
+    changed: list[str] = []
+    code = branches.run_prune(Path.cwd(), apply=args.apply, changed=changed)
+    if args.apply:
+        _print_changes(changed)
+    return code
+
+
+def _doctor(args: argparse.Namespace) -> int:
+    from repo_kit import doctor
+
+    return doctor.run_doctor(Path.cwd())
+
+
+def _add_worktree(sub: SubParsers) -> None:
     wt = sub.add_parser("wt", help="one branch = one worktree = one Claude session")
     wt_sub = wt.add_subparsers(dest="wt_command", required=True, metavar="<command>")
 
@@ -44,11 +224,11 @@ def _add_worktree(sub: argparse._SubParsersAction) -> None:
         help="use a local worktree of a GTH package (repeatable)",
     )
     start.add_argument("--no-setup", action="store_true", help="skip [worktree].setup")
-    start.set_defaults(handler=_not_implemented("wt start", "1A"))
+    start.set_defaults(handler=_wt_handler("start"))
 
     sync = wt_sub.add_parser("sync", help="merge the remote branch and its PR base, check, push")
     sync.add_argument("branch", nargs="?", help="defaults to the current worktree's branch")
-    sync.set_defaults(handler=_not_implemented("wt sync", "1A"))
+    sync.set_defaults(handler=_wt_handler("sync"))
 
     done = wt_sub.add_parser("done", help="remove a finished worktree and its branch")
     done.add_argument("branch", nargs="?", help="defaults to the current worktree's branch")
@@ -61,28 +241,28 @@ def _add_worktree(sub: argparse._SubParsersAction) -> None:
     done.add_argument(
         "--delete-unpushed", action="store_true", help="allow unpushed commits, which are lost"
     )
-    done.set_defaults(handler=_not_implemented("wt done", "1A"))
+    done.set_defaults(handler=_wt_handler("done"))
 
 
-def _add_pr_side(sub: argparse._SubParsersAction) -> None:
+def _add_pr_side(sub: SubParsers) -> None:
     update = sub.add_parser("update-prs", help="merge each ready PR's base into it (run by CI)")
     update.add_argument("--dry-run", action="store_true", help="report what would happen")
-    update.set_defaults(handler=_not_implemented("update-prs", "1B"))
+    update.set_defaults(handler=_update_prs)
 
     check = sub.add_parser("check", help="commit and PR title rules (used by pr-checks)")
     check_sub = check.add_subparsers(dest="check_command", required=True, metavar="<command>")
     commits = check_sub.add_parser("commits", help="check every non-merge commit in a range")
     commits.add_argument("range", help="revision range, such as origin/dev..HEAD")
-    commits.set_defaults(handler=_not_implemented("check commits", "1D"))
+    commits.set_defaults(handler=_check("commits"))
     msg = check_sub.add_parser("commit-msg", help="check one message file (commit-msg hook)")
     msg.add_argument("file")
-    msg.set_defaults(handler=_not_implemented("check commit-msg", "1D"))
+    msg.set_defaults(handler=_check("commit-msg"))
     title = check_sub.add_parser("pr-title", help="check a PR title against [checks].pr_title")
     title.add_argument("title")
-    title.set_defaults(handler=_not_implemented("check pr-title", "1D"))
+    title.set_defaults(handler=_check("pr-title"))
 
 
-def _add_setup_side(sub: argparse._SubParsersAction) -> None:
+def _add_setup_side(sub: SubParsers) -> None:
     sync = sub.add_parser("sync", help="render managed files and blocks into this repo")
     mode = sync.add_mutually_exclusive_group()
     mode.add_argument(
@@ -95,43 +275,81 @@ def _add_setup_side(sub: argparse._SubParsersAction) -> None:
         action="store_true",
         help="take over existing files after showing each difference",
     )
-    sync.set_defaults(handler=_not_implemented("sync", "1C"))
+    sync.set_defaults(handler=_sync)
 
-    github = sub.add_parser("github", help="rulesets and repo settings")
-    gh_sub = github.add_subparsers(dest="github_command", required=True, metavar="<command>")
+    github = sub.add_parser("github", help="rulesets and repo settings (`diff` by default)")
+    github.set_defaults(handler=_github(False))
+    gh_sub = github.add_subparsers(dest="github_command", metavar="<command>")
     gh_sub.add_parser("diff", help="live GitHub state vs config (read-only)").set_defaults(
-        handler=_not_implemented("github diff", "1D")
+        handler=_github(False)
     )
     gh_sub.add_parser("apply", help="apply after showing the diff and asking").set_defaults(
-        handler=_not_implemented("github apply", "1D")
+        handler=_github(True)
     )
 
     branches = sub.add_parser("branches", help="branch housekeeping")
     br_sub = branches.add_subparsers(dest="branches_command", required=True, metavar="<command>")
     prune = br_sub.add_parser("prune", help="list (or delete) branches whose PR is merged")
     prune.add_argument("--apply", action="store_true", help="delete instead of listing")
-    prune.set_defaults(handler=_not_implemented("branches prune", "1D"))
+    prune.set_defaults(handler=_prune)
 
-    install = sub.add_parser("install", help="seed .repo-kit.toml, sync, add the plugin")
+    install = sub.add_parser(
+        "install", help="seed .repo-kit.toml, sync, add the plugin, create the base branch"
+    )
     install.add_argument("--profile", default="dev-main", choices=["dev-main"])
     install.add_argument("--hooks", action="store_true", help="also install the commit-msg hook")
-    install.set_defaults(handler=_not_implemented("install", "1C"))
+    install.set_defaults(handler=_install)
 
-    sub.add_parser("configure", help="Apps, secrets, labels, then github apply").set_defaults(
-        handler=_not_implemented("configure", "1C")
+    configure = sub.add_parser(
+        "configure",
+        help="enrol this repo for gth-pr-bot and gth-release-bot: labels, Client IDs and keys",
     )
+    configure.add_argument("--dry-run", action="store_true", help="report what would change")
+    configure.add_argument(
+        "--replace-key", action="store_true", help="overwrite the private key secrets if set"
+    )
+    configure.set_defaults(handler=_configure)
+
+    secrets = sub.add_parser("secrets", help="the Apps' credentials, in a sops + age file")
+    sec_sub = secrets.add_subparsers(dest="secrets_command", required=True, metavar="<command>")
+    init = sec_sub.add_parser(
+        "init",
+        help="set this machine up: age key, user config entry, credentials file (safe to re-run)",
+    )
+    init.add_argument(
+        "--file",
+        metavar="PATH",
+        help="where the shared credentials file goes (default: ~/OneDrive/repo-kit/"
+        "secrets.sops.json, or the home folder without OneDrive)",
+    )
+    init.set_defaults(handler=_secrets("init"))
+    set_app = sec_sub.add_parser("set-app", help="store an App's Client ID and private key")
+    set_app.add_argument("app", choices=["pr-bot", "release-bot"])
+    set_app.add_argument("--client-id", required=True, help="the App's Client ID (Iv23…)")
+    set_app.add_argument("--pem", required=True, metavar="PATH", help="the App's downloaded .pem")
+    set_app.set_defaults(handler=_secrets("set-app"))
+    add = sec_sub.add_parser(
+        "add-recipient", help="let another machine's age key decrypt the credentials file"
+    )
+    add.add_argument("recipient", metavar="AGE_PUBLIC_KEY", help="age1…, from `rk secrets init`")
+    add.set_defaults(handler=_secrets("add-recipient"))
+    sec_sub.add_parser(
+        "show", help="list each App's Client ID and whether its key is present (never the key)"
+    ).set_defaults(handler=_secrets("show"))
 
     bootstrap = sub.add_parser("bootstrap", help="install + configure + doctor")
     bootstrap.add_argument("--profile", default="dev-main", choices=["dev-main"])
-    bootstrap.set_defaults(handler=_not_implemented("bootstrap", "1C"))
+    bootstrap.set_defaults(handler=_bootstrap)
 
-    upgrade = sub.add_parser("upgrade", help="move the version pin and re-render everything")
-    upgrade.add_argument("version", nargs="?", help="vX.Y.Z; defaults to the latest release")
-    upgrade.set_defaults(handler=_not_implemented("upgrade", "1C"))
-
-    sub.add_parser("doctor", help="read-only health check").set_defaults(
-        handler=_not_implemented("doctor", "1C")
+    upgrade = sub.add_parser(
+        "upgrade", help="move the version pin to this rk's release and re-render"
     )
+    upgrade.add_argument(
+        "version", nargs="?", help="vX.Y.Z, which must be this rk's release; defaults to it"
+    )
+    upgrade.set_defaults(handler=_upgrade)
+
+    sub.add_parser("doctor", help="read-only health check").set_defaults(handler=_doctor)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -149,7 +367,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.handler(args)
+    try:
+        handler: Handler = args.handler
+        return handler(args)
+    except RkError as exc:
+        print(f"rk: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

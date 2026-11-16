@@ -12,6 +12,7 @@ Tests only ever touch `tmp_path`: never a real repo, never GitHub.
 - Commit and title rules: a table of valid and invalid examples, including GitHub's merge-commit formats
 - Ruleset and settings builders: a snapshot per profile
 - `string.Template` rendering
+- Version pin parsing and rewrite
 - The CLI command tree
 
 ## Git scenarios (`tests/scenarios/`)
@@ -21,15 +22,15 @@ pytest against a bare origin and clones, with a fake PR store behind the `github
 | # | Scenario | Expected |
 |---|---|---|
 | 1 | Clean base merge | One merge commit pushed |
-| 2 | Conflicting base merge | No push; label; one comment |
+| 2 | Conflicting base merge | No update; label; one comment |
 | 3 | Re-run on an updated PR | No-op |
 | 4 | Two PRs sharing a base | Both updated |
-| 5 | Chain of three | Parents before children, one run |
+| 5 | Chain of three | Parents before children; one run against the fake, which merges at once (on GitHub, up to one run per link) |
 | 6 | Base retargeted after parent merges | Reconciled against the new base |
-| 7 | Head moves between check and push | Rejected, recorded, nothing lost |
+| 7 | Head moves between check and update | Refused, recorded, nothing lost |
 | 8 | Bot-updated branch, local session diverged | `wt sync` merges both and pushes |
-| 9 | Draft, fork, `wip`, release-please PRs | Skipped with the right reason |
-| 10 | Interrupted merge | Next run clean |
+| 9 | Draft, fork, `wip`, release-please and `dev` → `main` PRs | Skipped with the right reason |
+| 10 | A run that fails part-way | The other PRs still update; next run clean |
 | 11 | `wt done` on each unsafe state | Refuses with the matching message |
 | 12 | Colliding branch slugs | Distinct paths |
 
@@ -42,8 +43,9 @@ pytest against a bare origin and clones, with a fake PR store behind the `github
 | 15 | Managed file edited by hand | `sync` refuses with diff; `--check` fails |
 | 16 | Block edited outside the markers | Consumer's text kept |
 | 17 | Seeded file changed | Never overwritten |
-| 18 | `upgrade` across a release that adds, renames and removes a template | Added, moved, deleted; lock updated |
-| 19 | `--adopt` on a copy of a GTH repo | Differences listed; nothing written until confirmed |
+| 18 | `upgrade` across a release that adds a template | Added; lock updated. Renames and removals are a Future item |
+| 19 | `sync` in a repo that already has a managed file | Taken over if it matches the render; otherwise refused with the diff. Interactive `--adopt` is a Future item |
+| 20 | `doctor` after `bootstrap`, then after each kind of breakage | All OK (or SKIP for Phase 1D) after bootstrap; each break is one FAIL or WARN naming the fix; nothing written |
 
 ## 🔴 Live checks in the pilot
 
@@ -57,4 +59,6 @@ Once, against real GitHub, in Phase 2:
 
 ## CI
 
-ruff (lint and format), `actionlint`, `claude plugin validate`. Worktree and sync scenarios run on Linux and Windows.
+ruff (lint and format), mypy (strict, on `src/`), `actionlint`, `zizmor` (a security audit of the workflows) and
+`claude plugin validate`. Worktree and sync scenarios run on Linux and Windows. Third-party actions are pinned to a
+full commit SHA, and Dependabot moves the pins.

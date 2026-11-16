@@ -1,0 +1,24 @@
+# How `rk sync` treats each file in this layer. See docs/shared-files.md.
+# Each key is the path in the consumer repo. `source` is the template file here, when it differs.
+# A block file lists its blocks instead: name = template file, in the order they are appended.
+
+# The shared contributing rules. They describe this profile's branch model, so they live here, not in
+# common. The repo's own sections (an intro, local setup) stay outside the markers.
+[files."CONTRIBUTING.md"]
+mode = "block"
+blocks = { branches = "contributing/branches.md", pull-requests = "contributing/pull-requests.md", chained-prs = "contributing/chained-prs.md", releasing = "contributing/releasing.md" }
+
+# The release branch and the back-merge belong to this profile.
+[files.".github/workflows/release.yml"]
+mode = "managed"
+
+# release-please's rules, the same in every repo. The changelog sections match checks.TYPES and the
+# CONTRIBUTING table (a unit test keeps them in step).
+[files."release-please-config.json"]
+mode = "managed"
+source = "release-please.json"
+
+# The last released version: seeded from the project file, then release-please's to move.
+[files.".release-please-manifest.json"]
+mode = "seeded"
+source = "release-please-manifest.json"

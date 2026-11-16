@@ -9,7 +9,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["mypy>=1.11", "pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
 rk = "repo_kit.cli:main"
@@ -33,7 +33,20 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+# B: likely bugs. SIM: simplifications. PTH: paths go through pathlib. S: security (bandit).
+select = ["E", "F", "I", "UP", "B", "SIM", "PTH", "S"]
+# S603 and S607 flag every subprocess call, even with an argument list and no shell, which is how rk
+# runs git and gh by design. The shell rules (S602, S604, S605) stay on.
+ignore = ["S603", "S607"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, and name /tmp paths only as strings to parse.
+"tests/**" = ["S101", "S108"]
+
+[tool.mypy]
+# The engine only: tests are untyped pytest functions.
+files = ["src"]
+strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
