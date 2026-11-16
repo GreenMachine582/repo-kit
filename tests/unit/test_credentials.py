@@ -338,7 +338,7 @@ def test_round_trip_with_real_sops(tmp_path, monkeypatch):
             say=lambda _m: None,
         )
 
-    assert "BEGIN" not in path.read_text(encoding="utf-8")
+    assert "PRIVATE KEY" not in path.read_text(encoding="utf-8")  # only age ciphertext
     loaded = load_credentials(config, SOURCE, sops)
     assert loaded[PR_BOT.key].private_key == PEM
     assert loaded[RELEASE_BOT.key].client_id == "Iv23r"
