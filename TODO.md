@@ -40,14 +40,18 @@ Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Done when every 
   - [ ] A release cut through `release.yml` behaves exactly as before
 - **Live checks** ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot))
   - [ ] All five pass
-- **From the pre-release review**
-  - [ ] A closer review of `worktree.py`, `files.py` and `reconcile.py` before the pilot (the review only skimmed
-    them through their tests)
-  - [ ] Key fingerprints: `configure` stores each App key's fingerprint in a repo variable, so `doctor` catches a
-    repo still holding a key that was rotated out, before revoking it breaks CI everywhere
-  - [ ] Warn about OneDrive conflict copies of the credentials file (`secrets-<machine>.sops.json`)
-  - [ ] Less `update-prs` push noise
-  - [ ] `rk wt list`: this repo's worktrees with their branch, PR and state
+- **From the code review of `worktree.py`, `files.py` and `reconcile.py`**
+  - [ ] Worktree safety: validate `[worktree].env_dirs` (no `.`, globs or tracked folders, which can hide and then
+    delete uncommitted work); stop `wt done` deleting ignored files unasked; let a `wt done` that failed partway be
+    re-run without an override, and report its errors without a traceback; don't let `wt sync` recreate a merged
+    branch deleted on origin; pass `refs/heads/<branch> --` to git; don't treat an old merged PR of a reused branch
+    name as finished
+  - [ ] update-prs and sync: re-read a PR by number, not head branch (two PRs can share a head); dry runs in their
+    own concurrency group; run on `labeled`/`unlabeled`; clear the conflict comment once resolved; report only real
+    changes; never recreate a seeded file the consumer deleted; keep a file's line endings when writing a block
+  - [ ] Decide how to stop a pushed branch's own caller file from receiving the PR bot's key (`on: push` runs the
+    caller YAML from the pushed branch). Matters before anyone else gets write access
+  - [ ] Compare the recorded mode as well as the hash when a template changes mode between releases
 
 ## Phase 3: GTH repos (`dev-main`, migrating)
 

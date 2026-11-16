@@ -52,6 +52,26 @@ OneDrive. On Windows the tools are in `.venv/Scripts/`.
 They're not Python dependencies, so hard rule 1 holds. Tests use `FakeSops`; one round trip runs real sops when
 it's installed.
 
+## Agent workflow
+
+For every Claude session or subagent working on a branch here:
+
+- **Worktree:** start with `rk wt start <type/desc> --no-setup` from the main checkout, then work only in the
+  printed worktree. Build its venv with `uv venv` and `uv pip install --python .venv/Scripts/python.exe -e ".[dev]"`.
+  A plain `uv pip install` follows `VIRTUAL_ENV`, which may point at the main checkout, and would repoint that
+  checkout's `rk`.
+- **Scratch files:** agents running in parallel share one scratch folder, so name temporary files after the branch
+  (`msg-feat-x.txt`, not `msg.txt`).
+- **Editing:** use the editor tools, not shell heredocs, for text with backslashes: the shell here turns `\n` and `\a`
+  into real characters.
+- **Before each commit:** `ruff check`, `ruff format --check`, `mypy`, `pytest` and `rk sync --check` must pass.
+  Check exit codes directly: `cmd | tail && git commit` hides a failure behind the pipe.
+- **Commit and PR:** check commits with `rk check commits origin/dev..HEAD`. Open a draft PR to `dev`, and mark it
+  ready (`gh pr ready`) once CI is green. The user merges.
+- **TODO.md:** agents working in parallel leave it alone. The lead updates it once, after the PRs merge.
+- **Credentials:** never read the age key, `.pem` files, the user config or decrypted credentials. Never run
+  `rk github apply`, `rk configure` or `rk secrets` against real repos. Tests use `tmp_path` and a fake home folder.
+
 ## Conventions
 
 - `src/` layout. Templates live in `templates/` and ship inside the wheel as `repo_kit/templates`.
