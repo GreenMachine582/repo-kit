@@ -286,9 +286,32 @@ def app_by_arg(arg: str) -> App:
 
 
 def suggested_secrets_file() -> str:
+    """In OneDrive when there is one, written from `~` so the line works under any user name."""
     onedrive = os.environ.get("OneDrive")  # noqa: SIM112  # Windows sets it in this case
-    base = Path(onedrive) if onedrive else Path.home()
-    return (base / "repo-kit" / "secrets.sops.json").as_posix()
+    path = (Path(onedrive) if onedrive else Path.home()) / "repo-kit" / "secrets.sops.json"
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def record_secrets_file(source: Path, value: str, *, changed: list[str]) -> None:
+    """Add `secrets_file = …` to the top of this machine's user config, creating it if needed.
+
+    Top-level keys must come before any [table], so the line goes first; the rest is kept as is,
+    and the old file is backed up next to it.
+    """
+    line = f"secrets_file = {json.dumps(value)}\n"  # a JSON string is a valid TOML basic string
+    if source.is_file():
+        old = source.read_text(encoding="utf-8")
+        backup = source.with_name(source.name + ".bak")
+        backup.write_text(old, encoding="utf-8")
+        source.write_text(line + old, encoding="utf-8")
+        changed.append(f"added secrets_file to {source} (backup: {backup.name})")
+    else:
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text(line, encoding="utf-8")
+        changed.append(f"created {source} with secrets_file")
 
 
 def init(
@@ -297,11 +320,13 @@ def init(
     sops: Sops,
     *,
     changed: list[str],
+    file: str | None = None,
     key_file: Path | None = None,
     keygen: Callable[[Path], None] = run_age_keygen,
     say: Callable[[str], None] = print,
 ) -> None:
-    """Set this machine up: its age key, then the credentials file. Safe to re-run."""
+    """Set this machine up in one go: its age key, where the shared credentials file is (in this
+    machine's user config), and the file itself if no machine has made it yet. Safe to re-run."""
     key_file = key_file or age_key_path()
     check_age_key_location(key_file)
     if not key_file.is_file():
@@ -312,15 +337,24 @@ def init(
 
     path = user_config.secrets_path
     if path is None:
-        say(
-            f"Add this line to {source} (above any [table]), then run `rk secrets init` again:\n\n"
-            f'secrets_file = "{suggested_secrets_file()}"   # encrypted, so a synced folder is fine'
+        value = file or suggested_secrets_file()
+        if not value.startswith("~"):
+            value = Path(value).as_posix()
+        record_secrets_file(source, value, changed=changed)
+        path = Path(value).expanduser()
+    elif file and Path(file).expanduser() != path:
+        raise RkError(
+            f"{source} already names {user_config.secrets_file}: "
+            "edit `secrets_file` there to move it"
         )
-        return
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         sops.create(path, recipient)
         changed.append(f"created {path}, readable by this machine's age key")
+        say(
+            "Another machine joins later with `rk secrets init` too: run it there only once this "
+            "file has synced, or it makes a second file."
+        )
         for app in APPS:
             say(f"Next, store {app.name}'s credentials: {_set_app_hint(app)}")
         return
@@ -415,8 +449,8 @@ def _loaded() -> tuple[UserConfig, Path, SopsCli]:
     return load_user_config(source), source, SopsCli()
 
 
-def run_init(*, changed: list[str]) -> None:
-    init(*_loaded(), changed=changed)
+def run_init(*, file: str | None, changed: list[str]) -> None:
+    init(*_loaded(), file=file, changed=changed)
 
 
 def run_set_app(app_arg: str, *, client_id: str, pem: Path, changed: list[str]) -> None:
