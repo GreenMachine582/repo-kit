@@ -54,9 +54,10 @@ to sops on stdin, never as an argument, and no command prints one.
 
 ### Moving from `[pr_bot]`
 
-Earlier releases read `gth-pr-bot`'s key from a `.pem` path in `[pr_bot]`. That table is now an error. Run
-`rk secrets init`, `rk secrets set-app pr-bot --client-id <its client_id> --pem <its private_key>`, and the same for
-`release-bot`. Then delete `[pr_bot]` and the `.pem` files.
+Earlier releases read `gth-pr-bot`'s key from a `.pem` path in `[pr_bot]`. That table is now an error, and every
+command refuses to run while it's there. Note its `client_id` and `private_key`, delete the table, then run
+`rk secrets init` and `rk secrets set-app pr-bot --client-id <client_id> --pem <private_key>`, and the same for
+`release-bot`. Delete the `.pem` files once `rk secrets show` lists both Apps.
 
 ## Creating `gth-pr-bot` (once per account)
 

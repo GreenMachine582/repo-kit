@@ -228,9 +228,9 @@ def synced_folder(path: Path) -> str | None:
 def parse_user_config(data: dict[str, Any], source: Path) -> UserConfig:
     if "pr_bot" in data:
         raise ConfigError(
-            f"{source}: `[pr_bot]` is replaced by the encrypted credentials file. Run "
-            "`rk secrets init`, then `rk secrets set-app pr-bot --client-id <Client ID> "
-            "--pem <the .pem [pr_bot] names>`, then delete the `[pr_bot]` table "
+            f"{source}: `[pr_bot]` is replaced by the encrypted credentials file. Note its "
+            "client_id and private_key, delete the `[pr_bot]` table, then run `rk secrets init` "
+            "and `rk secrets set-app pr-bot --client-id <client_id> --pem <private_key>` "
             "(docs/github-app.md)."
         )
     config: UserConfig = _build(UserConfig, data, source)
