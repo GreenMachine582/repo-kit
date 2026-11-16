@@ -39,7 +39,8 @@ to sops on stdin, never as an argument, and no command prints one.
 
 ### First machine
 
-1. Install the tools. On Windows: `winget install Mozilla.SOPS FiloSottile.age`.
+1. Install the tools. On Windows: `winget install SecretsOPerationS.SOPS`, then `winget install FiloSottile.age`,
+   and open a new terminal so both are on `PATH`.
 2. `rk secrets init`, add the `secrets_file = …` line it prints to the user config, then run `rk secrets init` again
    to create the file.
 3. Create the Apps ([below](#creating-gth-pr-bot-once-per-account)) and store each with `rk secrets set-app`.
