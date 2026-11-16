@@ -99,6 +99,8 @@ def template_variables(config: RepoConfig, owner: str, repo: str) -> dict[str, s
         "release_branch": config.release_branch,
         # Where `release.yml` merges a release back to; empty turns the back-merge off.
         "back_merge_into": config.default_base if config.release.back_merge else "",
+        # Quoted as JSON, which YAML reads as a double-quoted string, so any label name is safe.
+        "conflict_label": json.dumps(config.update_prs.conflict_label),
         "owner": owner,
         "repo": repo,
     }
