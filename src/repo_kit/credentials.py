@@ -339,9 +339,13 @@ def init(
     key_file: Path | None = None,
     keygen: Callable[[Path], None] = run_age_keygen,
     say: Callable[[str], None] = print,
-) -> None:
+) -> int:
     """Set this machine up in one go: its age key, where the shared credentials file is (in this
-    machine's user config), and the file itself if no machine has made it yet. Safe to re-run."""
+    machine's user config), and the file itself if no machine has made it yet. Safe to re-run.
+
+    Returns 1 while this machine can't decrypt the file yet (another machine must add it as a
+    recipient), else 0: a script can tell whether setup is finished.
+    """
     key_file = key_file or age_key_path()
     check_age_key_location(key_file)
     if not key_file.is_file():
@@ -372,7 +376,7 @@ def init(
         )
         for app in APPS:
             say(f"Next, store {app.name}'s credentials: {_set_app_hint(app)}")
-        return
+        return 0
     try:
         sops.decrypt(path)
     except RkError:
@@ -381,8 +385,9 @@ def init(
             f"rk secrets add-recipient {recipient}\n\n"
             "then let the file sync here and run `rk secrets show`."
         )
-        return
+        return 1
     say(f"{path} decrypts on this machine: `rk secrets show` lists what it holds.")
+    return 0
 
 
 def set_app(
@@ -464,8 +469,8 @@ def _loaded() -> tuple[UserConfig, Path, SopsCli]:
     return load_user_config(source), source, SopsCli()
 
 
-def run_init(*, file: str | None, changed: list[str]) -> None:
-    init(*_loaded(), file=file, changed=changed)
+def run_init(*, file: str | None, changed: list[str]) -> int:
+    return init(*_loaded(), file=file, changed=changed)
 
 
 def run_set_app(app_arg: str, *, client_id: str, pem: Path, changed: list[str]) -> None:

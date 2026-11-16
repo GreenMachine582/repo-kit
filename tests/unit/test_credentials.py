@@ -249,7 +249,7 @@ def test_init_on_a_second_machine_prints_the_add_recipient_command(tmp_path):
     sops.readable = False
     changed: list[str] = []
     said: list[str] = []
-    init(
+    code = init(
         UserConfig(secrets_file=str(path)),
         SOURCE,
         sops,
@@ -257,9 +257,23 @@ def test_init_on_a_second_machine_prints_the_add_recipient_command(tmp_path):
         key_file=key_file(tmp_path),
         say=said.append,
     )
+    assert code == 1  # setup isn't finished until another machine adds this one
     assert changed == []
     assert sops.writes == []
     assert any(f"rk secrets add-recipient {RECIPIENT}" in line for line in said)
+
+    sops.readable = True
+    assert (
+        init(
+            UserConfig(secrets_file=str(path)),
+            SOURCE,
+            sops,
+            changed=[],
+            key_file=key_file(tmp_path),
+            say=lambda _m: None,
+        )
+        == 0
+    )
 
 
 def test_init_refuses_an_age_key_in_a_synced_folder(tmp_path, monkeypatch):

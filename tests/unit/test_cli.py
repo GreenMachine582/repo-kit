@@ -171,6 +171,7 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
     def init(*, file, changed):
         seen.append(("init", None))
         changed.append("created age key")
+        return 1  # this machine can't decrypt yet
 
     def set_app(app, *, client_id, pem, changed):
         seen.append(("set-app", (app, client_id, pem)))
@@ -183,7 +184,7 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
     monkeypatch.setattr(credentials, "run_add_recipient", add)
     monkeypatch.setattr(credentials, "run_show", lambda: 1)
 
-    assert main(["secrets", "init"]) == 0
+    assert main(["secrets", "init"]) == 1
     assert "created age key" in capsys.readouterr().out
     argv = ["secrets", "set-app", "release-bot", "--client-id", "Iv23x", "--pem", "k.pem"]
     assert main(argv) == 0
