@@ -86,9 +86,10 @@ jobs:
             if [ "$behind" != "0" ]; then
               decide true "PR #$number is $behind commit(s) behind $base"
             fi
+            own="its PR #$number is current with $base and unlabelled"
           done <<< "$related"
 
-          decide false "no open PR is based on $BRANCH, and its own PR (if any) is current and unlabelled"
+          decide false "no ready PR is based on $BRANCH, and ${own:-it has no ready PR of its own}"
 
   update-prs:
     needs: pre-check
