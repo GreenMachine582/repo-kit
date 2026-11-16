@@ -102,7 +102,8 @@ jobs:
       contents: read
     # Every run reconciles everything, so a queued run can be dropped but a running one is never cut off.
     concurrency:
-      group: update-prs-${{ github.repository }}
+      # A dry run has its own group: it must never replace a pending real run.
+      group: update-prs-${{ github.repository }}-${{ inputs.dry-run && 'dry' || 'live' }}
       cancel-in-progress: false
     steps:
       # Only repo-kit is checked out: no code from the consumer repo or its PRs reaches this runner.

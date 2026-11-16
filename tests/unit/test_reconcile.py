@@ -10,6 +10,8 @@ from repo_kit.config import ConfigError, RepoConfig
 from repo_kit.errors import RkError
 from repo_kit.github import BaseStatus, GitHubError, PullRequest, UpdateResult
 from repo_kit.reconcile import (
+    COMMENT_MARKER,
+    RESOLVED_TEXT,
     Action,
     Report,
     Row,
@@ -257,3 +259,50 @@ def test_a_non_github_origin_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(reconcile_module.git, "remote_url", lambda _c: "/srv/origin.git")
     with pytest.raises(RkError, match="isn't on GitHub"):
         reconcile_module._resolve_repo(tmp_path)
+
+
+def test_parents_first_handles_several_prs_sharing_a_head():
+    # feat/x is the head of #5 (into dev) and #7 (into main); #9 is based on feat/x.
+    prs = [pr(9, "feat/y", "feat/x"), pr(7, "feat/x", "main"), pr(5, "feat/x", "dev")]
+    assert [p.number for p in parents_first(prs)] == [5, 7, 9]
+
+
+def test_prs_sharing_a_head_are_each_reconciled_as_themselves():
+    github = Scripted([BaseStatus.BEHIND, BaseStatus.CONFLICTING])
+    github.add_pr("feat/x", base="dev")
+    github.add_pr("feat/x", base="main")
+    report = go(github)
+    assert report.rows == [
+        Row(1, "feat/x", "dev", Action.UPDATED),
+        Row(2, "feat/x", "main", Action.CONFLICT, "flagged"),
+    ]
+    assert github.updates == [(1, "")]
+    assert github.added_labels == [(2, "needs-merge")]
+
+
+def test_a_vanished_pr_is_skipped():
+    github = Scripted()
+    github.list_open_prs = lambda: [pr(4)]
+    assert go(github).rows == [Row(4, "feat/a", "dev", Action.SKIPPED, "not found")]
+
+
+def test_a_resolved_conflict_updates_its_comment():
+    github = Scripted([BaseStatus.CURRENT])
+    github.add_pr("feat/a", labels=("needs-merge",))
+    github.upsert_comment(1, COMMENT_MARKER, "This PR conflicts with `dev`")
+    report = go(github)
+    [comment] = github.comments[1]
+    assert comment == f"{COMMENT_MARKER}\n{RESOLVED_TEXT}"
+    assert report.changed == [
+        "removed needs-merge from PR #1",
+        "marked the conflict comment on PR #1 resolved",
+    ]
+
+
+def test_a_conflict_already_flagged_reports_no_change():
+    github = Scripted([BaseStatus.CONFLICTING, BaseStatus.CONFLICTING])
+    github.add_pr("feat/a")
+    first = go(github)
+    second = go(github)
+    assert first.changed == ["added needs-merge to PR #1", "commented on the conflict in PR #1"]
+    assert second.changed == []
