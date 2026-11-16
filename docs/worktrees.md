@@ -3,7 +3,8 @@
 # 🌳 Worktrees
 
 **One branch = one worktree = one Claude session**, each with its own environment, outside OneDrive. The plugin's
-skills (`worktree-start`, `worktree-sync`, `worktree-done`) are thin wrappers around these commands.
+skills (`worktree-start`, `worktree-sync`, `worktree-done`) are thin wrappers around these commands; `rk wt list`
+shows every worktree at a glance.
 
 ## 📁 Paths
 
@@ -18,8 +19,8 @@ skills (`worktree-start`, `worktree-sync`, `worktree-done`) are thin wrappers ar
   collide.
 - `<owner>-<repo>` comes from the `origin` URL.
 
-Every `wt` command needs Git 2.38 or newer (checked on each run), and ends with a `Changed:` list of exactly what it
-did, even when it stops part-way. A refusal exits 1. Without a `.repo-kit.toml`, every config default applies.
+Every `wt` command needs Git 2.38 or newer (checked on each run). Each one that writes ends with a `Changed:` list of
+exactly what it did, even when it stops part-way. A refusal exits 1. Without a `.repo-kit.toml`, every config default applies.
 
 `[worktree].setup` and `.check` strings are split like a POSIX shell would (no pipes or `&&`) and run in the worktree.
 A command whose first word ends in `.sh` runs through `bash`: Git Bash on Windows, never the WSL `bash.exe`.
@@ -69,6 +70,26 @@ Refuses unless every condition holds. Each has its own override:
 Every failing condition is reported at once, each with its override. Then it undoes links, removes
 `[worktree].env_dirs` and the worktree, deletes the local branch, and prunes. The skill text forbids Claude from using
 any override unasked.
+
+## 📋 `rk wt list`
+
+Read-only: writes nothing and doesn't fetch, so remote branches are as of the last fetch. Always exits 0. One aligned
+line per worktree of this repo under `<worktree_root>/<owner>-<repo>/` (the main checkout isn't listed):
+
+```
+BRANCH       PR         LOCAL                      PATH
+feat/api-v2  #12 open   clean                      ~/dev/wt/GreenMachine582-photo-ledger/feat-api-v2-1a2b3c
+fix/typo     #9 merged  1 uncommitted, 2 unpushed  ~/dev/wt/GreenMachine582-photo-ledger/fix-typo-4d5e6f
+```
+
+- **PR** is the branch's PR (the open one, else the most recent) and its state: `open`, `draft`, `merged`, `closed`,
+  or `none`. When origin isn't on GitHub, or `gh` fails, it shows `?` and a note at the end says why the PRs are
+  unknown; the worktrees are still listed.
+- **LOCAL** counts uncommitted or untracked changes (`[worktree].env_dirs` excepted) and unpushed commits (on no
+  remote branch), the same tests `wt done` applies. `clean` means neither; `directory missing` means Git still lists
+  the worktree but its folder is gone.
+
+A worktree whose PR is merged or closed is ready for `rk wt done`; `rk doctor` reports those as stale.
 
 ## 🔗 Local GTH mode
 

@@ -1,4 +1,4 @@
-"""`rk wt start / sync / done`: one branch = one worktree = one Claude session.
+"""`rk wt start / sync / done / list`: one branch = one worktree = one Claude session.
 
 See docs/worktrees.md. Merge only: nothing here rebases or force-pushes.
 
@@ -30,7 +30,7 @@ from repo_kit.config import (
     load_user_config,
 )
 from repo_kit.errors import RkError
-from repo_kit.github import GhCliGitHub, GitHub, NoGitHub
+from repo_kit.github import GhCliGitHub, GitHub, NoGitHub, PullRequest
 
 BRANCH_TYPES = TYPES  # a branch is named for the kind of commit it holds
 SLUG_MAX = 40
@@ -428,3 +428,116 @@ def done(
     git.branch_delete(ctx.main, branch, force=True)
     ctx.changed.append(f"deleted local branch {branch}")
     git.worktree_prune(ctx.main)
+
+
+# --- wt list (and `rk doctor`'s stale worktrees) -------------------------------------------
+
+
+def rk_worktrees(cwd: Path, root: Path) -> list[tuple[Path, str]]:
+    """(path, branch) of each worktree of the repo at `cwd` that is under `root` (this repo's
+    `<worktree_root>/<owner>-<repo>`) and on a branch. The main checkout is never under it."""
+    root = root.resolve()
+    return [
+        (wt.path, wt.branch)
+        for wt in git.worktree_list(cwd)
+        if wt.branch and wt.path.resolve().is_relative_to(root)
+    ]
+
+
+def prs_for(branches: Sequence[str], github: GitHub) -> list[PullRequest | None]:
+    """Each branch's PR (the open one, else the most recent), in order. Raises `RkError` on the
+    first lookup that fails."""
+    return [github.pr_for_branch(branch) for branch in branches]
+
+
+def pr_state(pr: PullRequest | None) -> str:
+    """open, draft, merged, closed, or none."""
+    if pr is None:
+        return "none"
+    if pr.merged:
+        return "merged"
+    if pr.state == "closed":
+        return "closed"
+    return "draft" if pr.draft else "open"
+
+
+@dataclass(frozen=True)
+class WorktreeStatus:
+    path: Path
+    branch: str
+    pr: PullRequest | None
+    uncommitted: int | None  # None: the directory is gone
+    unpushed: int
+
+
+def _uncommitted(ctx: Context, path: Path) -> int | None:
+    if not path.is_dir():
+        return None
+    try:
+        env_dirs = load_repo_config(path).worktree.env_dirs
+    except RkError:
+        env_dirs = ctx.repo_config.worktree.env_dirs
+    return len(git.status_porcelain(path, exclude=env_dirs))
+
+
+def worktree_statuses(ctx: Context) -> tuple[list[WorktreeStatus], str]:
+    """Every worktree of this repo under its worktree root, and a note when the PRs are unknown
+    (empty when they're known). Reads only: nothing is written or fetched."""
+    ours = rk_worktrees(ctx.main, ctx.repo_root_dir)
+    note = ""
+    prs: list[PullRequest | None] = [None] * len(ours)
+    if isinstance(ctx.github, NoGitHub):
+        note = "PRs unknown: origin isn't on GitHub"
+    else:
+        try:
+            prs = prs_for([branch for _, branch in ours], ctx.github)
+        except RkError as exc:
+            note = f"PRs unknown: can't look them up\n{exc}"
+    statuses = [
+        WorktreeStatus(
+            path=path,
+            branch=branch,
+            pr=pr,
+            uncommitted=_uncommitted(ctx, path),
+            unpushed=len(git.unpushed_commits(ctx.main, branch)),
+        )
+        for (path, branch), pr in zip(ours, prs, strict=True)
+    ]
+    return statuses, note
+
+
+def render_list(statuses: Sequence[WorktreeStatus], prs_known: bool) -> list[str]:
+    """One aligned line per worktree, under a header."""
+    rows = [("BRANCH", "PR", "LOCAL", "PATH")]
+    for st in statuses:
+        if st.pr is not None:
+            pr = f"#{st.pr.number} {pr_state(st.pr)}"
+        else:
+            pr = "none" if prs_known else "?"
+        flags = [
+            "directory missing" if st.uncommitted is None else "",
+            f"{st.uncommitted} uncommitted" if st.uncommitted else "",
+            f"{st.unpushed} unpushed" if st.unpushed else "",
+        ]
+        local = ", ".join(f for f in flags if f) or "clean"
+        rows.append((st.branch, pr, local, str(st.path)))
+    widths = [max(len(row[i]) for row in rows) for i in range(3)]
+    return [
+        "  ".join(
+            [*(cell.ljust(width) for cell, width in zip(row[:3], widths, strict=True)), row[3]]
+        )
+        for row in rows
+    ]
+
+
+def list_worktrees(ctx: Context) -> int:
+    """The command: print this repo's worktrees. Always exits 0."""
+    statuses, note = worktree_statuses(ctx)
+    if not statuses:
+        ctx.say(f"No worktrees under {ctx.repo_root_dir}")
+    else:
+        for line in render_list(statuses, prs_known=not note):
+            ctx.say(line)
+    for line in note.splitlines():
+        ctx.say(line)
+    return 0
