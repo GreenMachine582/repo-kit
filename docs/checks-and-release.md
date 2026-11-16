@@ -98,9 +98,12 @@ jobs:
       client-id: ${{ vars.GTH_RELEASE_BOT_CLIENT_ID }}
       target-branch: main
       back-merge-into: "dev"            # "" when [release].back_merge = false
-    secrets:
+    secrets:                            # resolves only in the gth-release-bot environment
       RELEASE_BOT_PRIVATE_KEY: ${{ secrets.GTH_RELEASE_BOT_PRIVATE_KEY }}
 ```
+
+Both jobs that mint a token name the `gth-release-bot` environment, which only the release branch may use, so a
+workflow on any other branch can't read the key ([github-app.md](github-app.md#where-the-keys-live)).
 
 | Input | Default | |
 |---|---|---|

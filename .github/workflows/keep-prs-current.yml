@@ -1,12 +1,17 @@
 # repo-kit's own caller of update-prs, written by hand: in repo-kit, .github/workflows/update-prs.yml is the
-# reusable workflow itself (see the overrides in .repo-kit.toml). It runs only once the repo is enrolled:
-# `rk configure` sets the GTH_PR_BOT_CLIENT_ID variable and GTH_PR_BOT_PRIVATE_KEY secret.
+# reusable workflow itself (see the overrides in .repo-kit.toml). Like the generated caller, it runs on
+# `workflow_run` of the managed update-prs-trigger.yml, so it always runs the default branch's copy of
+# itself. It runs only once the repo is enrolled: `rk configure` sets the GTH_PR_BOT_CLIENT_ID variable and
+# puts the key in the gth-pr-bot environment.
 name: keep PRs current
 
 on:
-  push:
-  pull_request:
-    types: [edited, ready_for_review, reopened, closed, labeled, unlabeled]
+  # Safe use of workflow_run: nothing from the trigger run (code, artifacts, branch names in a shell) reaches
+  # this run; the pre-check passes the branch to jq and gh through env only.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [update-prs trigger]
+    types: [completed]
+  # Dispatch it from dev: the environment refuses a run from any other branch.
   workflow_dispatch:
     inputs:
       dry-run:
@@ -23,12 +28,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    # The documented local form: it resolves to this same commit, and actionlint checks it.
+    # The documented local form: it resolves to the default branch's commit, and actionlint checks it.
     uses: ./.github/workflows/update-prs.yml # zizmor: ignore[self-repository]
     with:
       # The default branch's rk, so only merged code ever runs with the App token.
       ref: ${{ github.event.repository.default_branch }}
       client-id: ${{ vars.GTH_PR_BOT_CLIENT_ID }}
       dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+      trigger-event: ${{ github.event.workflow_run.event || github.event_name }}
+      trigger-branch: ${{ github.event.workflow_run.head_branch }}
+    # Passed by name, but it resolves only inside the reusable workflow's gth-pr-bot environment job.
     secrets:
       PR_BOT_PRIVATE_KEY: ${{ secrets.GTH_PR_BOT_PRIVATE_KEY }}

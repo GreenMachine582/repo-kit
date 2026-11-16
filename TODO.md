@@ -39,18 +39,8 @@ Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Done when every 
   - [ ] A conventional PR title fails `pr-title`, and a release PR passes it
   - [ ] A release cut through `release.yml` behaves exactly as before
 - **Live checks** ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot))
-  - [ ] All five pass
+  - [ ] All six pass
 - **From the code review of `worktree.py`, `files.py` and `reconcile.py`**
-  - [ ] Worktree safety: validate `[worktree].env_dirs` (no `.`, globs or tracked folders, which can hide and then
-    delete uncommitted work); stop `wt done` deleting ignored files unasked; let a `wt done` that failed partway be
-    re-run without an override, and report its errors without a traceback; don't let `wt sync` recreate a merged
-    branch deleted on origin; pass `refs/heads/<branch> --` to git; don't treat an old merged PR of a reused branch
-    name as finished
-  - [ ] update-prs and sync: re-read a PR by number, not head branch (two PRs can share a head); dry runs in their
-    own concurrency group; run on `labeled`/`unlabeled`; clear the conflict comment once resolved; report only real
-    changes; never recreate a seeded file the consumer deleted; keep a file's line endings when writing a block
-  - [ ] Decide how to stop a pushed branch's own caller file from receiving the PR bot's key (`on: push` runs the
-    caller YAML from the pushed branch). Matters before anyone else gets write access
   - [ ] Compare the recorded mode as well as the hash when a template changes mode between releases
 
 ## Phase 3: GTH repos (`dev-main`, migrating)
@@ -81,6 +71,9 @@ Done when each has had one `bootstrap`.
 
 - [ ] Approve creating the public repo and its first release
 - [ ] Install `gth-pr-bot` and `gth-release-bot` on each adopting repo, then run `rk configure` there
+- [ ] Re-run `rk configure` in repo-kit once the environments PR merges: it moves both keys out of repo-level
+  secrets into the `gth-pr-bot` and `gth-release-bot` environments. Until then runs still work (the repo-level
+  secret is passed by name) but the keys stay readable from any pushed branch
 - [ ] Run `rk github apply` yourself (needs admin), after reading the diff
 - [ ] Approve photo-ledger's switch to `dev` (new default branch, open PRs retargeted) when `rk install` asks
 

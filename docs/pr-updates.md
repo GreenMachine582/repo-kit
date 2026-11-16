@@ -41,9 +41,24 @@ Every run looks at everything, so a dropped or cancelled run is harmless:
 
 ## Workflow
 
-`.github/workflows/update-prs.yml` is a reusable workflow. A consumer holds only a caller:
+`.github/workflows/update-prs.yml` is a reusable workflow. A consumer holds two thin files, both managed by `rk sync`:
+
+- `.github/workflows/update-prs-trigger.yml` (`name: update-prs trigger`) runs on the [events](#triggers) and does
+  nothing. It has no permissions and no secrets.
+- `.github/workflows/update-prs.yml`, the caller, runs on `workflow_run` of the trigger, and on `workflow_dispatch`.
+
+The split is what keeps `gth-pr-bot`'s key safe. A `push` or `pull_request` run uses the workflow file from the
+pushed branch, so a branch could rewrite its own caller. A `workflow_run` run always uses the default branch's copy,
+and the key lives in the `gth-pr-bot` environment, which only the default branch may use
+([github-app.md](github-app.md#where-the-keys-live)). update-prs reconciles every open PR each run, so it needs
+nothing from the trigger but the event and branch, which the pre-check uses.
 
 ```yaml
+on:
+  workflow_run:
+    workflows: [update-prs trigger]
+    types: [completed]
+  workflow_dispatch:                   # from the default branch only: the environment refuses others
 jobs:
   update-prs:
     if: vars.GTH_PR_BOT_CLIENT_ID != ''
@@ -55,8 +70,10 @@ jobs:
       ref: v1.4.0                      # the same version: the rk code to run
       client-id: ${{ vars.GTH_PR_BOT_CLIENT_ID }}
       dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+      trigger-event: ${{ github.event.workflow_run.event || github.event_name }}
+      trigger-branch: ${{ github.event.workflow_run.head_branch }}
       conflict-label: "needs-merge"    # [update_prs].conflict_label, written by rk sync
-    secrets:
+    secrets:                           # resolves only in the reusable job's gth-pr-bot environment
       PR_BOT_PRIVATE_KEY: ${{ secrets.GTH_PR_BOT_PRIVATE_KEY }}
 ```
 
@@ -66,18 +83,21 @@ jobs:
 - **The token:** minted for this repo only, with contents, pull requests and issues write, and only once the
   pre-check (see [Triggers](#triggers)) says the run is needed. `GITHUB_TOKEN` gets only `contents: read`, plus
   `pull-requests: read` in the pre-check.
-- **Fork PRs:** their `pull_request` runs get no secrets, so the job skips them.
+- **Fork PRs:** they start the trigger too, and `workflow_run` would run with the key, so the job skips a run whose
+  trigger came from a fork. Nothing from the trigger run (no artifact, no code) is ever used.
 - **Before enrolment:** the `if:` keeps the caller idle until `rk configure` has enrolled the repo.
-- **repo-kit's own caller:** `.github/workflows/keep-prs-current.yml` passes the default branch as `ref`, so only merged
-  rk code runs with the token.
+- **repo-kit's own caller:** `.github/workflows/keep-prs-current.yml` has the same `workflow_run` shape and passes the
+  default branch as `ref`, so only merged rk code runs with the token.
 
 ## Triggers
 
+The trigger workflow listens for these, and each of its runs starts update-prs.
+
 | Event | Types |
 |---|---|
-| `push` | All branches, so a chain's child hears about a push to its parent. The [pre-check](#push-pre-check) skips most |
+| `push` | All branches (no tags), so a chain's child hears about a push to its parent. The [pre-check](#push-pre-check) skips most |
 | `pull_request` | `edited`, `ready_for_review`, `reopened`, `closed`, `labeled`, `unlabeled`: so removing `wip` or `no-auto-update`, or a hand-removed conflict label, starts a run |
-| `workflow_dispatch` | With a `dry-run` input, ticked by default |
+| `workflow_dispatch` | On the caller itself, from the default branch, with a `dry-run` input ticked by default |
 
 ### Push pre-check
 
@@ -94,7 +114,8 @@ runs it only when the pushed branch is:
   GitHub never worked out mergeability, or the call failed. Without this case such a PR would wait for the next push
   to its base.
 
-Any other push, a tag push or a branch deletion skips `update-prs`, so no token is minted. The decision and its
+Any other push or a branch deletion skips `update-prs`, so no token is minted (tag pushes don't start the
+trigger). The decision and its
 reason are shown as a notice on the run. If the pre-check itself fails, the run fails and `update-prs` is skipped;
 the next run reconciles everything anyway.
 

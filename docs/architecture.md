@@ -136,6 +136,7 @@ These come from GTH's `CONTRIBUTING.md` and shape everything rk does:
 | Adoption overwrites GTH's tuned files | `sync` takes over an existing file only if it already matches, and refuses with the diff otherwise; manifest and CHANGELOG are seeded or consumer-owned |
 | Managed files edited by hand go unnoticed | `managed-files` check in every PR |
 | The bot races an active session | Drafts skipped; non-force pushes; `wt sync` catches up |
+| A pushed branch's workflow reads an App key | Keys live in environments only `dev` or `main` may use; update-prs runs on `workflow_run` from the default branch; `doctor` fails on a repo-level key |
 | Dropped workflow events | Full reconcile every run |
 | An agent discards work during cleanup | Separate overrides per unsafe state; the skill forbids unasked use |
 | Windows quirks | Python engine; Windows CI job; `doctor` checks |

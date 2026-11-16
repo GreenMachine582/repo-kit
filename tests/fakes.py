@@ -72,7 +72,9 @@ class FakeRepoSetup:
     def __init__(self) -> None:
         self.label_set: dict[str, tuple[str, str]] = {}
         self.vars: dict[str, str] = {}
-        self.secrets: dict[str, str] = {}
+        self.secrets: dict[str, str] = {}  # repo-level: readable from any pushed branch
+        self.environments: dict[str, list[str]] = {}  # name -> the branches allowed to use it
+        self.env_secrets: dict[str, dict[str, str]] = {}
         self.ruleset_list: list[dict[str, Any]] = []
         self.settings: dict[str, Any] = {}
         self.writes: list[str] = []
@@ -97,6 +99,32 @@ class FakeRepoSetup:
     def set_secret(self, name: str, value: str) -> None:
         self.writes.append(f"secret {name}")
         self.secrets[name] = value
+
+    def delete_secret(self, name: str) -> None:
+        self.writes.append(f"delete secret {name}")
+        del self.secrets[name]
+
+    def environment_branches(self, environment: str) -> list[str] | None:
+        allowed = self.environments.get(environment)
+        return None if allowed is None else list(allowed)
+
+    def ensure_environment(self, environment: str, branch: str) -> None:
+        self.writes.append(f"environment {environment}")
+        self.environments[environment] = [branch]
+        self.env_secrets.setdefault(environment, {})
+
+    def environment_secret_names(self, environment: str) -> list[str]:
+        assert environment in self.environments, "gh fails on a missing environment"
+        return list(self.env_secrets.get(environment, {}))
+
+    def set_environment_secret(self, environment: str, name: str, value: str) -> None:
+        assert environment in self.environments, "gh fails on a missing environment"
+        self.writes.append(f"secret {name} in {environment}")
+        self.env_secrets.setdefault(environment, {})[name] = value
+
+    def key(self, app: Any) -> str | None:
+        """The private key stored for an App in its environment, if any."""
+        return self.env_secrets.get(app.environment, {}).get(app.private_key_secret)
 
     def rulesets(self) -> list[dict[str, Any]]:
         return copy.deepcopy(self.ruleset_list)

@@ -19,6 +19,24 @@ Pushes and PRs made with an App token trigger CI. GitHub doesn't run CI on PRs o
 - `gth-release-bot` is the only actor allowed to create `v*` tags (the tags ruleset).
 - Neither App ever merges a PR.
 
+## Where the keys live
+
+Each App's private key is an **environment secret**, never a repo-level one. A repo-level secret is readable by a
+workflow on any branch someone pushes, so anyone with write access could add a workflow that prints it. An
+environment's secret is only given to a job that names the environment, and only when the run's `GITHUB_REF`
+matches the environment's deployment branch rule.
+
+| Key | Environment | The one branch allowed | Why that branch |
+|---|---|---|---|
+| `GTH_PR_BOT_PRIVATE_KEY` | `gth-pr-bot` | The default base (`dev`) | update-prs runs on `workflow_run`, which GitHub always runs from the default branch's copy of the workflow |
+| `GTH_RELEASE_BOT_PRIVATE_KEY` | `gth-release-bot` | The release branch (`main`) | Releases run on pushes to it, which only merged PRs reach |
+
+Both branches only change through PRs (the rulesets), so only merged workflow code ever runs with a key. The callers
+still pass the secret by name, as GitHub requires for a reusable workflow, but it resolves only inside the reusable
+workflow's job that names the environment. `rk configure` creates both environments and their branch rule, and
+`rk doctor` fails while a key is still repo-level or an environment lets in another branch. Environments and their
+secrets need a public repo on GitHub Free; every adopting repo is public.
+
 ## Credentials: sops + age
 
 Both Apps' Client IDs and private keys live in one [sops](https://github.com/getsops/sops) file, encrypted with
@@ -107,22 +125,29 @@ A User-only step, done in the GitHub UI:
    - creates the labels update-prs uses (`needs-merge`, `wip`, `no-auto-update`, or what `[update_prs]` names),
      leaving existing ones alone;
    - sets `GTH_PR_BOT_CLIENT_ID` and `GTH_RELEASE_BOT_CLIENT_ID` where missing or different;
-   - sets `GTH_PR_BOT_PRIVATE_KEY` and `GTH_RELEASE_BOT_PRIVATE_KEY` where missing. Each key goes to
-     `gh secret set` on stdin, never as an argument. `--replace-key` overwrites both after a key rotation;
+   - creates the environments `gth-pr-bot` and `gth-release-bot` ([above](#where-the-keys-live)), or restricts one
+     that lets in any branch but its own;
+   - sets `GTH_PR_BOT_PRIVATE_KEY` and `GTH_RELEASE_BOT_PRIVATE_KEY` in those environments where missing. Each key
+     goes to `gh secret set --env` on stdin, never as an argument. `--replace-key` overwrites both after a key
+     rotation;
+   - deletes a repo-level `GTH_PR_BOT_PRIVATE_KEY` or `GTH_RELEASE_BOT_PRIVATE_KEY` left by an rk from before
+     environments, once its environment holds the key. The key is written from the credentials file, since a
+     secret can't be copied;
    - with each secret it writes, sets its key's fingerprint, `GTH_PR_BOT_KEY_SHA256` or `GTH_RELEASE_BOT_KEY_SHA256`:
      the SHA-256 of the key's DER bytes, in hex. A secret can't be read back, so this variable is how rk tells which
      key a repo holds. It can't rebuild the key, so it is safe as a plain variable. When a secret is already set,
      `configure` leaves it alone, but says so if its fingerprint variable is missing (set by an rk from before
      fingerprints) or names a different key from the credentials file, and suggests `--replace-key`.
-3. Run the repo's update-prs caller from the Actions tab with dry-run ticked. A run that lists the open PRs proves the
-   key, Client ID and installation all work.
+3. Run the repo's update-prs caller from the Actions tab, **on the default branch**, with dry-run ticked. A run that
+   lists the open PRs proves the key, Client ID, environment and installation all work. A dispatch from any other
+   branch is refused by the `gth-pr-bot` environment.
 
 `rk github apply` (rulesets and settings) is not part of `configure` until Phase 1D.
 
 ## Releases: `gth-release-bot`
 
-The release caller reads the variable `GTH_RELEASE_BOT_CLIENT_ID` and the secret `GTH_RELEASE_BOT_PRIVATE_KEY`, which
-`rk configure` sets ([above](#enrolling-a-repo)).
+The release caller reads the variable `GTH_RELEASE_BOT_CLIENT_ID` and the secret `GTH_RELEASE_BOT_PRIVATE_KEY` in the
+`gth-release-bot` environment, which `rk configure` sets ([above](#enrolling-a-repo)).
 
 GTH's own workflows used `RELEASE_APP_CLIENT_ID` (or `RELEASE_APP_ID`) and `RELEASE_APP_PRIVATE_KEY`. Delete those
 once the managed `release.yml` replaces `release-please.yml`. Without the new names, a push to `main` fails the
