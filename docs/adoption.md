@@ -152,7 +152,8 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
    `.github/repo-settings.json` and `.github/workflows/release-please.yml` (the managed `release.yml` replaces it).
    Set `gth-release-bot`'s new variable and secret, and delete the old `RELEASE_APP_*` ones
    ([github-app.md](github-app.md#releases-gth-release-bot)).
-3. `rk github diff` must show no unexpected changes before `apply`. After applying, delete the old `dev`, `main`
+3. Install `gth-release-bot` on the repo, then check that `rk github diff` shows no unexpected changes before
+   `apply`. After applying, delete the old `dev`, `main`
    and `release tags` rulesets, which the diff lists as left alone.
 4. The CONTRIBUTING sections become managed blocks. GTH's Branches, Pull requests, Chained PRs and Releasing
    sections are deleted, and `rk sync` appends the blocks that replace them. Repo-specific sections such as

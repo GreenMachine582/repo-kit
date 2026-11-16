@@ -57,13 +57,20 @@ A User-only step, done in the GitHub UI:
 
 ## Releases: `gth-release-bot`
 
-The release caller reads the variable `GTH_RELEASE_BOT_CLIENT_ID` and the secret `GTH_RELEASE_BOT_PRIVATE_KEY`.
-Until `rk configure` covers this App (a Future item), set them by hand in each repo that has it installed:
+Install the App on the repo first (Settings → Applications → `gth-release-bot` → Configure). The generated rulesets
+name it as a bypass actor, and GitHub accepts only an App that is installed on the repo: without it,
+`rk github apply` fails with `Validation Failed (HTTP 422)`.
 
-```sh
+The release caller reads the variable `GTH_RELEASE_BOT_CLIENT_ID` and the secret `GTH_RELEASE_BOT_PRIVATE_KEY`.
+Until `rk configure` covers this App (a Future item), set them by hand in each repo that has it installed. In
+PowerShell:
+
+```powershell
 gh variable set GTH_RELEASE_BOT_CLIENT_ID --body "Iv23..."
-gh secret set GTH_RELEASE_BOT_PRIVATE_KEY < ~/.ssh/gth-release-bot.pem
+Get-Content ~/.ssh/gth-release-bot.pem -Raw | gh secret set GTH_RELEASE_BOT_PRIVATE_KEY
 ```
+
+In a POSIX shell, the secret is `gh secret set GTH_RELEASE_BOT_PRIVATE_KEY < ~/.ssh/gth-release-bot.pem`.
 
 GTH's own workflows used `RELEASE_APP_CLIENT_ID` (or `RELEASE_APP_ID`) and `RELEASE_APP_PRIVATE_KEY`. Delete those
 once the managed `release.yml` replaces `release-please.yml`. Without the new names, a push to `main` fails the
