@@ -1,1 +1,59 @@
 # Changelog
+
+## 0.1.0 (2026-11-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* the user config's `[pr_bot]` table is gone; a leftover one is an error that names the `rk secrets` migration.
+
+### Features
+
+* add git and GitHub wrappers with a fake PR store ([1174e58](https://github.com/GreenMachine582/repo-kit/commit/1174e584224fe9e10521a47c0fe01a2a51fcb900))
+* add rk branches prune ([b1ba64a](https://github.com/GreenMachine582/repo-kit/commit/b1ba64acd18cc71cfdbf224d74b97484b49bf80d))
+* add rk configure to create the labels and store the PR bot credentials ([3ceb89f](https://github.com/GreenMachine582/repo-kit/commit/3ceb89f9ad5c9cbb76a4e5f92a329bed98815837))
+* add rk doctor and run it at the end of rk bootstrap ([2a60ddc](https://github.com/GreenMachine582/repo-kit/commit/2a60ddc33a1c7e4a02d72ee14252f22272802bcf))
+* add rk github apply ([f8a6038](https://github.com/GreenMachine582/repo-kit/commit/f8a60388a0492787b801f32276747a79390e803b))
+* add rk github diff for rulesets ([04a9e54](https://github.com/GreenMachine582/repo-kit/commit/04a9e54c1bae2d48277c1c432d347ea36c26f75f))
+* add rk install and rk bootstrap to adopt a repo ([37bad9a](https://github.com/GreenMachine582/repo-kit/commit/37bad9ad8b36ed492f34f16087caffbd096301b3))
+* add rk sync and the shared-files engine ([6ea7525](https://github.com/GreenMachine582/repo-kit/commit/6ea752560ae2ac381babcf2b85eb6f1711ccbffc))
+* add rk update-prs to keep open PRs current with their base ([6dfc22c](https://github.com/GreenMachine582/repo-kit/commit/6dfc22cdfc096305b7e8bcece07371f1dbb9f241))
+* add rk upgrade for templates added in a release ([740a21d](https://github.com/GreenMachine582/repo-kit/commit/740a21d5ed20ceb4e2a556c01888022f89062832))
+* add rk wt start, sync and done ([41cb5a3](https://github.com/GreenMachine582/repo-kit/commit/41cb5a39b7f945d20f705a133f691b833697b729))
+* add the commit and PR title rules ([b35a448](https://github.com/GreenMachine582/repo-kit/commit/b35a448d4bdc8c02e650f1b87ff68df902f2fc14))
+* add the CONTRIBUTING blocks to the dev-main profile ([7010882](https://github.com/GreenMachine582/repo-kit/commit/70108821057b18b29f60021ddeaf9b61954e79a3))
+* add the PR listing, status, update and comment calls for update-prs ([7b52a8f](https://github.com/GreenMachine582/repo-kit/commit/7b52a8f8ac3aa18b8f781e79fb7091d7f10deb1a))
+* add the pr-checks caller to every repo ([ee5bbed](https://github.com/GreenMachine582/repo-kit/commit/ee5bbed9005e4aa3cdcc8993260100ea2d91be00))
+* add the release caller to dev-main repos ([d8b3c66](https://github.com/GreenMachine582/repo-kit/commit/d8b3c669b2c7752ebf4575b6fd936a9d8c9a4c82))
+* build and diff the repo settings ([177eed0](https://github.com/GreenMachine582/repo-kit/commit/177eed09e0b94cf3a0d83d943ab7ad3272c182a6))
+* build the dev-main rulesets in code and diff them ([c134e12](https://github.com/GreenMachine582/repo-kit/commit/c134e12940c60bc7d4d96a19e84b38b43a4d5407))
+* enrol only the Apps a repo uses ([b76e052](https://github.com/GreenMachine582/repo-kit/commit/b76e05250587b7ca7d7d3e2b2cb4a5315d15039a))
+* install the commit-msg hook with rk install --hooks ([c78119c](https://github.com/GreenMachine582/repo-kit/commit/c78119ceae640b9123123c03b4e80041c7c60695))
+* keep the Apps' credentials in a sops + age file and enrol both bots ([6f032a6](https://github.com/GreenMachine582/repo-kit/commit/6f032a61be49022f77afd1a5ea4ca6253686341b))
+* let a file hold several blocks, and tighten what rk sync refuses ([99d6d4a](https://github.com/GreenMachine582/repo-kit/commit/99d6d4a604b2684e11a54b2be82b079fc4516f75))
+* let rk secrets init write the user config entry itself ([dc22f89](https://github.com/GreenMachine582/repo-kit/commit/dc22f893f4966413521d2db2ac22596427661dfd))
+* list every PR for a branch ([6a792eb](https://github.com/GreenMachine582/repo-kit/commit/6a792ebd66b24895b5c9af4084c65ac6b267bfdb))
+* load .repo-kit.toml and the user config, rejecting unknown keys ([706fc1c](https://github.com/GreenMachine582/repo-kit/commit/706fc1cd37443b60d74b258252351c3933246ac2))
+* manage immutable releases with rk github ([e174f1d](https://github.com/GreenMachine582/repo-kit/commit/e174f1d680c91ebefecf9cae819a96820319d74f))
+* manage release-please-config.json in dev-main repos ([6124de8](https://github.com/GreenMachine582/repo-kit/commit/6124de8ca3bd66940753758516f85e44bd801df0))
+* offer the project's version to seeded templates ([f9aa140](https://github.com/GreenMachine582/repo-kit/commit/f9aa140d1c9baabca60394cf502a5648c36535b8))
+* report ruleset drift in rk doctor ([5fac589](https://github.com/GreenMachine582/repo-kit/commit/5fac5892aa0b50db59abc70d14009d2e77b40151))
+* report settings drift in rk doctor ([7862ea8](https://github.com/GreenMachine582/repo-kit/commit/7862ea858cabba16263d1686021efd19eca4b7e8))
+* show overrides on reusable workflows as OK in doctor ([9e9fc8a](https://github.com/GreenMachine582/repo-kit/commit/9e9fc8a61c268b452d134538385f663f6c9b4829))
+
+
+### Bug Fixes
+
+* exit 1 from rk secrets init until this machine can decrypt ([3899e15](https://github.com/GreenMachine582/repo-kit/commit/3899e15f89f92f2311d9da8b8ec8e57387d79eb7))
+* give the [pr_bot] migration steps in an order that works ([92d9973](https://github.com/GreenMachine582/repo-kit/commit/92d99730762b4ee506922a424db10d94e7ea549c))
+* harden rk upgrade's pin handling and messages ([7a56e31](https://github.com/GreenMachine582/repo-kit/commit/7a56e31b2dbe82c8c8ad3d9dd3e653f6430765ba))
+* make rk secrets init's next step clear and suggest a path from ~ ([90b30b0](https://github.com/GreenMachine582/repo-kit/commit/90b30b0747d8b9a2ee94231a5a5cf46bc9fe9cf3))
+* run rk with -P in the reusable workflows so a PR can't shadow it ([72c373d](https://github.com/GreenMachine582/repo-kit/commit/72c373df62d183e4cbfedfe7b5fb3f2542e9e1be))
+* say that the plugin skills need rk on PATH ([9026374](https://github.com/GreenMachine582/repo-kit/commit/90263741145125492b3c82138f9654fdcc250537))
+
+
+### Build
+
+* add strict mypy and ruff's bugbear, simplify, pathlib and bandit rules ([563453b](https://github.com/GreenMachine582/repo-kit/commit/563453b1d6a836f9a8c221c3584114dee626b6c3))
+
+## Changelog
