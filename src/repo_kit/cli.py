@@ -44,6 +44,8 @@ def _wt_handler(action: str) -> Handler:
         from repo_kit import worktree
 
         ctx = worktree.Context.load(Path.cwd())
+        if action == "list":
+            return worktree.list_worktrees(ctx)  # read-only: no `Changed:` list
         try:
             if action == "start":
                 worktree.start(ctx, args.branch, args.from_branch, args.link, args.no_setup)
@@ -242,6 +244,11 @@ def _add_worktree(sub: SubParsers) -> None:
         "--delete-unpushed", action="store_true", help="allow unpushed commits, which are lost"
     )
     done.set_defaults(handler=_wt_handler("done"))
+
+    listing = wt_sub.add_parser(
+        "list", help="list this repo's worktrees, their PRs and any unsaved work (read-only)"
+    )
+    listing.set_defaults(handler=_wt_handler("list"))
 
 
 def _add_pr_side(sub: SubParsers) -> None:

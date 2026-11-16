@@ -38,7 +38,7 @@ from repo_kit.credentials import (
 )
 from repo_kit.errors import RkError
 from repo_kit.github import GhCliGitHub, GitHub, NoGitHub, RepoSetup
-from repo_kit.worktree import repo_dir
+from repo_kit.worktree import pr_state, prs_for, repo_dir, rk_worktrees
 
 MIN_GH = (2, 40)
 MIN_PYTHON = (3, 11)
@@ -359,21 +359,16 @@ def check_github(setup: RepoSetup, config: RepoConfig) -> Check:
 def check_worktrees(
     repo_root: Path, owner: str, repo: str, github: GitHub, user_config: UserConfig
 ) -> list[Check]:
-    root = repo_dir(user_config.worktree_root, owner, repo).resolve()
-    ours = [
-        (wt.path, wt.branch)
-        for wt in git.worktree_list(repo_root)
-        if wt.branch and wt.path.resolve().is_relative_to(root)
-    ]
-    stale: list[str] = []
+    ours = rk_worktrees(repo_root, repo_dir(user_config.worktree_root, owner, repo))
     try:
-        for path, branch in ours:
-            pr = github.pr_for_branch(branch)
-            if pr and pr.finished:
-                state = "merged" if pr.merged else "closed"
-                stale.append(f"{path} ({branch}: PR #{pr.number} {state})")
+        prs = prs_for([branch for _, branch in ours], github)
     except RkError as exc:
         return [_warn(f"worktrees: {len(ours)}; can't look up their PRs", str(exc))]
+    stale = [
+        f"{path} ({branch}: PR #{pr.number} {pr_state(pr)})"
+        for (path, branch), pr in zip(ours, prs, strict=True)
+        if pr and pr.finished
+    ]
     if not stale:
         return [_ok(f"worktrees: {len(ours)}, none stale")]
     label = f"{len(stale)} stale worktree{'s' if len(stale) > 1 else ''}"
