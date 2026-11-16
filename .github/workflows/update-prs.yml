@@ -56,6 +56,7 @@ jobs:
           permission-pull-requests: write
           permission-issues: write
       # rk is standard library only, so it runs from source: nothing is installed next to the token.
+      # -P: Python never looks in the working directory, only at PYTHONPATH (see pr-checks.yml).
       - name: Reconcile every open PR
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
@@ -64,4 +65,4 @@ jobs:
         run: |
           args=()
           if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
-          python -m repo_kit update-prs "${args[@]}"
+          python -P -m repo_kit update-prs "${args[@]}"
