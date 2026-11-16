@@ -84,8 +84,26 @@ def test_secrets_file_is_read_and_may_be_synced(tmp_path, monkeypatch):
 
 
 def test_an_old_pr_bot_table_names_the_migration():
-    with pytest.raises(ConfigError, match="rk secrets set-app pr-bot"):
-        parse_user_config({"pr_bot": {"client_id": "x", "private_key": "k.pem"}}, SOURCE)
+    with pytest.raises(ConfigError) as caught:
+        parse_user_config({"pr_bot": {"client_id": "Iv23abc", "private_key": "k.pem"}}, SOURCE)
+    message = str(caught.value)
+    assert "  2. rk secrets init" in message
+    assert "rk secrets set-app pr-bot --client-id Iv23abc --pem k.pem" in message
+    assert "set-app release-bot" in message
+
+
+def test_the_pr_bot_migration_quotes_a_path_with_spaces():
+    table = {"client_id": "Iv23abc", "private_key": "C:/My Keys/bot.pem"}
+    with pytest.raises(ConfigError, match='--pem "C:/My Keys/bot.pem"'):
+        parse_user_config({"pr_bot": table}, SOURCE)
+
+
+def test_the_pr_bot_migration_never_echoes_key_material():
+    table = {"client_id": "Iv23abc", "private_key": PEM}
+    with pytest.raises(ConfigError) as caught:
+        parse_user_config({"pr_bot": table}, SOURCE)
+    assert "BEGIN" not in str(caught.value)
+    assert "--pem <path to gth-pr-bot .pem>" in str(caught.value)
 
 
 # --- age -----------------------------------------------------------------------------------

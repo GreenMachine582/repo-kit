@@ -246,14 +246,31 @@ def synced_folder(path: Path) -> str | None:
     return None
 
 
+def _pr_bot_value(table: object, key: str, placeholder: str) -> str:
+    """One `[pr_bot]` value for the migration command, or a placeholder if it's unusable."""
+    value = table.get(key) if isinstance(table, dict) else None
+    if not isinstance(value, str) or not value.strip() or "BEGIN" in value:
+        return placeholder  # never echo key material, only a path
+    return f'"{value}"' if " " in value else value
+
+
+def _pr_bot_migration(table: object, source: Path) -> str:
+    client_id = _pr_bot_value(table, "client_id", "<client_id>")
+    pem = _pr_bot_value(table, "private_key", "<path to gth-pr-bot .pem>")
+    return (
+        f"{source}: `[pr_bot]` is replaced by the encrypted credentials file. To move:\n"
+        f"  1. Delete the `[pr_bot]` table from {source}.\n"
+        "  2. rk secrets init\n"
+        f"  3. rk secrets set-app pr-bot --client-id {client_id} --pem {pem}\n"
+        "  4. rk secrets set-app release-bot --client-id <client_id> --pem <path to .pem>\n"
+        "  5. rk secrets show, and once it lists both Apps, delete the .pem files.\n"
+        "See docs/github-app.md#moving-from-pr_bot."
+    )
+
+
 def parse_user_config(data: dict[str, Any], source: Path) -> UserConfig:
     if "pr_bot" in data:
-        raise ConfigError(
-            f"{source}: `[pr_bot]` is replaced by the encrypted credentials file. Note its "
-            "client_id and private_key, delete the `[pr_bot]` table, then run `rk secrets init` "
-            "and `rk secrets set-app pr-bot --client-id <client_id> --pem <private_key>` "
-            "(docs/github-app.md)."
-        )
+        raise ConfigError(_pr_bot_migration(data["pr_bot"], source))
     config: UserConfig = _build(UserConfig, data, source)
     synced = synced_folder(config.worktree_root)
     if synced:
