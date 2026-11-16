@@ -239,3 +239,16 @@ def test_only_immutable_releases_sends_no_patch(client, monkeypatch):
     gh = FakeGh(monkeypatch, ok())
     client.update_repo_settings({"immutable_releases": False})
     assert gh.calls == [["-X", "DELETE", "repos/o/r/immutable-releases"]]
+
+
+def test_pr_reads_one_pr_by_number(client, monkeypatch):
+    gh = FakeGh(monkeypatch, api_pr(7))
+    pr = client.pr(7)
+    assert gh.calls == [["repos/o/r/pulls/7"]]
+    assert pr is not None
+    assert (pr.number, pr.head_ref, pr.head_sha) == (7, "feat/7", "sha7")
+
+
+def test_pr_that_is_not_there_is_none(client, monkeypatch):
+    FakeGh(monkeypatch, failure("gh: Not Found (HTTP 404)"))
+    assert client.pr(7) is None

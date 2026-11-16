@@ -14,17 +14,24 @@ Every run looks at everything, so a dropped or cancelled run is harmless:
    long-lived branch (the `dev` → `main` release PR).
 3. Order parents before children, so a chain `dev ← A ← B ← C` converges. GitHub does each update asynchronously, so a
    chain can take one run per link; each update's push starts the next run.
-4. For each PR: read it again for its current labels, draft state and base, and ask GitHub how it stands against that
+4. For each PR: read it again, by number (two PRs can share a head branch, such as `feat/x` into `dev` and into
+   `main`), for its current labels, draft state and base, and ask GitHub how it stands against that
    base. While GitHub is still working out mergeability, wait and ask again, up to 4 times.
 
    | State | What happens |
    |---|---|
-   | Up to date | Nothing, apart from removing a leftover conflict label |
+   | Up to date | Nothing, apart from clearing a leftover conflict label (see below) |
    | Behind | GitHub's update-branch API merges the base into the head, guarded by the head SHA from step 1. No force, no clone, and no PR code on the runner |
-   | Update accepted | CI re-runs (the update is made with an App token); the conflict label is removed |
+   | Update accepted | CI re-runs (the update is made with an App token); the conflict label is cleared (see below) |
    | Update refused (such as the head having moved) | Recorded; the next run reconciles it |
-   | Conflict | The conflict label is added; **one** comment, found again by a hidden marker, names the base and `rk wt sync <branch>`. GitHub doesn't report which files conflict; `rk wt sync` lists them |
+   | Conflict | The conflict label is added (if it isn't there); **one** comment, found again by a hidden marker, names the base and `rk wt sync <branch>`. GitHub doesn't report which files conflict; `rk wt sync` lists them |
    | Still unknown | Recorded; nothing changes |
+
+   **Clearing a conflict:** when a PR with the conflict label is current again (or its update was accepted), the
+   label is removed and the marked comment is **edited to say the conflict is resolved**, not deleted: the history
+   stays, and a later conflict edits the same comment back. A PR whose label was removed by hand keeps its old
+   comment; there is no label to tell the bot it ever flagged it. The run's `Changed:` list names only what it
+   really changed, so a re-run over an already flagged PR reports nothing.
 
    A failed API call for one PR is recorded, the other PRs still run, and the command exits non-zero.
 
@@ -69,7 +76,7 @@ jobs:
 | Event | Types |
 |---|---|
 | `push` | All branches, so a chain's child hears about a push to its parent. The [pre-check](#push-pre-check) skips most |
-| `pull_request` | `edited`, `ready_for_review`, `reopened`, `closed` |
+| `pull_request` | `edited`, `ready_for_review`, `reopened`, `closed`, `labeled`, `unlabeled`: so removing `wip` or `no-auto-update`, or a hand-removed conflict label, starts a run |
 | `workflow_dispatch` | With a `dry-run` input, ticked by default |
 
 ### Push pre-check
@@ -102,7 +109,8 @@ the default branch's rk). The conflict label it looks for comes from the `confli
 `[update_prs].conflict_label` into the consumer's caller, and its default is `needs-merge`.
 
 No schedule for now; a daily safety net is a Future item. Concurrency is one group per repo, without cancelling runs
-in progress. A dropped pending run is harmless, because any run covers everything.
+in progress. A dropped pending run is harmless, because any run covers everything. Dry runs have their own group, so
+a manual dry run never replaces a pending real run (and isn't replaced by one).
 
 ## Work in progress = draft
 

@@ -192,6 +192,9 @@ class FakeGitHub:
     def prs_for_branch(self, branch: str) -> list[PullRequest]:
         return [pr for pr in self.prs if pr.head_ref == branch]
 
+    def pr(self, number: int) -> PullRequest | None:
+        return next((pr for pr in self.prs if pr.number == number), None)
+
     def remove_label(self, number: int, label: str) -> None:
         self.removed_labels.append((number, label))
         self._set_labels(number, tuple(lb for lb in self.get(number).labels if lb != label))
@@ -229,14 +232,15 @@ class FakeGitHub:
         if label not in labels:
             self._set_labels(number, (*labels, label))
 
-    def upsert_comment(self, number: int, marker: str, body: str) -> None:
+    def upsert_comment(self, number: int, marker: str, body: str) -> bool:
         text = f"{marker}\n{body}"
         comments = self.comments.setdefault(number, [])
         for index, existing in enumerate(comments):
             if marker in existing:
                 comments[index] = text
-                return
+                return existing != text
         comments.append(text)
+        return True
 
     def read_file(self, path: str) -> str | None:
         return self.files.get(path)
