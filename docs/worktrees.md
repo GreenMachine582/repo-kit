@@ -44,7 +44,9 @@ A command whose first word ends in `.sh` runs through `bash`: Git Bash on Window
 Merge only. With no branch, it syncs the current worktree's branch.
 
 1. Refuse on uncommitted or untracked changes, or a merge in progress. Untracked `[worktree].env_dirs` don't count.
-2. Merge `origin/<branch>` first, to pick up any merge the PR bot pushed.
+2. Merge `origin/<branch>` first, to pick up any merge the PR bot pushed. If the branch had an upstream that is now
+   gone and its PR is merged or closed (and contains the branch's head), stop: GitHub deleted it after the merge, and
+   `wt sync` won't push it back. Run `rk wt done` instead.
 3. Merge `origin/<base>`, where the base is the open PR's live base. With no open PR, it's the base recorded by
    `wt start`, then the profile's default. The output says which it used.
 4. On a conflict, stop and list the files. The merge is left in progress for Claude to resolve and commit; then run
@@ -63,13 +65,23 @@ Refuses unless every condition holds. Each has its own override:
 |---|---|
 | The worktree belongs to this repo, under `<worktree_root>/<owner>-<repo>/` (not the main checkout) | None |
 | It's run from outside that worktree | None |
-| The PR is merged or closed (no PR found counts as unmerged) | `--allow-unmerged` |
+| No `[worktree].env_dirs` entry holds files Git tracks (rk deletes env dirs) | None: edit `env_dirs` |
+| The PR is merged or closed, and the branch's current head is in that PR (no PR found, or an older PR of a reused branch name, counts as unmerged) | `--allow-unmerged` |
 | Nothing is uncommitted or untracked (`[worktree].env_dirs` excepted) | `--discard-changes` |
 | Nothing is unpushed: every commit is on some remote branch, such as a merged PR's base | `--delete-unpushed` |
+| No ignored files would be deleted (`.env`, local databases): outside `env_dirs`, tool caches (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `*.egg-info`) and rk's links file | None: move or delete them first |
 
-Every failing condition is reported at once, each with its override. Then it undoes links, removes
-`[worktree].env_dirs` and the worktree, deletes the local branch, and prunes. The skill text forbids Claude from using
-any override unasked.
+Every failing condition is reported at once, each with its override. All checks run before anything is removed. Then it
+undoes links, removes `[worktree].env_dirs` (the part most likely to hit a Windows file lock), removes the worktree,
+deletes the local branch, and prunes. The skill text forbids Claude from using any override unasked.
+
+If removal stops partway (a locked file), rk says which path to free, and rerunning `rk wt done` finishes the job
+without `--discard-changes`: tracked files the first run already deleted are expected, while any other change still
+refuses. A worktree whose folder is already gone is just pruned and its branch deleted.
+
+`[worktree].env_dirs` entries must be plain relative folder names (`.venv`, `build/cache`): no `.` or `..`, absolute
+path, `*`/`?`/`[`/`:` or `.git`, or loading `.repo-kit.toml` fails, because each entry is both excluded from the dirty
+check and deleted.
 
 ## 📋 `rk wt list`
 
