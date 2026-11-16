@@ -2,8 +2,9 @@
 
 `install` adopts a repo: it seeds `.repo-kit.toml`, syncs the shared files, adds the plugin
 marketplace, and creates the profile's base branch when only the release branch exists.
-`configure` enrols a repo for `gth-pr-bot`: the labels update-prs uses, and the App's Client ID and
-private key as an Actions variable and secret. `bootstrap` runs both, then `doctor`. `upgrade`
+`configure` enrols a repo for `gth-pr-bot` and `gth-release-bot`: the labels update-prs uses, and
+each App's Client ID and private key, read from the encrypted credentials file, as an Actions
+variable and secret. `bootstrap` runs both, then `doctor`. `upgrade`
 moves the version pin to the running rk's release and re-renders; templates new in that release
 are added. See docs/adoption.md.
 """
@@ -32,6 +33,7 @@ from repo_kit.config import (
     load_user_config,
     user_config_path,
 )
+from repo_kit.credentials import APPS, Credentials, Sops, SopsCli, load_credentials
 from repo_kit.errors import RkError
 from repo_kit.github import GhCliGitHub, GitHub, NoGitHub, RepoSetup
 
@@ -40,8 +42,6 @@ MARKETPLACE = "repo-kit"
 MARKETPLACE_SOURCE = {"source": "github", "repo": "GreenMachine582/repo-kit"}
 PLUGIN = "repo-kit@repo-kit"  # <plugin>@<marketplace>
 
-CLIENT_ID_VARIABLE = "GTH_PR_BOT_CLIENT_ID"
-PRIVATE_KEY_SECRET = "GTH_PR_BOT_PRIVATE_KEY"  # noqa: S105  # the secret's name, not its value
 INSTALLATIONS_URL = "https://github.com/settings/installations"
 
 # Colour and description for the labels rk knows; any other configured label gets the default.
@@ -59,40 +59,17 @@ def label_specs(config: UpdatePrsConfig) -> list[tuple[str, str, str]]:
     return [(name, *_KNOWN_LABELS.get(name, _DEFAULT_LABEL)) for name in names]
 
 
-def read_private_key(user_config: UserConfig, source: Path) -> str:
-    """The PR bot's key, checked before anything is written."""
-    bot = user_config.pr_bot
-    path = bot.key_path
-    if not bot.client_id or path is None:
-        raise RkError(
-            f"{source} needs gth-pr-bot's credentials before rk can enrol a repo. Add:\n\n"
-            "[pr_bot]\n"
-            'client_id = "<the App\'s Client ID>"\n'
-            'private_key = "~/.ssh/gth-pr-bot.pem"   # a local path, never a synced folder'
-        )
-    if not path.is_file():
-        raise RkError(f"`pr_bot.private_key` in {source} points at {path}, which doesn't exist")
-    text = path.read_text(encoding="utf-8")
-    if "-----BEGIN" not in text or "PRIVATE KEY-----" not in text:
-        raise RkError(f"{path} doesn't look like a PEM private key (the App's downloaded .pem)")
-    return text
-
-
 def configure(
     setup: RepoSetup,
     repo_config: RepoConfig,
-    user_config: UserConfig,
+    credentials: Credentials,
     *,
-    source: Path,
     changed: list[str],
     dry_run: bool = False,
     replace_key: bool = False,
     say: Callable[[str], None] = print,
 ) -> None:
-    """Enrol a repo for gth-pr-bot. Safe to re-run: only what's missing or different is written."""
-    key = read_private_key(user_config, source)
-    client_id = user_config.pr_bot.client_id
-
+    """Enrol a repo for both Apps. Safe to re-run: only what's missing or different is written."""
     existing = set(setup.labels())
     for name, color, description in label_specs(repo_config.update_prs):
         if name in existing:
@@ -103,25 +80,31 @@ def configure(
         else:
             say(f"would create label {name}")
 
-    if setup.variables().get(CLIENT_ID_VARIABLE) != client_id:
-        if not dry_run:
-            setup.set_variable(CLIENT_ID_VARIABLE, client_id)
-            changed.append(f"set variable {CLIENT_ID_VARIABLE}")
+    variables = setup.variables()
+    secret_names = set(setup.secret_names())
+    for app in APPS:
+        creds = credentials[app.key]
+        if variables.get(app.client_id_variable) != creds.client_id:
+            if not dry_run:
+                setup.set_variable(app.client_id_variable, creds.client_id)
+                changed.append(f"set variable {app.client_id_variable}")
+            else:
+                say(f"would set variable {app.client_id_variable}")
+
+        # A secret can't be read back: it's only written when missing or when asked to replace it.
+        secret = app.private_key_secret
+        has_key = secret in secret_names
+        if has_key and not replace_key:
+            say(f"secret {secret} is already set (--replace-key replaces it)")
+        elif dry_run:
+            say(f"would {'replace' if has_key else 'set'} secret {secret}")
         else:
-            say(f"would set variable {CLIENT_ID_VARIABLE}")
+            setup.set_secret(secret, creds.private_key)
+            changed.append(f"{'replaced' if has_key else 'set'} secret {secret}")
 
-    # A secret can't be read back, so it's only written when missing or when asked to replace it.
-    has_key = PRIVATE_KEY_SECRET in setup.secret_names()
-    if has_key and not replace_key:
-        say(f"secret {PRIVATE_KEY_SECRET} is already set (--replace-key replaces it)")
-    elif dry_run:
-        say(f"would {'replace' if has_key else 'set'} secret {PRIVATE_KEY_SECRET}")
-    else:
-        setup.set_secret(PRIVATE_KEY_SECRET, key)
-        changed.append(f"{'replaced' if has_key else 'set'} secret {PRIVATE_KEY_SECRET}")
-
+    names = " and ".join(app.name for app in APPS)
     say(
-        f"rk can't check the App is installed on this repo: confirm it at {INSTALLATIONS_URL}, "
+        f"rk can't check {names} are installed on this repo: confirm it at {INSTALLATIONS_URL}, "
         "then run the update-prs caller with dry-run ticked to confirm the credentials work."
     )
     say("Rulesets and repo settings aren't part of configure: run `rk github apply` (needs admin).")
@@ -135,11 +118,12 @@ def run_configure(cwd: Path, *, changed: list[str], dry_run: bool, replace_key: 
     if not git.is_github_url(url):
         raise RkError(f"origin isn't on GitHub ({url}), so there's nothing to configure")
     owner, repo = git.parse_owner_repo(url)
+    source = user_config_path()
+    credentials = load_credentials(load_user_config(source), source, SopsCli())
     configure(
         GhCliGitHub(owner, repo),
         load_repo_config(main),
-        load_user_config(),
-        source=user_config_path(),
+        credentials,
         changed=changed,
         dry_run=dry_run,
         replace_key=replace_key,
@@ -535,6 +519,7 @@ def bootstrap(
     github: GitHub,
     setup: RepoSetup,
     user_config: UserConfig,
+    sops: Sops,
     *,
     source: Path,
     profile: str,
@@ -543,11 +528,11 @@ def bootstrap(
     say: Callable[[str], None] = print,
     templates: Path | None = None,
 ) -> None:
-    """`install`, then `configure`, then `doctor`. The PR bot's key is read first, so a machine
-    that can't enrol the repo stops before anything is written."""
+    """`install`, then `configure`, then `doctor`. The Apps' credentials are decrypted first, so a
+    machine that can't enrol the repo stops before anything is written."""
     from repo_kit import doctor  # here, not at the top: doctor imports this module
 
-    read_private_key(user_config, source)
+    credentials = load_credentials(user_config, source, sops)
     config = install(
         repo_root,
         owner,
@@ -559,7 +544,7 @@ def bootstrap(
         say=say,
         templates=templates,
     )
-    configure(setup, config, user_config, source=source, changed=changed, say=say)
+    configure(setup, config, credentials, changed=changed, say=say)
     checks = doctor.doctor(
         repo_root,
         owner,
@@ -568,6 +553,7 @@ def bootstrap(
         setup,
         user_source=source,
         user_config=user_config,
+        sops=sops,
         templates=templates,
     )
     say(doctor.render(checks))
@@ -576,7 +562,7 @@ def bootstrap(
 
 
 def run_bootstrap(cwd: Path, *, profile: str, changed: list[str]) -> None:
-    """The command: install, then enrol the repo for gth-pr-bot."""
+    """The command: install, then enrol the repo for both Apps."""
     repo_root, url, owner, repo = _origin(cwd)
     if not git.is_github_url(url):
         raise RkError(
@@ -590,6 +576,7 @@ def run_bootstrap(cwd: Path, *, profile: str, changed: list[str]) -> None:
         client,
         client,
         load_user_config(),
+        SopsCli(),
         source=user_config_path(),
         profile=profile,
         changed=changed,

@@ -36,27 +36,27 @@ def git_247(monkeypatch):
 
 
 def test_tools_ok(git_247):
-    check = doctor.check_tools(Path(), lambda: (2, 63))
+    check = doctor.check_tools(Path(), lambda: (2, 63), lambda: (3, 10))
     assert check.status is Status.OK
-    assert check.label.startswith("git 2.47 / gh 2.63 / Python 3.")
+    assert check.label.startswith("git 2.47 / gh 2.63 / sops 3.10 / Python 3.")
 
 
 def test_tools_missing_gh_warns(git_247):
-    check = doctor.check_tools(Path(), lambda: None)
+    check = doctor.check_tools(Path(), lambda: None, lambda: (3, 10))
     assert check.status is Status.WARN
     assert "gh missing" in check.label
     assert "gh auth login" in check.detail
 
 
 def test_tools_old_gh_fails(git_247):
-    check = doctor.check_tools(Path(), lambda: (2, 39))
+    check = doctor.check_tools(Path(), lambda: (2, 39), lambda: (3, 10))
     assert check.status is Status.FAIL
     assert "gh 2.40 or newer" in check.detail
 
 
 def test_tools_old_git_fails(monkeypatch):
     monkeypatch.setattr(git, "version", lambda _cwd: (2, 37))
-    check = doctor.check_tools(Path(), lambda: (2, 63))
+    check = doctor.check_tools(Path(), lambda: (2, 63), lambda: (3, 10))
     assert check.status is Status.FAIL
     assert "Git 2.38 or newer" in check.detail
 
@@ -85,3 +85,12 @@ def test_only_a_fail_fails():
         [Check(Status.OK, "a"), Check(Status.WARN, "b"), Check(Status.SKIP, "c")]
     )
     assert doctor.failed([Check(Status.OK, "a"), Check(Status.FAIL, "b")])
+
+
+def test_tools_missing_or_old_sops_warns(git_247):
+    missing = doctor.check_tools(Path(), lambda: (2, 63), lambda: None)
+    assert missing.status is Status.WARN
+    assert "sops missing" in missing.label
+    old = doctor.check_tools(Path(), lambda: (2, 63), lambda: (3, 8))
+    assert old.status is Status.WARN
+    assert "sops 3.10+" in old.detail

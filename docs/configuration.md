@@ -66,14 +66,16 @@ the defaults.
 
 ```toml
 worktree_root = "~/dev/wt"
-
-[pr_bot]                          # used by `rk configure` to enrol a repo
-client_id = "Iv23..."             # gth-pr-bot's Client ID
-private_key = "~/.ssh/gth-pr-bot.pem"
+secrets_file = "~/OneDrive/repo-kit/secrets.sops.json"   # the Apps' credentials, sops + age encrypted
 ```
 
-`worktree_root` and `pr_bot.private_key` must not be inside OneDrive or any other synced folder: rk refuses one under
-a `OneDrive*`, Dropbox or iCloud folder. See [github-app.md](github-app.md#enrolling-a-repo).
+`worktree_root` must not be inside OneDrive or any other synced folder: rk refuses one under a `OneDrive*`, Dropbox
+or iCloud folder. `secrets_file` may be, since it's encrypted. The age key that decrypts it must not be; `rk secrets`
+refuses one that is. `rk secrets init` prints the `secrets_file` line to add. See
+[github-app.md](github-app.md#credentials-sops--age).
+
+The old `[pr_bot]` table is an error that names the migration
+([github-app.md](github-app.md#moving-from-pr_bot)).
 
 ## Worktree-local: `.repo-kit.local.toml`
 

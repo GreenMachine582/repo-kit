@@ -114,21 +114,14 @@ class RepoConfig:
 
 
 @dataclass(frozen=True)
-class PrBotConfig:
-    """`gth-pr-bot`'s credentials, used by `rk configure` to enrol a repo."""
-
-    client_id: str = ""
-    private_key: str = ""  # path to the App's .pem; "~" is expanded
-
-    @property
-    def key_path(self) -> Path | None:
-        return Path(self.private_key).expanduser() if self.private_key else None
-
-
-@dataclass(frozen=True)
 class UserConfig:
     worktree_root: Path = field(default_factory=lambda: Path("~/dev/wt").expanduser())
-    pr_bot: PrBotConfig = field(default_factory=PrBotConfig)
+    # The sops-encrypted credentials file (docs/github-app.md). Encrypted, so it may be synced.
+    secrets_file: str = ""
+
+    @property
+    def secrets_path(self) -> Path | None:
+        return Path(self.secrets_file).expanduser() if self.secrets_file else None
 
 
 def _type_name(tp: Any) -> str:
@@ -233,19 +226,19 @@ def synced_folder(path: Path) -> str | None:
 
 
 def parse_user_config(data: dict[str, Any], source: Path) -> UserConfig:
+    if "pr_bot" in data:
+        raise ConfigError(
+            f"{source}: `[pr_bot]` is replaced by the encrypted credentials file. Note its "
+            "client_id and private_key, delete the `[pr_bot]` table, then run `rk secrets init` "
+            "and `rk secrets set-app pr-bot --client-id <client_id> --pem <private_key>` "
+            "(docs/github-app.md)."
+        )
     config: UserConfig = _build(UserConfig, data, source)
     synced = synced_folder(config.worktree_root)
     if synced:
         raise ConfigError(
             f"{source}: `worktree_root` ({config.worktree_root}) is inside a synced folder "
             f"({synced}). Venvs and Git internals don't survive syncing: choose a local path."
-        )
-    key = config.pr_bot.key_path
-    synced = synced_folder(key) if key else None
-    if synced:
-        raise ConfigError(
-            f"{source}: `pr_bot.private_key` ({key}) is inside a synced folder ({synced}). "
-            "A private key must not be copied to the cloud: move it to a local path."
         )
     return config
 

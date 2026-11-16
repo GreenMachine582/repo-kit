@@ -9,8 +9,8 @@ after Phase 4, to keep scope in check.
 
 Done when unit snapshots of generated rulesets and files pass, and repo-kit runs on its own tooling (dogfood).
 
-- [ ] First release of repo-kit (User approves): set `GTH_RELEASE_BOT_CLIENT_ID` and `GTH_RELEASE_BOT_PRIVATE_KEY`,
-  then a `release: …` PR from `dev` to `main`. `release-self.yml` runs release-please. If it picks a version other
+- [ ] First release of repo-kit (User approves): `rk secrets set-app release-bot …`, then `rk configure` in repo-kit
+  sets `GTH_RELEASE_BOT_CLIENT_ID` and `GTH_RELEASE_BOT_PRIVATE_KEY`; then a `release: …` PR from `dev` to `main`. `release-self.yml` runs release-please. If it picks a version other
   than `0.1.0`, move the pin with `rk upgrade`
 
 ## Phase 2: pilot on photo-ledger, moving from `main` only to `dev-main`
@@ -77,7 +77,6 @@ Registered, not planned. Each is picked up on its own, after Phase 4.
 - **Renamed and removed templates in `rk upgrade`:** move or delete the file and update the lock.
 - **`[project].extra_files`:** release-please `extra-files` in the managed config, for version files such as
   PyFinBot's `src/pyfinbot/version.py`.
-- **`rk configure` for `gth-release-bot`:** store its credentials the same way as `gth-pr-bot`'s.
 - **Key validation in `rk configure`:** confirm the key and installation before storing, if a stdlib-only way to sign
   the App's JWT turns up.
 - **`main-only` profile**, if a repo ever needs a trunk-only flow: ruleset builder and templates without `dev` or

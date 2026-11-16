@@ -45,6 +45,10 @@ Install `rk` on your `PATH`, pinned to a release:
 uv tool install git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z
 ```
 
+`rk configure` and `rk bootstrap` also need [sops](https://github.com/getsops/sops) 3.10+ and
+[age](https://github.com/FiloSottile/age), which hold the GitHub Apps' credentials. Set them up once per machine with
+`rk secrets init` ([docs/github-app.md](docs/github-app.md#credentials-sops--age)).
+
 Then, in a repo you want to adopt:
 
 ```bash
@@ -86,7 +90,8 @@ uv pip install -e ".[dev]"
 | `rk github diff \| apply` | Compare or apply rulesets and repo settings |
 | `rk branches prune [--apply]` | List, or delete, branches whose PR is merged (or, on origin, closed) |
 | `rk check commits \| commit-msg \| pr-title` | The commit and title rules `pr-checks` runs |
-| `rk configure` | Enrol a repo for `gth-pr-bot`: labels, Client ID variable and key secret |
+| `rk secrets init / set-app / add-recipient / show` | Keep both Apps' credentials in one sops + age encrypted file |
+| `rk configure` | Enrol a repo for `gth-pr-bot` and `gth-release-bot`: labels, Client ID variables and key secrets |
 | `rk install / bootstrap` | Adopt a repo |
 | `rk upgrade [vX.Y.Z]` | Move the version pin to this rk's release and re-render |
 | `rk doctor` | Read-only health check |

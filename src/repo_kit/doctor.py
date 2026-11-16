@@ -1,9 +1,9 @@
 """`rk doctor`: read-only health check.
 
-Tools, both config files, the managed files, the plugin settings, the base branch, gth-pr-bot's
-enrolment and stale worktrees. It writes nothing and doesn't fetch: remote branches are read as of
-the last fetch. Repo settings and rulesets are compared with what the config describes; the latest
-release comes later. See docs/adoption.md.
+Tools, both config files, the credentials file, the managed files, the plugin settings, the base
+branch, both Apps' enrolment and stale worktrees. It writes nothing and doesn't fetch: remote
+branches are read as of the last fetch. Repo settings and rulesets are compared with what the
+config describes; the latest release comes later. See docs/adoption.md.
 """
 
 from __future__ import annotations
@@ -25,6 +25,15 @@ from repo_kit.config import (
     load_repo_config,
     load_user_config,
     user_config_path,
+)
+from repo_kit.credentials import (
+    APPS,
+    MIN_SOPS,
+    PR_BOT,
+    Credentials,
+    Sops,
+    SopsCli,
+    load_credentials,
 )
 from repo_kit.errors import RkError
 from repo_kit.github import GhCliGitHub, GitHub, NoGitHub, RepoSetup
@@ -90,7 +99,11 @@ def installed_gh_version() -> tuple[int, int] | None:
     return parse_gh_version(proc.stdout)
 
 
-def check_tools(cwd: Path, gh_version: Callable[[], tuple[int, int] | None]) -> Check:
+def check_tools(
+    cwd: Path,
+    gh_version: Callable[[], tuple[int, int] | None],
+    sops_version: Callable[[], tuple[int, int] | None],
+) -> Check:
     found: list[str] = []
     problems: list[str] = []
     failed = False
@@ -121,6 +134,14 @@ def check_tools(cwd: Path, gh_version: Callable[[], tuple[int, int] | None]) -> 
         if have_gh < MIN_GH:
             problems.append(f"rk needs gh {_dotted(MIN_GH)} or newer")
             failed = True
+    have_sops = sops_version()
+    if have_sops is None:
+        found.append("sops missing")
+        problems.append("install sops and age: `rk configure` and `rk secrets` need them")
+    else:
+        found.append(f"sops {_dotted(have_sops)}")
+        if have_sops < MIN_SOPS:
+            problems.append(f"`rk configure` and `rk secrets` need sops {_dotted(MIN_SOPS)}+")
     py = sys.version_info[:2]
     found.append(f"Python {_dotted(py)}")
     if py < MIN_PYTHON:
@@ -172,6 +193,19 @@ def check_user_config(source: Path) -> tuple[Check, UserConfig | None]:
         return _fail("user config invalid", str(exc)), None
     where = str(source) if source.is_file() else f"{source} (not found, so the defaults)"
     return _ok("user config valid", where), config
+
+
+def check_credentials(
+    user_config: UserConfig | None, source: Path, sops: Sops
+) -> tuple[Check, Credentials | None]:
+    if user_config is None:
+        return _skip("credentials file", "need a valid user config"), None
+    try:
+        credentials = load_credentials(user_config, source, sops)
+    except RkError as exc:
+        return _warn("credentials file can't be read", str(exc)), None
+    names = ", ".join(app.name for app in APPS)
+    return _ok(f"credentials file: {names}", str(user_config.secrets_path)), credentials
 
 
 # --- files ---------------------------------------------------------------------------------
@@ -245,33 +279,47 @@ def check_base_branch(repo_root: Path, config: RepoConfig) -> Check:
 # --- GitHub --------------------------------------------------------------------------------
 
 
-def check_enrolment(setup: RepoSetup, config: RepoConfig, user_config: UserConfig | None) -> Check:
-    if not config.update_prs.enabled:
-        return _skip("gth-pr-bot: update-prs is disabled in .repo-kit.toml")
+def check_enrolment(
+    setup: RepoSetup, config: RepoConfig, credentials: Credentials | None
+) -> list[Check]:
+    """One check per App. Client IDs are compared only when the credentials file decrypted."""
     try:
         labels = set(setup.labels())
         variables = setup.variables()
         secrets = set(setup.secret_names())
     except RkError as exc:
-        return _warn("gth-pr-bot: can't read the repo's labels, variables and secrets", str(exc))
-    problems = [
-        f"label {name} is missing"
-        for name, _color, _desc in bootstrap.label_specs(config.update_prs)
-        if name not in labels
-    ]
-    client_id = variables.get(bootstrap.CLIENT_ID_VARIABLE)
-    wanted = user_config.pr_bot.client_id if user_config else ""
-    if not client_id:
-        problems.append(f"variable {bootstrap.CLIENT_ID_VARIABLE} is missing")
-    elif wanted and client_id != wanted:
-        problems.append(
-            f"variable {bootstrap.CLIENT_ID_VARIABLE} isn't the Client ID in your user config"
-        )
-    if bootstrap.PRIVATE_KEY_SECRET not in secrets:
-        problems.append(f"secret {bootstrap.PRIVATE_KEY_SECRET} is missing")
-    if problems:
-        return _fail("gth-pr-bot not enrolled", "\n".join([*problems, "run `rk configure`"]))
-    return _ok("gth-pr-bot: labels, Client ID variable and private key secret present")
+        return [_warn("Apps: can't read the repo's labels, variables and secrets", str(exc))]
+    checks: list[Check] = []
+    for app in APPS:
+        problems: list[str] = []
+        if app is PR_BOT:
+            if not config.update_prs.enabled:
+                checks.append(_skip(f"{app.name}: update-prs is disabled in .repo-kit.toml"))
+                continue
+            problems += [
+                f"label {name} is missing"
+                for name, _color, _desc in bootstrap.label_specs(config.update_prs)
+                if name not in labels
+            ]
+        client_id = variables.get(app.client_id_variable)
+        wanted = credentials[app.key].client_id if credentials else ""
+        if not client_id:
+            problems.append(f"variable {app.client_id_variable} is missing")
+        elif wanted and client_id != wanted:
+            problems.append(
+                f"variable {app.client_id_variable} isn't the Client ID in your credentials file"
+            )
+        if app.private_key_secret not in secrets:
+            problems.append(f"secret {app.private_key_secret} is missing")
+        if problems:
+            checks.append(
+                _fail(f"{app.name} not enrolled", "\n".join([*problems, "run `rk configure`"]))
+            )
+        else:
+            what = "labels, " if app is PR_BOT else ""
+            label = f"{app.name}: {what}Client ID variable and private key secret present"
+            checks.append(_ok(label))
+    return checks
 
 
 def check_github(setup: RepoSetup, config: RepoConfig) -> Check:
@@ -325,22 +373,25 @@ def doctor(
     user_config: UserConfig | None = None,
     templates: Path | None = None,
     gh_version: Callable[[], tuple[int, int] | None] | None = None,
+    sops: Sops | None = None,
 ) -> list[Check]:
     """Every check, in report order. Reads only: nothing is written, fetched or pushed.
 
     `user_config` is the one already loaded from `user_source`, when the caller has it.
     """
-    checks = [check_tools(repo_root, gh_version or installed_gh_version)]
+    sops = sops or SopsCli()
+    checks = [check_tools(repo_root, gh_version or installed_gh_version, sops.version)]
 
     repo_check, config, pin_matches = check_repo_config(repo_root)
     if user_config is None:
         user_check, user_config = check_user_config(user_source)
     else:
         user_check = _ok("user config valid", str(user_source))
-    checks += [repo_check, user_check]
+    credentials_check, credentials = check_credentials(user_config, user_source, sops)
+    checks += [repo_check, user_check, credentials_check]
 
     if config is None:
-        needs = "managed files, plugin, base branch, gth-pr-bot"
+        needs = "managed files, plugin, base branch, App enrolment"
         checks.append(_skip(needs, "need a valid config"))
     else:
         if pin_matches:
@@ -351,14 +402,14 @@ def doctor(
         checks.append(check_plugin(repo_root))
         checks.append(check_base_branch(repo_root, config))
         if setup is None:
-            checks.append(_skip("gth-pr-bot", "origin isn't on GitHub"))
+            checks.append(_skip("App enrolment", "origin isn't on GitHub"))
         else:
-            checks.append(check_enrolment(setup, config, user_config))
+            checks += check_enrolment(setup, config, credentials)
 
     if setup is not None:
         checks.append(
             _skip(
-                "gth-pr-bot installed and token mint",
+                "Apps installed and token mint",
                 f"can't be checked from here: confirm at {bootstrap.INSTALLATIONS_URL}, then "
                 "run the update-prs caller with dry-run ticked",
             )

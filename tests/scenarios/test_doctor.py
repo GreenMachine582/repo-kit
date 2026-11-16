@@ -6,17 +6,17 @@ from __future__ import annotations
 import json
 
 import pytest
-from fakes import FakeRepoSetup
+from fakes import FakeRepoSetup, stored_credentials
 from harness import git
 
 import repo_kit
 from repo_kit import bootstrap, doctor, rulesets, settings
-from repo_kit.config import PrBotConfig, RepoConfig, UserConfig
+from repo_kit.config import RepoConfig, UserConfig
+from repo_kit.credentials import PR_BOT, RELEASE_BOT
 from repo_kit.doctor import Status
 from repo_kit.files import LOCK_NAME
 from repo_kit.worktree import start
 
-KEY = "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n"
 CALLER = ".github/workflows/update-prs.yml"
 OWNER, REPO = "local", "origin"  # what a clone of the bare `origin.git` parses to
 
@@ -29,11 +29,8 @@ def released_engine(monkeypatch):
 
 @pytest.fixture
 def user_config(tmp_path, wt_root):
-    key = tmp_path / "bot.pem"
-    key.write_text(KEY, encoding="utf-8")
-    return UserConfig(
-        worktree_root=wt_root, pr_bot=PrBotConfig(client_id="Iv23abc", private_key=str(key))
-    )
+    path, _sops = stored_credentials(tmp_path)
+    return UserConfig(worktree_root=wt_root, secrets_file=str(path))
 
 
 @pytest.fixture
@@ -52,6 +49,7 @@ def adopted(clone, github, user_config, tmp_path):
         github,
         setup,
         user_config,
+        stored_credentials(tmp_path)[1],
         source=tmp_path / "config.toml",
         profile="dev-main",
         changed=[],
@@ -61,7 +59,7 @@ def adopted(clone, github, user_config, tmp_path):
     return work, setup, "\n".join(said)
 
 
-def run(work, github, setup, user_config, tmp_path):
+def run(work, github, setup, user_config, tmp_path, sops=None):
     return doctor.doctor(
         work,
         OWNER,
@@ -70,6 +68,7 @@ def run(work, github, setup, user_config, tmp_path):
         setup,
         user_source=tmp_path / "config.toml",
         user_config=user_config,
+        sops=sops or stored_credentials(tmp_path)[1],
     )
 
 
@@ -141,16 +140,16 @@ def test_missing_file_fails(adopted, github, user_config, tmp_path):
     [
         (lambda s: s.label_set.pop("needs-merge"), "label needs-merge is missing"),
         (
-            lambda s: s.vars.pop(bootstrap.CLIENT_ID_VARIABLE),
-            f"variable {bootstrap.CLIENT_ID_VARIABLE} is missing",
+            lambda s: s.vars.pop(PR_BOT.client_id_variable),
+            f"variable {PR_BOT.client_id_variable} is missing",
         ),
         (
-            lambda s: s.vars.update({bootstrap.CLIENT_ID_VARIABLE: "Iv23other"}),
-            "isn't the Client ID in your user config",
+            lambda s: s.vars.update({PR_BOT.client_id_variable: "Iv23other"}),
+            "isn't the Client ID in your credentials file",
         ),
         (
-            lambda s: s.secrets.pop(bootstrap.PRIVATE_KEY_SECRET),
-            f"secret {bootstrap.PRIVATE_KEY_SECRET} is missing",
+            lambda s: s.secrets.pop(PR_BOT.private_key_secret),
+            f"secret {PR_BOT.private_key_secret} is missing",
         ),
     ],
 )
@@ -165,6 +164,44 @@ def test_enrolment_gap_fails_and_names_configure(
     assert bot.status is Status.FAIL
     assert message in bot.detail
     assert "rk configure" in bot.detail
+
+
+def test_release_bot_gap_fails_on_its_own(adopted, github, user_config, tmp_path):
+    work, setup, _said = adopted
+    setup.secrets.pop(RELEASE_BOT.private_key_secret)
+
+    checks = run(work, github, setup, user_config, tmp_path)
+
+    (bot,) = find(checks, "gth-release-bot not enrolled")
+    assert f"secret {RELEASE_BOT.private_key_secret} is missing" in bot.detail
+    assert find(checks, "gth-pr-bot:")[0].status is Status.OK
+
+
+def test_an_unreadable_credentials_file_warns_and_skips_only_the_comparison(
+    adopted, github, user_config, tmp_path
+):
+    work, setup, _said = adopted
+    _path, sops = stored_credentials(tmp_path)
+    sops.readable = False
+    setup.vars[PR_BOT.client_id_variable] = "Iv23other"  # can't be compared, so not a FAIL
+
+    checks = run(work, github, setup, user_config, tmp_path, sops=sops)
+
+    (creds,) = find(checks, "credentials file")
+    assert creds.status is Status.WARN
+    assert "no matching age key" in creds.detail
+    assert not doctor.failed(checks), doctor.render(checks)
+
+
+def test_missing_sops_is_a_warning(adopted, github, user_config, tmp_path):
+    work, setup, _said = adopted
+    _path, sops = stored_credentials(tmp_path)
+    sops.installed = None
+
+    tools = run(work, github, setup, user_config, tmp_path, sops=sops)[0]
+
+    assert tools.status is Status.WARN
+    assert "sops missing" in tools.label
 
 
 def test_override_and_orphan_warn(adopted, github, user_config, tmp_path):
@@ -227,7 +264,7 @@ def test_invalid_config_fails_and_skips_what_needs_it(adopted, github, user_conf
     (bad,) = find(checks, ".repo-kit.toml invalid")
     assert bad.status is Status.FAIL
     assert "unknown" in bad.detail
-    (skipped,) = find(checks, "managed files, plugin, base branch, gth-pr-bot")
+    (skipped,) = find(checks, "managed files, plugin, base branch, App enrolment")
     assert skipped.status is Status.SKIP
 
 

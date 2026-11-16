@@ -5,16 +5,16 @@ from __future__ import annotations
 import json
 
 import pytest
-from fakes import FakeRepoSetup
+from fakes import PEM, RELEASE_PEM, FakeRepoSetup, stored_credentials
 from harness import git, push_branch, remote_sha
 
 import repo_kit
 from repo_kit import bootstrap
-from repo_kit.config import PrBotConfig, ProjectConfig, RepoConfig, UserConfig, load_repo_config
+from repo_kit.config import ProjectConfig, RepoConfig, UserConfig, load_repo_config
+from repo_kit.credentials import PR_BOT, RELEASE_BOT
 from repo_kit.errors import RkError
 from repo_kit.files import LOCK_NAME, SyncError, collect_templates, templates_root
 
-KEY = "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n"
 CALLER = ".github/workflows/update-prs.yml"
 
 
@@ -263,7 +263,7 @@ def test_an_origin_with_neither_branch_is_refused(clone, github, origin):
     assert untouched(work)
 
 
-def run_bootstrap(work, github, setup, user_config, tmp_path):
+def run_bootstrap(work, github, setup, user_config, tmp_path, sops=None):
     changed: list[str] = []
     said: list[str] = []
     bootstrap.bootstrap(
@@ -273,6 +273,7 @@ def run_bootstrap(work, github, setup, user_config, tmp_path):
         github,
         setup,
         user_config,
+        sops or stored_credentials(tmp_path)[1],
         source=tmp_path / "config.toml",
         profile="dev-main",
         changed=changed,
@@ -284,26 +285,45 @@ def run_bootstrap(work, github, setup, user_config, tmp_path):
 
 def test_bootstrap_installs_then_enrols_the_repo(clone, github, tmp_path):
     work = clone("work")
-    key = tmp_path / "bot.pem"
-    key.write_text(KEY, encoding="utf-8")
-    user_config = UserConfig(pr_bot=PrBotConfig(client_id="Iv23abc", private_key=str(key)))
+    path, _sops = stored_credentials(tmp_path)
+    user_config = UserConfig(secrets_file=str(path))
     setup = FakeRepoSetup()
 
     changed, said = run_bootstrap(work, github, setup, user_config, tmp_path)
 
     assert (work / CALLER).is_file()
-    assert setup.vars == {bootstrap.CLIENT_ID_VARIABLE: "Iv23abc"}
-    assert setup.secrets == {bootstrap.PRIVATE_KEY_SECRET: KEY}
+    assert setup.vars == {
+        PR_BOT.client_id_variable: "Iv23abc",
+        RELEASE_BOT.client_id_variable: "Iv23rel",
+    }
+    assert setup.secrets == {
+        PR_BOT.private_key_secret: PEM,
+        RELEASE_BOT.private_key_secret: RELEASE_PEM,
+    }
     assert changed.index("created .repo-kit.toml") < changed.index("created label needs-merge")
     assert "[OK]   managed files:" in said  # doctor ran last
 
 
-def test_bootstrap_without_the_bot_credentials_writes_nothing(clone, github, only_main, tmp_path):
+def test_bootstrap_without_the_credentials_file_writes_nothing(clone, github, only_main, tmp_path):
     work = clone("work")
     setup = FakeRepoSetup()
 
-    with pytest.raises(RkError, match="needs gth-pr-bot's credentials"):
+    with pytest.raises(RkError, match="rk secrets init"):
         run_bootstrap(work, github, setup, UserConfig(), tmp_path)
+
+    assert untouched(work)
+    assert remote_sha(work, "dev") is None
+    assert setup.writes == []
+
+
+def test_bootstrap_that_cant_decrypt_writes_nothing(clone, github, only_main, tmp_path):
+    work = clone("work")
+    path, sops = stored_credentials(tmp_path)
+    sops.readable = False
+    setup = FakeRepoSetup()
+
+    with pytest.raises(RkError, match="no matching age key"):
+        run_bootstrap(work, github, setup, UserConfig(secrets_file=str(path)), tmp_path, sops)
 
     assert untouched(work)
     assert remote_sha(work, "dev") is None
