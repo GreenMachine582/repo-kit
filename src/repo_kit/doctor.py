@@ -246,11 +246,29 @@ def check_files(
     return checks
 
 
-def check_overrides(config: RepoConfig) -> list[Check]:
-    return [
-        _warn(f"override in use: {path} is {mode}")
-        for path, mode in sorted(config.overrides.files.items())
-    ]
+_WORKFLOW_CALL = re.compile(r"^\s+workflow_call:", re.MULTILINE)
+
+
+def _is_reusable_workflow(path: Path) -> bool:
+    """A `workflow_call:` trigger: the workflow itself, which a generated caller never is."""
+    try:
+        return bool(_WORKFLOW_CALL.search(path.read_text(encoding="utf-8")))
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def check_overrides(repo_root: Path, config: RepoConfig) -> list[Check]:
+    """WARN for each override, except on a reusable workflow: in repo-kit the callers' paths are
+    the workflows themselves, so those overrides are expected."""
+    checks: list[Check] = []
+    for path, mode in sorted(config.overrides.files.items()):
+        if _is_reusable_workflow(repo_root / path):
+            checks.append(
+                _ok(f"override: {path} is {mode}", "a reusable workflow itself, not a caller")
+            )
+        else:
+            checks.append(_warn(f"override in use: {path} is {mode}"))
+    return checks
 
 
 def check_plugin(repo_root: Path) -> Check:
@@ -398,7 +416,7 @@ def doctor(
             checks += check_files(repo_root, config, owner, repo, templates)
         else:
             checks.append(_skip("managed files", "need the pin to match this rk"))
-        checks += check_overrides(config)
+        checks += check_overrides(repo_root, config)
         checks.append(check_plugin(repo_root))
         checks.append(check_base_branch(repo_root, config))
         if setup is None:
