@@ -9,9 +9,8 @@ after Phase 4, to keep scope in check.
 
 Done when unit snapshots of generated rulesets and files pass, and repo-kit runs on its own tooling (dogfood).
 
-- [ ] First release of repo-kit (User approves): `rk secrets set-app release-bot …`, then `rk configure` in repo-kit
-  sets `GTH_RELEASE_BOT_CLIENT_ID` and `GTH_RELEASE_BOT_PRIVATE_KEY`; then a `release: …` PR from `dev` to `main`. `release-self.yml` runs release-please. If it picks a version other
-  than `0.1.0`, move the pin with `rk upgrade`
+- [ ] First release of repo-kit (User approves): a `release: …` PR from `dev` to `main`. `release-self.yml` runs
+  release-please. If it picks a version other than `0.1.0`, move the pin with `rk upgrade`
 
 ## Phase 2: pilot on photo-ledger, moving from `main` only to `dev-main`
 

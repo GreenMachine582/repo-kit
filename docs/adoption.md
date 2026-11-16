@@ -69,7 +69,7 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 [OK]   user config valid
 [OK]   credentials file: gth-pr-bot, gth-release-bot
 [OK]   managed files: 9 in sync, 0 drifted
-[WARN] override in use: .github/workflows/release.yml is unmanaged
+[WARN] override in use: CHANGELOG.md is unmanaged
 [OK]   plugin: repo-kit is in .claude/settings.json
 [OK]   base branch: origin/dev exists (as of the last fetch)
 [OK]   gth-pr-bot: labels, Client ID variable and private key secret present
@@ -92,7 +92,7 @@ command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` a
 | User config | FAIL: an unknown key, a leftover `[pr_bot]` table (the error names the migration), or a synced `worktree_root` |
 | Credentials file | WARN: `secrets_file` is unset or missing, this machine can't decrypt it, or an App's Client ID or key is missing (`rk secrets …`). The Client ID comparison below is skipped |
 | Managed files | FAIL: a file is missing, differs from the render, was edited by hand, or the lock is stale: the same test as `rk sync --check`. WARN: a lock entry is no longer a template |
-| Overrides | WARN: each `unmanaged` file |
+| Overrides | WARN: each `unmanaged` file. A file that is a reusable workflow (it has a `workflow_call:` trigger) is OK instead: a caller never is one, so the override can only be repo-kit's own, where the callers' paths are the workflows themselves |
 | Plugin | WARN: `.claude/settings.json` lacks the repo-kit marketplace or plugin (`rk install`) |
 | Base branch | FAIL: origin has no profile base branch (`rk install`) |
 | gth-pr-bot, gth-release-bot | FAIL, per App: a label (gth-pr-bot only), the Client ID variable or the key secret is missing, or the variable isn't the credentials file's Client ID (`rk configure`). gth-pr-bot is skipped when update-prs is disabled |
@@ -112,7 +112,7 @@ Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` c
   checked by `pr-checks / managed-files` like anywhere else. Its callers can't be generated, because their paths are
   the reusable workflows themselves, so `.repo-kit.toml` marks those three `unmanaged` and hand-written callers
   (`pr-checks-self.yml`, `keep-prs-current.yml`, `release-self.yml`) run them locally: every PR tests its own
-  workflows. `doctor` shows the three overrides as WARN, as expected.
+  workflows. `doctor` shows the three overrides as OK, since each of those files is a reusable workflow.
 - **One pin per consumer:** `version` in `.repo-kit.toml`. Every generated caller uses `@v<version>` and passes that
   same version to the engine. Bumping the pin is always `rk upgrade`, so callers, managed files and rulesets move
   together.
