@@ -90,3 +90,15 @@ def test_a_dry_run_writes_nothing():
 def test_label_specs_follow_the_config():
     config = UpdatePrsConfig(skip_labels=("wip", "hold"), conflict_label="clash")
     assert [name for name, _c, _d in label_specs(config)] == ["clash", "wip", "hold"]
+
+
+def test_a_repo_without_update_prs_needs_only_the_release_bot():
+    setup = FakeRepoSetup()
+    config = RepoConfig(update_prs=UpdatePrsConfig(enabled=False))
+    only_release = {RELEASE_BOT.key: AppCredentials("Iv23rel", RELEASE_PEM)}
+    changed: list[str] = []
+    said: list[str] = []
+    configure(setup, config, only_release, changed=changed, say=said.append)
+    assert setup.vars == {RELEASE_BOT.client_id_variable: "Iv23rel"}
+    assert setup.secrets == {RELEASE_BOT.private_key_secret: RELEASE_PEM}
+    assert not any(PR_BOT.name in line for line in said)

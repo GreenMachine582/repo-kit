@@ -33,7 +33,7 @@ from repo_kit.config import (
     load_user_config,
     user_config_path,
 )
-from repo_kit.credentials import APPS, Credentials, Sops, SopsCli, load_credentials
+from repo_kit.credentials import Credentials, Sops, SopsCli, apps_for, load_credentials
 from repo_kit.errors import RkError
 from repo_kit.github import GhCliGitHub, GitHub, NoGitHub, RepoSetup
 
@@ -80,9 +80,10 @@ def configure(
         else:
             say(f"would create label {name}")
 
+    apps = apps_for(repo_config)
     variables = setup.variables()
     secret_names = set(setup.secret_names())
-    for app in APPS:
+    for app in apps:
         creds = credentials[app.key]
         if variables.get(app.client_id_variable) != creds.client_id:
             if not dry_run:
@@ -102,7 +103,7 @@ def configure(
             setup.set_secret(secret, creds.private_key)
             changed.append(f"{'replaced' if has_key else 'set'} secret {secret}")
 
-    names = " and ".join(app.name for app in APPS)
+    names = " and ".join(app.name for app in apps)
     say(
         f"rk can't check {names} are installed on this repo: confirm it at {INSTALLATIONS_URL}, "
         "then run the update-prs caller with dry-run ticked to confirm the credentials work."
@@ -119,10 +120,13 @@ def run_configure(cwd: Path, *, changed: list[str], dry_run: bool, replace_key: 
         raise RkError(f"origin isn't on GitHub ({url}), so there's nothing to configure")
     owner, repo = git.parse_owner_repo(url)
     source = user_config_path()
-    credentials = load_credentials(load_user_config(source), source, SopsCli())
+    repo_config = load_repo_config(main)
+    credentials = load_credentials(
+        load_user_config(source), source, SopsCli(), apps_for(repo_config)
+    )
     configure(
         GhCliGitHub(owner, repo),
-        load_repo_config(main),
+        repo_config,
         credentials,
         changed=changed,
         dry_run=dry_run,
@@ -532,7 +536,10 @@ def bootstrap(
     machine that can't enrol the repo stops before anything is written."""
     from repo_kit import doctor  # here, not at the top: doctor imports this module
 
-    credentials = load_credentials(user_config, source, sops)
+    # An existing .repo-kit.toml says which Apps the repo uses; without one, install seeds the
+    # defaults, which use both.
+    apps = apps_for(load_repo_config(repo_root))
+    credentials = load_credentials(user_config, source, sops, apps)
     config = install(
         repo_root,
         owner,

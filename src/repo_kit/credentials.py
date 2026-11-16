@@ -19,7 +19,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from repo_kit.config import UserConfig, load_user_config, synced_folder, user_config_path
+from repo_kit.config import (
+    RepoConfig,
+    UserConfig,
+    load_user_config,
+    synced_folder,
+    user_config_path,
+)
 from repo_kit.errors import RkError
 
 MIN_SOPS = (3, 10)  # `sops set --value-stdin`
@@ -47,6 +53,12 @@ RELEASE_BOT = App(
     "GTH_RELEASE_BOT_PRIVATE_KEY",
 )
 APPS = (PR_BOT, RELEASE_BOT)
+
+
+def apps_for(config: RepoConfig) -> tuple[App, ...]:
+    """The Apps a repo uses: gth-pr-bot only with update-prs on; gth-release-bot always, since
+    every `dev-main` repo cuts releases."""
+    return tuple(app for app in APPS if app is not PR_BOT or config.update_prs.enabled)
 
 
 @dataclass(frozen=True)
@@ -252,13 +264,16 @@ def _app_table(data: dict[str, Any], app: App) -> dict[str, Any]:
     return table if isinstance(table, dict) else {}
 
 
-def load_credentials(user_config: UserConfig, source: Path, sops: Sops) -> Credentials:
-    """Every App's credentials, decrypted and checked before anything is written."""
+def load_credentials(
+    user_config: UserConfig, source: Path, sops: Sops, apps: tuple[App, ...] = APPS
+) -> Credentials:
+    """The credentials of `apps`, decrypted and checked before anything is written. An App the
+    repo doesn't use may be missing from the file."""
     path = secrets_path(user_config, source)
     data = sops.decrypt(path)
     credentials: Credentials = {}
     problems: list[str] = []
-    for app in APPS:
+    for app in apps:
         table = _app_table(data, app)
         client_id = table.get("client_id")
         key = table.get("private_key")
