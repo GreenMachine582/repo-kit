@@ -10,7 +10,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from fakes import PEM, RELEASE_PEM, FakeSops, stored_credentials
+from fakes import NEW_PEM, PEM, RELEASE_PEM, FakeSops, stored_credentials
 
 from repo_kit import credentials as creds_module
 from repo_kit.config import (
@@ -28,7 +28,9 @@ from repo_kit.credentials import (
     add_recipient,
     age_key_path,
     apps_for,
+    conflict_copies,
     init,
+    key_fingerprint,
     load_credentials,
     parse_sops_version,
     public_key,
@@ -289,7 +291,7 @@ def test_init_refuses_an_age_key_in_a_synced_folder(tmp_path, monkeypatch):
 def test_set_app_stores_both_values(tmp_path):
     path, sops = stored_credentials(tmp_path)
     changed: list[str] = []
-    new_pem = PEM.replace("abc", "new")
+    new_pem = NEW_PEM
     set_app(
         UserConfig(secrets_file=str(path)),
         SOURCE,
@@ -442,3 +444,52 @@ def test_only_the_apps_a_repo_uses_must_be_in_the_file(tmp_path):
     assert set(loaded) == {RELEASE_BOT.key}
     with pytest.raises(RkError, match="set-app pr-bot"):
         load_credentials(config, SOURCE, sops, apps_for(RepoConfig()))
+
+
+# --- key fingerprints ----------------------------------------------------------------------
+
+
+def test_the_fingerprint_is_the_sha256_of_the_der_bytes():
+    # PEM's body is base64 of b"abc", whose SHA-256 is the FIPS 180-2 test vector
+    assert key_fingerprint(PEM) == (
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    )
+    assert key_fingerprint(PEM.replace("\n", "\r\n")) == key_fingerprint(PEM)
+    assert key_fingerprint(RELEASE_PEM) != key_fingerprint(PEM)
+
+
+def test_a_body_that_isnt_base64_is_refused(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    broken = "-----BEGIN RSA PRIVATE KEY-----\nnot base64!\n-----END RSA PRIVATE KEY-----\n"
+    sops.files[path]["pr_bot"]["private_key"] = broken
+    with pytest.raises(RkError, match="isn't valid base64"):
+        load_credentials(UserConfig(secrets_file=str(path)), SOURCE, sops)
+
+
+# --- sync conflict copies ------------------------------------------------------------------
+
+
+def test_onedrive_conflict_copies_are_found(tmp_path):
+    path, _sops = stored_credentials(tmp_path)
+    assert conflict_copies(path) == []
+    copy = tmp_path / "secrets.sops-DESKTOP-AB12.json"
+    copy.write_text("{}", encoding="utf-8")
+    (tmp_path / "secrets.sops.json.bak").write_text("{}", encoding="utf-8")
+    (tmp_path / "other-DESKTOP-AB12.json").write_text("{}", encoding="utf-8")
+    assert conflict_copies(path) == [copy]
+
+
+def test_a_missing_folder_has_no_conflict_copies(tmp_path):
+    assert conflict_copies(tmp_path / "nowhere" / "secrets.sops.json") == []
+
+
+def test_show_warns_about_a_conflict_copy(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    (tmp_path / "secrets.sops-LAPTOP-9Z.json").write_text("{}", encoding="utf-8")
+    said: list[str] = []
+    code = show(UserConfig(secrets_file=str(path)), SOURCE, sops, say=said.append)
+    assert code == 0
+    (warning,) = [line for line in said if line.startswith("Warning:")]
+    assert "secrets.sops-LAPTOP-9Z.json" in warning
+    assert "merge the two" in warning
+    assert "delete the copy" in warning

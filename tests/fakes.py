@@ -11,8 +11,9 @@ from repo_kit import git
 from repo_kit.credentials import EMPTY_FILE, SopsError
 from repo_kit.github import BaseStatus, PullRequest, UpdateResult, pick_pr
 
-PEM = "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n"
-RELEASE_PEM = "-----BEGIN RSA PRIVATE KEY-----\nrel\n-----END RSA PRIVATE KEY-----\n"
+PEM = "-----BEGIN RSA PRIVATE KEY-----\nYWJj\n-----END RSA PRIVATE KEY-----\n"
+RELEASE_PEM = "-----BEGIN RSA PRIVATE KEY-----\ncmVs\n-----END RSA PRIVATE KEY-----\n"
+NEW_PEM = "-----BEGIN RSA PRIVATE KEY-----\nbmV3\n-----END RSA PRIVATE KEY-----\n"  # a rotated key
 
 
 class FakeSops:
