@@ -111,9 +111,10 @@ def _secrets(action: str) -> Handler:
         if action == "show":
             return credentials.run_show()
         changed: list[str] = []
+        code = 0
         try:
             if action == "init":
-                credentials.run_init(file=args.file, changed=changed)
+                code = credentials.run_init(file=args.file, changed=changed)
             elif action == "set-app":
                 credentials.run_set_app(
                     args.app, client_id=args.client_id, pem=Path(args.pem), changed=changed
@@ -122,7 +123,7 @@ def _secrets(action: str) -> Handler:
                 credentials.run_add_recipient(args.recipient, changed=changed)
         finally:
             _print_changes(changed)
-        return 0
+        return code
 
     return handler
 

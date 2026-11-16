@@ -1,7 +1,8 @@
 # Reusable: the checks every PR must pass, named `pr-checks / <job>`. See docs/checks-and-release.md.
 # Consumers call it from a thin caller pinned to @v<version>, passing the same version as `ref`. It needs no
 # secrets and reads only: each job checks out the consumer into repo/ and repo-kit at `ref` into repo-kit/, then
-# runs rk from source (standard library only, so nothing is installed).
+# runs rk from source (standard library only, so nothing is installed). Every call is `python -P -m repo_kit`:
+# without -P, Python looks in repo/ (the PR's own files) first, and a PR could ship a repo_kit/ that passes its checks.
 name: pr-checks
 
 on:
@@ -49,7 +50,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.ref }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if ! python -m repo_kit check commits "origin/${BASE}..${HEAD_SHA}"; then
+          if ! python -P -m repo_kit check commits "origin/${BASE}..${HEAD_SHA}"; then
             echo "Reword the commits listed in the log above. See CONTRIBUTING.md." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -80,7 +81,7 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/repo-kit/src
           TITLE: ${{ github.event.pull_request.title }}
         run: |
-          if ! python -m repo_kit check pr-title "$TITLE"; then
+          if ! python -P -m repo_kit check pr-title "$TITLE"; then
             echo "Edit the PR title (the log above says why): this check re-runs on the edit." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
@@ -111,7 +112,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/repo-kit/src
         run: |
-          if ! python -m repo_kit sync --check; then
+          if ! python -P -m repo_kit sync --check; then
             echo "Run \`rk sync\` (or \`rk upgrade\`) and commit the result. See repo-kit's docs/troubleshooting.md." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi

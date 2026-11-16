@@ -38,7 +38,7 @@ to sops on stdin, never as an argument, and no command prints one.
 
 | Command | Does |
 |---|---|
-| `rk secrets init [--file PATH]` | Creates this machine's age key if it has none (where sops looks: `SOPS_AGE_KEY_FILE`, else the default above) and prints its public key. Adds `secrets_file` to the user config if it's missing, creating the config if needed and backing up an existing one to `config.toml.bak`; `--file` picks another place than the OneDrive default. Creates the credentials file if no machine has yet. If it exists but this machine can't decrypt it, prints the `add-recipient` command to run on one that can. Safe to re-run |
+| `rk secrets init [--file PATH]` | Creates this machine's age key if it has none (where sops looks: `SOPS_AGE_KEY_FILE`, else the default above) and prints its public key. Adds `secrets_file` to the user config if it's missing, creating the config if needed and backing up an existing one to `config.toml.bak`; `--file` picks another place than the OneDrive default. Creates the credentials file if no machine has yet. If it exists but this machine can't decrypt it, prints the `add-recipient` command to run on one that can, and exits 1 until it can, so a script can tell setup isn't finished. Safe to re-run |
 | `rk secrets set-app {pr-bot,release-bot} --client-id … --pem …` | Stores one App's Client ID and key, then reads them back to check |
 | `rk secrets add-recipient age1…` | Lets another machine's key decrypt the file (`sops rotate --add-age`) |
 | `rk secrets show` | Each App's Client ID, and whether its key is present. Exits 1 if one is missing |
@@ -92,7 +92,9 @@ A User-only step, done in the GitHub UI:
    installed before `rk github apply`: the generated rulesets name it as a bypass actor, and GitHub accepts only an
    App that is installed on the repo. Without it, `apply` fails with `Validation Failed (HTTP 422)`.
 2. In the repo, run `rk configure`. It's safe to re-run, and `--dry-run` shows what it would do. It decrypts the
-   credentials file first, so nothing is written on a machine that can't. Then it:
+   credentials file first, so nothing is written on a machine that can't. It enrols only the Apps the repo uses:
+   `gth-release-bot` always, and `gth-pr-bot` unless `[update_prs].enabled` is false. An App the repo doesn't use
+   may be missing from the credentials file. Then it:
    - creates the labels update-prs uses (`needs-merge`, `wip`, `no-auto-update`, or what `[update_prs]` names),
      leaving existing ones alone;
    - sets `GTH_PR_BOT_CLIENT_ID` and `GTH_RELEASE_BOT_CLIENT_ID` where missing or different;

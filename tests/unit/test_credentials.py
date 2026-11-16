@@ -13,7 +13,13 @@ import pytest
 from fakes import PEM, RELEASE_PEM, FakeSops, stored_credentials
 
 from repo_kit import credentials as creds_module
-from repo_kit.config import ConfigError, UserConfig, parse_user_config
+from repo_kit.config import (
+    ConfigError,
+    RepoConfig,
+    UpdatePrsConfig,
+    UserConfig,
+    parse_user_config,
+)
 from repo_kit.credentials import (
     AGE_KEY_ENV,
     PR_BOT,
@@ -21,6 +27,7 @@ from repo_kit.credentials import (
     SopsCli,
     add_recipient,
     age_key_path,
+    apps_for,
     init,
     load_credentials,
     parse_sops_version,
@@ -242,7 +249,7 @@ def test_init_on_a_second_machine_prints_the_add_recipient_command(tmp_path):
     sops.readable = False
     changed: list[str] = []
     said: list[str] = []
-    init(
+    code = init(
         UserConfig(secrets_file=str(path)),
         SOURCE,
         sops,
@@ -250,9 +257,23 @@ def test_init_on_a_second_machine_prints_the_add_recipient_command(tmp_path):
         key_file=key_file(tmp_path),
         say=said.append,
     )
+    assert code == 1  # setup isn't finished until another machine adds this one
     assert changed == []
     assert sops.writes == []
     assert any(f"rk secrets add-recipient {RECIPIENT}" in line for line in said)
+
+    sops.readable = True
+    assert (
+        init(
+            UserConfig(secrets_file=str(path)),
+            SOURCE,
+            sops,
+            changed=[],
+            key_file=key_file(tmp_path),
+            say=lambda _m: None,
+        )
+        == 0
+    )
 
 
 def test_init_refuses_an_age_key_in_a_synced_folder(tmp_path, monkeypatch):
@@ -407,3 +428,17 @@ def test_the_suggested_secrets_file_starts_from_home(monkeypatch, tmp_path):
     assert creds_module.suggested_secrets_file() == "~/OneDrive/repo-kit/secrets.sops.json"
     monkeypatch.setenv("OneDrive", str(tmp_path.parent / "elsewhere"))
     assert creds_module.suggested_secrets_file().endswith("elsewhere/repo-kit/secrets.sops.json")
+
+
+def test_only_the_apps_a_repo_uses_must_be_in_the_file(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    del sops.files[path]["pr_bot"]
+    config = UserConfig(secrets_file=str(path))
+    no_update_prs = RepoConfig(update_prs=UpdatePrsConfig(enabled=False))
+
+    assert apps_for(no_update_prs) == (RELEASE_BOT,)
+    assert apps_for(RepoConfig()) == (PR_BOT, RELEASE_BOT)
+    loaded = load_credentials(config, SOURCE, sops, apps_for(no_update_prs))
+    assert set(loaded) == {RELEASE_BOT.key}
+    with pytest.raises(RkError, match="set-app pr-bot"):
+        load_credentials(config, SOURCE, sops, apps_for(RepoConfig()))

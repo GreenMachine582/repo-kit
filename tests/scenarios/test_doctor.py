@@ -177,6 +177,23 @@ def test_release_bot_gap_fails_on_its_own(adopted, github, user_config, tmp_path
     assert find(checks, "gth-pr-bot:")[0].status is Status.OK
 
 
+def test_an_app_the_repo_doesnt_use_may_be_missing(adopted, github, user_config, tmp_path):
+    work, setup, _said = adopted
+    config = work / ".repo-kit.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8") + "\n[update_prs]\nenabled = false\n", encoding="utf-8"
+    )
+    path, sops = stored_credentials(tmp_path)
+    del sops.files[path]["pr_bot"]
+
+    checks = run(work, github, setup, user_config, tmp_path, sops=sops)
+
+    (creds,) = find(checks, "credentials file")
+    assert (creds.status, creds.label) == (Status.OK, "credentials file: gth-release-bot")
+    assert find(checks, "gth-pr-bot: update-prs is disabled")[0].status is Status.SKIP
+    assert find(checks, "gth-release-bot:")[0].status is Status.OK
+
+
 def test_an_unreadable_credentials_file_warns_and_skips_only_the_comparison(
     adopted, github, user_config, tmp_path
 ):

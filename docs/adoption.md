@@ -90,7 +90,7 @@ command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` a
 | Tools | FAIL: Git, gh or Python is below its minimum. WARN: gh isn't installed (`sync` and `install` work without it), or sops is missing or too old (only `configure` and `secrets` need it) |
 | `.repo-kit.toml` | FAIL: missing, an unknown key or a bad value, or `version` empty or not `X.Y.Z`. WARN: the pin isn't this rk's release, and the files check is skipped until `rk upgrade` |
 | User config | FAIL: an unknown key, a leftover `[pr_bot]` table (the error names the migration), or a synced `worktree_root` |
-| Credentials file | WARN: `secrets_file` is unset or missing, this machine can't decrypt it, or an App's Client ID or key is missing (`rk secrets …`). The Client ID comparison below is skipped |
+| Credentials file | WARN: `secrets_file` is unset or missing, this machine can't decrypt it, or the Client ID or key of an App this repo uses is missing (`rk secrets …`; gth-pr-bot isn't needed when update-prs is disabled). The Client ID comparison below is skipped |
 | Managed files | FAIL: a file is missing, differs from the render, was edited by hand, or the lock is stale: the same test as `rk sync --check`. WARN: a lock entry is no longer a template |
 | Overrides | WARN: each `unmanaged` file. A file that is a reusable workflow (it has a `workflow_call:` trigger) is OK instead: a caller never is one, so the override can only be repo-kit's own, where the callers' paths are the workflows themselves |
 | Plugin | WARN: `.claude/settings.json` lacks the repo-kit marketplace or plugin (`rk install`) |

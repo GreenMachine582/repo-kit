@@ -28,7 +28,9 @@ jobs:
 ```
 
 A newer push cancels the checks still running for the same PR. The reusable workflow holds no secrets and only
-reads (`contents: read`). Each job checks out the consumer and repo-kit at `ref`, and runs rk from source:
+reads (`contents: read`). Each job checks out the consumer and repo-kit at `ref`, and runs rk from source with
+`python -P -m repo_kit`. The `-P` matters: without it Python looks in the consumer's checkout first, so a PR could add
+its own `repo_kit/` folder and pass its own checks. `tests/unit/test_workflows.py` keeps it there.
 
 | Job | Checks out | Runs |
 |---|---|---|

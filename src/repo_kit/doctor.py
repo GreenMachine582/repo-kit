@@ -33,6 +33,7 @@ from repo_kit.credentials import (
     Credentials,
     Sops,
     SopsCli,
+    apps_for,
     load_credentials,
 )
 from repo_kit.errors import RkError
@@ -196,15 +197,17 @@ def check_user_config(source: Path) -> tuple[Check, UserConfig | None]:
 
 
 def check_credentials(
-    user_config: UserConfig | None, source: Path, sops: Sops
+    user_config: UserConfig | None, source: Path, sops: Sops, config: RepoConfig | None = None
 ) -> tuple[Check, Credentials | None]:
+    """The Apps this repo uses (every App without a valid repo config) must decrypt."""
     if user_config is None:
         return _skip("credentials file", "need a valid user config"), None
+    apps = apps_for(config) if config else APPS
     try:
-        credentials = load_credentials(user_config, source, sops)
+        credentials = load_credentials(user_config, source, sops, apps)
     except RkError as exc:
         return _warn("credentials file can't be read", str(exc)), None
-    names = ", ".join(app.name for app in APPS)
+    names = ", ".join(app.name for app in apps)
     return _ok(f"credentials file: {names}", str(user_config.secrets_path)), credentials
 
 
@@ -320,7 +323,8 @@ def check_enrolment(
                 if name not in labels
             ]
         client_id = variables.get(app.client_id_variable)
-        wanted = credentials[app.key].client_id if credentials else ""
+        found = credentials.get(app.key) if credentials else None
+        wanted = found.client_id if found else ""
         if not client_id:
             problems.append(f"variable {app.client_id_variable} is missing")
         elif wanted and client_id != wanted:
@@ -405,7 +409,7 @@ def doctor(
         user_check, user_config = check_user_config(user_source)
     else:
         user_check = _ok("user config valid", str(user_source))
-    credentials_check, credentials = check_credentials(user_config, user_source, sops)
+    credentials_check, credentials = check_credentials(user_config, user_source, sops, config)
     checks += [repo_check, user_check, credentials_check]
 
     if config is None:

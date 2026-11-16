@@ -19,7 +19,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
-from repo_kit.config import UserConfig, load_user_config, synced_folder, user_config_path
+from repo_kit.config import (
+    RepoConfig,
+    UserConfig,
+    load_user_config,
+    synced_folder,
+    user_config_path,
+)
 from repo_kit.errors import RkError
 
 MIN_SOPS = (3, 10)  # `sops set --value-stdin`
@@ -47,6 +53,12 @@ RELEASE_BOT = App(
     "GTH_RELEASE_BOT_PRIVATE_KEY",
 )
 APPS = (PR_BOT, RELEASE_BOT)
+
+
+def apps_for(config: RepoConfig) -> tuple[App, ...]:
+    """The Apps a repo uses: gth-pr-bot only with update-prs on; gth-release-bot always, since
+    every `dev-main` repo cuts releases."""
+    return tuple(app for app in APPS if app is not PR_BOT or config.update_prs.enabled)
 
 
 @dataclass(frozen=True)
@@ -252,13 +264,16 @@ def _app_table(data: dict[str, Any], app: App) -> dict[str, Any]:
     return table if isinstance(table, dict) else {}
 
 
-def load_credentials(user_config: UserConfig, source: Path, sops: Sops) -> Credentials:
-    """Every App's credentials, decrypted and checked before anything is written."""
+def load_credentials(
+    user_config: UserConfig, source: Path, sops: Sops, apps: tuple[App, ...] = APPS
+) -> Credentials:
+    """The credentials of `apps`, decrypted and checked before anything is written. An App the
+    repo doesn't use may be missing from the file."""
     path = secrets_path(user_config, source)
     data = sops.decrypt(path)
     credentials: Credentials = {}
     problems: list[str] = []
-    for app in APPS:
+    for app in apps:
         table = _app_table(data, app)
         client_id = table.get("client_id")
         key = table.get("private_key")
@@ -324,9 +339,13 @@ def init(
     key_file: Path | None = None,
     keygen: Callable[[Path], None] = run_age_keygen,
     say: Callable[[str], None] = print,
-) -> None:
+) -> int:
     """Set this machine up in one go: its age key, where the shared credentials file is (in this
-    machine's user config), and the file itself if no machine has made it yet. Safe to re-run."""
+    machine's user config), and the file itself if no machine has made it yet. Safe to re-run.
+
+    Returns 1 while this machine can't decrypt the file yet (another machine must add it as a
+    recipient), else 0: a script can tell whether setup is finished.
+    """
     key_file = key_file or age_key_path()
     check_age_key_location(key_file)
     if not key_file.is_file():
@@ -357,7 +376,7 @@ def init(
         )
         for app in APPS:
             say(f"Next, store {app.name}'s credentials: {_set_app_hint(app)}")
-        return
+        return 0
     try:
         sops.decrypt(path)
     except RkError:
@@ -366,8 +385,9 @@ def init(
             f"rk secrets add-recipient {recipient}\n\n"
             "then let the file sync here and run `rk secrets show`."
         )
-        return
+        return 1
     say(f"{path} decrypts on this machine: `rk secrets show` lists what it holds.")
+    return 0
 
 
 def set_app(
@@ -449,8 +469,8 @@ def _loaded() -> tuple[UserConfig, Path, SopsCli]:
     return load_user_config(source), source, SopsCli()
 
 
-def run_init(*, file: str | None, changed: list[str]) -> None:
-    init(*_loaded(), file=file, changed=changed)
+def run_init(*, file: str | None, changed: list[str]) -> int:
+    return init(*_loaded(), file=file, changed=changed)
 
 
 def run_set_app(app_arg: str, *, client_id: str, pem: Path, changed: list[str]) -> None:
