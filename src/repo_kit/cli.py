@@ -104,6 +104,29 @@ def _configure(args: argparse.Namespace) -> int:
     return 0
 
 
+def _secrets(action: str) -> Handler:
+    def handler(args: argparse.Namespace) -> int:
+        from repo_kit import credentials
+
+        if action == "show":
+            return credentials.run_show()
+        changed: list[str] = []
+        try:
+            if action == "init":
+                credentials.run_init(changed=changed)
+            elif action == "set-app":
+                credentials.run_set_app(
+                    args.app, client_id=args.client_id, pem=Path(args.pem), changed=changed
+                )
+            else:
+                credentials.run_add_recipient(args.recipient, changed=changed)
+        finally:
+            _print_changes(changed)
+        return 0
+
+    return handler
+
+
 def _install(args: argparse.Namespace) -> int:
     from repo_kit import bootstrap
 
@@ -277,13 +300,33 @@ def _add_setup_side(sub: SubParsers) -> None:
     install.set_defaults(handler=_install)
 
     configure = sub.add_parser(
-        "configure", help="enrol this repo for gth-pr-bot: labels, Client ID and key"
+        "configure",
+        help="enrol this repo for gth-pr-bot and gth-release-bot: labels, Client IDs and keys",
     )
     configure.add_argument("--dry-run", action="store_true", help="report what would change")
     configure.add_argument(
-        "--replace-key", action="store_true", help="overwrite the private key secret if it's set"
+        "--replace-key", action="store_true", help="overwrite the private key secrets if set"
     )
     configure.set_defaults(handler=_configure)
+
+    secrets = sub.add_parser("secrets", help="the Apps' credentials, in a sops + age file")
+    sec_sub = secrets.add_subparsers(dest="secrets_command", required=True, metavar="<command>")
+    sec_sub.add_parser(
+        "init", help="create this machine's age key and the credentials file (safe to re-run)"
+    ).set_defaults(handler=_secrets("init"))
+    set_app = sec_sub.add_parser("set-app", help="store an App's Client ID and private key")
+    set_app.add_argument("app", choices=["pr-bot", "release-bot"])
+    set_app.add_argument("--client-id", required=True, help="the App's Client ID (Iv23…)")
+    set_app.add_argument("--pem", required=True, metavar="PATH", help="the App's downloaded .pem")
+    set_app.set_defaults(handler=_secrets("set-app"))
+    add = sec_sub.add_parser(
+        "add-recipient", help="let another machine's age key decrypt the credentials file"
+    )
+    add.add_argument("recipient", metavar="AGE_PUBLIC_KEY", help="age1…, from `rk secrets init`")
+    add.set_defaults(handler=_secrets("add-recipient"))
+    sec_sub.add_parser(
+        "show", help="list each App's Client ID and whether its key is present (never the key)"
+    ).set_defaults(handler=_secrets("show"))
 
     bootstrap = sub.add_parser("bootstrap", help="install + configure + doctor")
     bootstrap.add_argument("--profile", default="dev-main", choices=["dev-main"])

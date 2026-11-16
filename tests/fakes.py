@@ -8,7 +8,61 @@ from pathlib import Path
 from typing import Any
 
 from repo_kit import git
+from repo_kit.credentials import EMPTY_FILE, SopsError
 from repo_kit.github import BaseStatus, PullRequest, UpdateResult, pick_pr
+
+PEM = "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n"
+RELEASE_PEM = "-----BEGIN RSA PRIVATE KEY-----\nrel\n-----END RSA PRIVATE KEY-----\n"
+
+
+class FakeSops:
+    """Encrypted files as plain dicts in memory, behind `repo_kit.credentials.Sops`."""
+
+    def __init__(self) -> None:
+        self.files: dict[Path, dict[str, Any]] = {}
+        self.recipients: dict[Path, list[str]] = {}
+        self.readable = True  # False: this machine's age key isn't a recipient
+        self.installed: tuple[int, int] | None = (3, 10)
+        self.writes: list[str] = []
+
+    def version(self) -> tuple[int, int] | None:
+        return self.installed
+
+    def decrypt(self, path: Path) -> dict[str, Any]:
+        if not self.readable or path not in self.files:
+            raise SopsError(f"`sops decrypt {path}` failed:\nno matching age key")
+        return copy.deepcopy(self.files[path])
+
+    def set_value(self, path: Path, keys: tuple[str, ...], value: str) -> None:
+        self.writes.append(f"set {'.'.join(keys)}")
+        node = self.files[path]
+        for key in keys[:-1]:
+            node = node.setdefault(key, {})
+        node[keys[-1]] = value
+
+    def create(self, path: Path, recipient: str) -> None:
+        self.writes.append(f"create {path.name}")
+        path.write_text("{}", encoding="utf-8")  # stands in for the ciphertext
+        self.files[path] = copy.deepcopy(EMPTY_FILE)
+        self.recipients[path] = [recipient]
+
+    def add_recipient(self, path: Path, recipient: str) -> None:
+        self.writes.append(f"add {recipient}")
+        self.recipients.setdefault(path, []).append(recipient)
+
+
+def stored_credentials(
+    tmp_path: Path, pr_client: str = "Iv23abc", release_client: str = "Iv23rel"
+) -> tuple[Path, FakeSops]:
+    """A credentials file holding both Apps, and the fake sops that reads it."""
+    path = tmp_path / "secrets.sops.json"
+    path.write_text("{}", encoding="utf-8")
+    sops = FakeSops()
+    sops.files[path] = {
+        "pr_bot": {"client_id": pr_client, "private_key": PEM},
+        "release_bot": {"client_id": release_client, "private_key": RELEASE_PEM},
+    }
+    return path, sops
 
 
 class FakeRepoSetup:

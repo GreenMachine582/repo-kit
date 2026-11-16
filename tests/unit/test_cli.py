@@ -1,6 +1,17 @@
+from pathlib import Path
+
 import pytest
 
-from repo_kit import __version__, bootstrap, branches, checks, doctor, github_config, reconcile
+from repo_kit import (
+    __version__,
+    bootstrap,
+    branches,
+    checks,
+    credentials,
+    doctor,
+    github_config,
+    reconcile,
+)
 from repo_kit.cli import NOT_IMPLEMENTED, main
 from repo_kit.reconcile import Action, Report, Row
 
@@ -152,3 +163,39 @@ def test_branches_prune_reaches_run_prune(monkeypatch, capsys, argv, applies):
     assert main(["branches", "prune", *argv]) == 0
     assert seen == {"apply": applies}
     assert ("Changed:" in capsys.readouterr().out) is applies
+
+
+def test_secrets_commands_reach_credentials(monkeypatch, capsys):
+    seen: list[tuple[str, object]] = []
+
+    def init(*, changed):
+        seen.append(("init", None))
+        changed.append("created age key")
+
+    def set_app(app, *, client_id, pem, changed):
+        seen.append(("set-app", (app, client_id, pem)))
+
+    def add(recipient, *, changed):
+        seen.append(("add", recipient))
+
+    monkeypatch.setattr(credentials, "run_init", init)
+    monkeypatch.setattr(credentials, "run_set_app", set_app)
+    monkeypatch.setattr(credentials, "run_add_recipient", add)
+    monkeypatch.setattr(credentials, "run_show", lambda: 1)
+
+    assert main(["secrets", "init"]) == 0
+    assert "created age key" in capsys.readouterr().out
+    argv = ["secrets", "set-app", "release-bot", "--client-id", "Iv23x", "--pem", "k.pem"]
+    assert main(argv) == 0
+    assert main(["secrets", "add-recipient", "age1abc"]) == 0
+    assert main(["secrets", "show"]) == 1
+    assert seen == [
+        ("init", None),
+        ("set-app", ("release-bot", "Iv23x", Path("k.pem"))),
+        ("add", "age1abc"),
+    ]
+
+
+def test_set_app_takes_only_known_apps():
+    with pytest.raises(SystemExit):
+        main(["secrets", "set-app", "other-bot", "--client-id", "x", "--pem", "k"])
