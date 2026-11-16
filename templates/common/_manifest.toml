@@ -5,6 +5,9 @@
 [files.".github/workflows/update-prs.yml"]
 mode = "managed"
 
+[files.".github/workflows/update-prs-trigger.yml"]
+mode = "managed"
+
 [files.".github/workflows/pr-checks.yml"]
 mode = "managed"
 

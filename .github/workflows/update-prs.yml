@@ -1,5 +1,8 @@
 # Reusable: keep every ready PR current with its base, as gth-pr-bot. See docs/pr-updates.md.
 # Consumers call it from a thin caller pinned to @v<version>, passing the same version as `ref`.
+# The caller runs on `workflow_run` of a keyless "update-prs trigger" workflow, so it always runs the
+# default branch's copy of itself: a pushed branch can't change the run that holds the key. The key
+# lives in the gth-pr-bot environment, which only the default branch may use (docs/github-app.md).
 name: update-prs
 
 on:
@@ -18,6 +21,15 @@ on:
         required: false
         type: boolean
         default: false
+      trigger-event:
+        description: The event behind this run, such as push or pull_request (workflow_run's event)
+        required: true
+        type: string
+      trigger-branch:
+        description: The branch that event happened on (workflow_run's head_branch)
+        required: false
+        type: string
+        default: ""
       conflict-label:
         description: The label update-prs puts on a conflicting PR ([update_prs].conflict_label)
         required: false
@@ -25,7 +37,7 @@ on:
         default: needs-merge
     secrets:
       PR_BOT_PRIVATE_KEY:
-        description: gth-pr-bot's private key
+        description: gth-pr-bot's private key. Pass it by name; it resolves only in the gth-pr-bot environment
         required: true
 
 permissions: {}
@@ -45,9 +57,8 @@ jobs:
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-          REF_TYPE: ${{ github.ref_type }}
-          BRANCH: ${{ github.ref_name }}
+          EVENT: ${{ inputs.trigger-event }}
+          BRANCH: ${{ inputs.trigger-branch }}
           LABEL: ${{ inputs.conflict-label }}
         run: |
           # A branch name in an API path: escaped, apart from its slashes.
@@ -59,7 +70,8 @@ jobs:
           }
 
           if [ "$EVENT" != "push" ]; then decide true "a $EVENT event always runs"; fi
-          if [ "$REF_TYPE" != "branch" ]; then decide false "a $REF_TYPE push can't change any PR"; fi
+          # The trigger only runs on branch pushes, never tags, so a push always names a branch.
+          if [ -z "$BRANCH" ]; then decide true "a push without a branch name runs to be safe"; fi
 
           # Every open PR, all pages, that update-prs could touch: ready and not from a fork.
           # One line per PR the push is related to: "base <n> <base>" or "head <n> <base> <labelled>".
@@ -93,11 +105,14 @@ jobs:
 
   update-prs:
     needs: pre-check
-    # A pull_request run from a fork gets no secrets, so it could only fail.
+    # A fork's PR events reach the trigger too. Nothing from the trigger run (no artifact, no code) is
+    # used here, but a fork has no business starting a run that holds the key, so it's skipped.
     if: >-
       needs.pre-check.outputs.needed == 'true'
-      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && (github.event_name != 'workflow_run' || github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
+    # Only the default branch may use this environment, so only merged workflow code reaches the key.
+    environment: gth-pr-bot
     permissions:
       contents: read
     # Every run reconciles everything, so a queued run can be dropped but a running one is never cut off.

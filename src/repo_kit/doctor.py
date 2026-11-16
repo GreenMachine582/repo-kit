@@ -35,6 +35,7 @@ from repo_kit.credentials import (
     SopsCli,
     apps_for,
     conflict_copy_warning,
+    environment_branch,
     key_fingerprint,
     load_credentials,
 )
@@ -315,8 +316,17 @@ def check_enrolment(
         labels = set(setup.labels())
         variables = setup.variables()
         secrets = set(setup.secret_names())
+        allowed = {app.environment: setup.environment_branches(app.environment) for app in APPS}
+        env_secrets = {
+            env: set(setup.environment_secret_names(env)) if branches is not None else set()
+            for env, branches in allowed.items()
+        }
     except RkError as exc:
-        return [_warn("Apps: can't read the repo's labels, variables and secrets", str(exc))]
+        return [
+            _warn(
+                "Apps: can't read the repo's labels, variables, secrets and environments", str(exc)
+            )
+        ]
     checks: list[Check] = []
     for app in APPS:
         problems: list[str] = []
@@ -338,14 +348,29 @@ def check_enrolment(
             problems.append(
                 f"variable {app.client_id_variable} isn't the Client ID in your credentials file"
             )
+        # The key lives in an environment only one branch may use: as a repo-level secret, a
+        # workflow on any pushed branch could read it.
+        environment, branch = app.environment, environment_branch(app, config)
+        branches = allowed[environment]
+        if branches is None:
+            problems.append(f"environment {environment} is missing")
+        elif branches != [branch]:
+            problems.append(
+                f"environment {environment} allows {', '.join(branches)}, not only branch {branch}"
+            )
+        if app.private_key_secret in secrets:
+            problems.append(
+                f"secret {app.private_key_secret} is a repo-level secret, which a workflow on any "
+                "pushed branch can read"
+            )
         enrolled = not problems
         # A secret can't be read back: its fingerprint variable says which key it holds.
         secret, fingerprint_variable = app.private_key_secret, app.key_fingerprint_variable
         fingerprint = variables.get(fingerprint_variable)
         replace_key = False
         unknown_key = ""
-        if secret not in secrets:
-            problems.append(f"secret {secret} is missing")
+        if secret not in env_secrets[environment]:
+            problems.append(f"secret {secret} is missing from environment {environment}")
             enrolled = False
         elif not fingerprint:
             unknown_key = (
@@ -365,7 +390,10 @@ def check_enrolment(
             checks.append(_warn(f"{app.name}: key unknown", f"{unknown_key}: {fix}"))
         else:
             what = "labels, " if app is PR_BOT else ""
-            label = f"{app.name}: {what}Client ID variable and private key secret present"
+            label = (
+                f"{app.name}: {what}Client ID variable present, private key in environment "
+                f"{environment} (branch {branch} only)"
+            )
             if found:
                 label += ", key fingerprint matches"
             checks.append(_ok(label))

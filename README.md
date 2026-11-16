@@ -92,7 +92,7 @@ uv pip install -e ".[dev]"
 | `rk branches prune [--apply]` | List, or delete, branches whose PR is merged (or, on origin, closed) |
 | `rk check commits \| commit-msg \| pr-title` | The commit and title rules `pr-checks` runs |
 | `rk secrets init / set-app / add-recipient / show` | Keep both Apps' credentials in one sops + age encrypted file |
-| `rk configure` | Enrol a repo for `gth-pr-bot` and `gth-release-bot`: labels, Client ID variables and key secrets |
+| `rk configure` | Enrol a repo for `gth-pr-bot` and `gth-release-bot`: labels, Client ID variables, and each key in an environment only one branch may use |
 | `rk install / bootstrap` | Adopt a repo |
 | `rk upgrade [vX.Y.Z]` | Move the version pin to this rk's release and re-render |
 | `rk doctor` | Read-only health check |

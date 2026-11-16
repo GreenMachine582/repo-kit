@@ -148,8 +148,22 @@ def test_missing_file_fails(adopted, github, user_config, tmp_path):
             "isn't the Client ID in your credentials file",
         ),
         (
-            lambda s: s.secrets.pop(PR_BOT.private_key_secret),
-            f"secret {PR_BOT.private_key_secret} is missing",
+            lambda s: s.env_secrets[PR_BOT.environment].pop(PR_BOT.private_key_secret),
+            f"secret {PR_BOT.private_key_secret} is missing from environment {PR_BOT.environment}",
+        ),
+        (
+            lambda s: s.environments.pop(PR_BOT.environment),
+            f"environment {PR_BOT.environment} is missing",
+        ),
+        (
+            lambda s: s.environments.update({PR_BOT.environment: ["*"]}),
+            f"environment {PR_BOT.environment} allows *, not only branch dev",
+        ),
+        (
+            # An rk before environments: the key is readable from any pushed branch.
+            lambda s: s.secrets.update({PR_BOT.private_key_secret: PEM}),
+            f"secret {PR_BOT.private_key_secret} is a repo-level secret, which a workflow on any "
+            "pushed branch can read",
         ),
     ],
 )
@@ -168,7 +182,7 @@ def test_enrolment_gap_fails_and_names_configure(
 
 def test_release_bot_gap_fails_on_its_own(adopted, github, user_config, tmp_path):
     work, setup, _said = adopted
-    setup.secrets.pop(RELEASE_BOT.private_key_secret)
+    setup.env_secrets[RELEASE_BOT.environment].pop(RELEASE_BOT.private_key_secret)
 
     checks = run(work, github, setup, user_config, tmp_path)
 

@@ -34,10 +34,13 @@ from repo_kit.config import (
     user_config_path,
 )
 from repo_kit.credentials import (
+    App,
+    AppCredentials,
     Credentials,
     Sops,
     SopsCli,
     apps_for,
+    environment_branch,
     key_fingerprint,
     load_credentials,
 )
@@ -89,7 +92,7 @@ def configure(
 
     apps = apps_for(repo_config)
     variables = setup.variables()
-    secret_names = set(setup.secret_names())
+    repo_secrets = set(setup.secret_names())
     for app in apps:
         creds = credentials[app.key]
         if variables.get(app.client_id_variable) != creds.client_id:
@@ -98,39 +101,18 @@ def configure(
                 changed.append(f"set variable {app.client_id_variable}")
             else:
                 say(f"would set variable {app.client_id_variable}")
-
-        # A secret can't be read back: it's only written when missing or when asked to replace it,
-        # and always with its key's fingerprint, which tells later runs which key it holds.
-        secret = app.private_key_secret
-        fingerprint_variable = app.key_fingerprint_variable
-        fingerprint = key_fingerprint(creds.private_key)
-        stored = variables.get(fingerprint_variable)
-        has_key = secret in secret_names
-        if has_key and not replace_key:
-            if not stored:
-                say(
-                    f"secret {secret} is already set, but variable {fingerprint_variable} is "
-                    "missing, so rk can't tell which key it holds: `rk configure --replace-key` "
-                    "sets both"
-                )
-            elif stored != fingerprint:
-                say(
-                    f"secret {secret} holds a different key from your credentials file: "
-                    "`rk configure --replace-key` replaces it"
-                )
-            else:
-                say(f"secret {secret} is already set (--replace-key replaces it)")
-            continue
-        if dry_run:
-            say(f"would {'replace' if has_key else 'set'} secret {secret}")
-            if stored != fingerprint:
-                say(f"would set variable {fingerprint_variable}")
-            continue
-        setup.set_secret(secret, creds.private_key)
-        changed.append(f"{'replaced' if has_key else 'set'} secret {secret}")
-        if stored != fingerprint:
-            setup.set_variable(fingerprint_variable, fingerprint)
-            changed.append(f"set variable {fingerprint_variable}")
+        _configure_key(
+            setup,
+            app,
+            creds,
+            environment_branch(app, repo_config),
+            variables,
+            repo_secrets,
+            changed=changed,
+            dry_run=dry_run,
+            replace_key=replace_key,
+            say=say,
+        )
 
     names = " and ".join(app.name for app in apps)
     say(
@@ -138,6 +120,75 @@ def configure(
         "then run the update-prs caller with dry-run ticked to confirm the credentials work."
     )
     say("Rulesets and repo settings aren't part of configure: run `rk github apply` (needs admin).")
+
+
+def _configure_key(
+    setup: RepoSetup,
+    app: App,
+    creds: AppCredentials,
+    branch: str,
+    variables: dict[str, str],
+    repo_secrets: set[str],
+    *,
+    changed: list[str],
+    dry_run: bool,
+    replace_key: bool,
+    say: Callable[[str], None],
+) -> None:
+    """Keep the App's key in its environment, which only `branch` may use. A repo-level secret is
+    readable by a workflow on any pushed branch, so an old one is deleted once the key has moved."""
+    environment = app.environment
+    allowed = setup.environment_branches(environment)
+    if allowed != [branch]:
+        verb, done = ("create", "created") if allowed is None else ("restrict", "restricted")
+        if dry_run:
+            say(f"would {verb} environment {environment}, usable only from branch {branch}")
+        else:
+            setup.ensure_environment(environment, branch)
+            changed.append(f"{done} environment {environment}, usable only from branch {branch}")
+    env_secrets = set(setup.environment_secret_names(environment)) if allowed is not None else set()
+
+    # A secret can't be read back: it's only written when missing or when asked to replace it,
+    # and always with its key's fingerprint, which tells later runs which key it holds.
+    secret = app.private_key_secret
+    where = f"secret {secret} in environment {environment}"
+    fingerprint_variable = app.key_fingerprint_variable
+    fingerprint = key_fingerprint(creds.private_key)
+    stored = variables.get(fingerprint_variable)
+    has_key = secret in env_secrets
+    if has_key and not replace_key:
+        if not stored:
+            say(
+                f"{where} is already set, but variable {fingerprint_variable} is missing, so rk "
+                "can't tell which key it holds: `rk configure --replace-key` sets both"
+            )
+        elif stored != fingerprint:
+            say(
+                f"{where} holds a different key from your credentials file: "
+                "`rk configure --replace-key` replaces it"
+            )
+        else:
+            say(f"{where} is already set (--replace-key replaces it)")
+    elif dry_run:
+        say(f"would {'replace' if has_key else 'set'} {where}")
+        if stored != fingerprint:
+            say(f"would set variable {fingerprint_variable}")
+    else:
+        setup.set_environment_secret(environment, secret, creds.private_key)
+        changed.append(f"{'replaced' if has_key else 'set'} {where}")
+        if stored != fingerprint:
+            setup.set_variable(fingerprint_variable, fingerprint)
+            changed.append(f"set variable {fingerprint_variable}")
+
+    if secret in repo_secrets:
+        if dry_run:
+            say(f"would delete repo-level secret {secret}, which any pushed branch can read")
+        else:
+            setup.delete_secret(secret)
+            changed.append(
+                f"deleted repo-level secret {secret}, which any pushed branch could read "
+                f"(environment {environment} holds the key now)"
+            )
 
 
 def run_configure(cwd: Path, *, changed: list[str], dry_run: bool, replace_key: bool) -> None:

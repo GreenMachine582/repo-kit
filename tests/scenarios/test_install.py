@@ -298,10 +298,9 @@ def test_bootstrap_installs_then_enrols_the_repo(clone, github, tmp_path):
         RELEASE_BOT.client_id_variable: "Iv23rel",
         RELEASE_BOT.key_fingerprint_variable: key_fingerprint(RELEASE_PEM),
     }
-    assert setup.secrets == {
-        PR_BOT.private_key_secret: PEM,
-        RELEASE_BOT.private_key_secret: RELEASE_PEM,
-    }
+    assert setup.key(PR_BOT) == PEM
+    assert setup.key(RELEASE_BOT) == RELEASE_PEM
+    assert setup.secrets == {}  # each key is in its environment, never repo-level
     assert changed.index("created .repo-kit.toml") < changed.index("created label needs-merge")
     assert "[OK]   managed files:" in said  # doctor ran last
 

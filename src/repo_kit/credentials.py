@@ -52,6 +52,9 @@ class App:
     # The secret's key fingerprint (`key_fingerprint`): a secret can't be read back, so this is
     # how `rk doctor` and `rk configure` tell which key it holds.
     key_fingerprint_variable: str
+    # The GitHub environment holding the private key. Only one branch may use it, so a workflow
+    # on any other pushed branch can't read the key (docs/github-app.md#where-the-keys-live).
+    environment: str
 
 
 PR_BOT = App(
@@ -61,6 +64,7 @@ PR_BOT = App(
     "GTH_PR_BOT_CLIENT_ID",
     "GTH_PR_BOT_PRIVATE_KEY",
     "GTH_PR_BOT_KEY_SHA256",
+    "gth-pr-bot",
 )
 RELEASE_BOT = App(
     "release_bot",
@@ -69,8 +73,15 @@ RELEASE_BOT = App(
     "GTH_RELEASE_BOT_CLIENT_ID",
     "GTH_RELEASE_BOT_PRIVATE_KEY",
     "GTH_RELEASE_BOT_KEY_SHA256",
+    "gth-release-bot",
 )
 APPS = (PR_BOT, RELEASE_BOT)
+
+
+def environment_branch(app: App, config: RepoConfig) -> str:
+    """The one branch allowed to use the App's environment. update-prs runs as `workflow_run`,
+    which is always on the default branch; releases run on pushes to the release branch."""
+    return config.default_base if app is PR_BOT else config.release_branch
 
 
 def apps_for(config: RepoConfig) -> tuple[App, ...]:

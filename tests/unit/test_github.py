@@ -172,6 +172,77 @@ def test_a_failed_secret_set_never_shows_the_value(client, monkeypatch):
     assert "the-secret-value" not in str(exc.value)
 
 
+def test_set_environment_secret_sends_the_value_on_stdin_only(client, monkeypatch):
+    gh = FakeGh(monkeypatch, subprocess.CompletedProcess([], 0, "", ""))
+    client.set_environment_secret("gth-pr-bot", "GTH_PR_BOT_PRIVATE_KEY", "-----BEGIN KEY-----")
+    assert gh.calls == [
+        ["secret", "set", "GTH_PR_BOT_PRIVATE_KEY", "--env", "gth-pr-bot", "--repo", "o/r"]
+    ]
+    assert gh.stdin == ["-----BEGIN KEY-----"]
+
+
+def test_environment_secret_names_and_delete_secret(client, monkeypatch):
+    done = subprocess.CompletedProcess([], 0, "", "")
+    gh = FakeGh(monkeypatch, [{"name": "S"}], done)
+    assert client.environment_secret_names("gth-pr-bot") == ["S"]
+    client.delete_secret("S")
+    assert gh.calls == [
+        ["secret", "list", "--env", "gth-pr-bot", "--repo", "o/r", "--json", "name"],
+        ["secret", "delete", "S", "--repo", "o/r"],
+    ]
+
+
+@pytest.mark.parametrize(
+    ("answers", "expected"),
+    [
+        ([failure("gh: Not Found (HTTP 404)")], None),
+        ([{"deployment_branch_policy": None}], ["*"]),
+        ([{"deployment_branch_policy": {"protected_branches": True}}], ["<protected>"]),
+        (
+            [
+                {"deployment_branch_policy": {"custom_branch_policies": True}},
+                {
+                    "branch_policies": [
+                        {"id": 1, "name": "dev"},
+                        {"id": 2, "name": "v*", "type": "tag"},
+                    ]
+                },
+            ],
+            ["dev", "tag:v*"],
+        ),
+    ],
+)
+def test_environment_branches(client, monkeypatch, answers, expected):
+    gh = FakeGh(monkeypatch, *answers)
+    assert client.environment_branches("gth-pr-bot") == expected
+    assert gh.calls[0] == ["repos/o/r/environments/gth-pr-bot"]
+
+
+def test_ensure_environment_keeps_only_the_one_branch(client, monkeypatch):
+    policies = {
+        "branch_policies": [{"id": 1, "name": "dev", "type": "branch"}, {"id": 2, "name": "*"}]
+    }
+    gh = FakeGh(monkeypatch, {}, policies, None)
+    client.ensure_environment("gth-pr-bot", "dev")
+    env = "repos/o/r/environments/gth-pr-bot"
+    assert gh.calls == [
+        ["-X", "PUT", env, "--input", "-"],
+        [f"{env}/deployment-branch-policies"],
+        ["-X", "DELETE", f"{env}/deployment-branch-policies/2"],
+    ]
+    assert json.loads(str(gh.stdin[0])) == {
+        "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True}
+    }
+
+
+def test_ensure_environment_adds_a_missing_branch(client, monkeypatch):
+    gh = FakeGh(monkeypatch, {}, {"branch_policies": []}, {"id": 3})
+    client.ensure_environment("gth-release-bot", "main")
+    path = "repos/o/r/environments/gth-release-bot/deployment-branch-policies"
+    assert gh.calls[-1] == ["-X", "POST", path, "--input", "-"]
+    assert json.loads(str(gh.stdin[-1])) == {"name": "main", "type": "branch"}
+
+
 def test_variables_and_secret_names(client, monkeypatch):
     gh = FakeGh(monkeypatch, [{"name": "V", "value": "1"}], [{"name": "S"}])
     assert client.variables() == {"V": "1"}

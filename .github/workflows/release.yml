@@ -1,6 +1,8 @@
 # Reusable: cut releases with release-please as gth-release-bot, then merge the release branch back into
 # the default base. See docs/checks-and-release.md.
 # Consumers call it from a thin caller pinned to @v<version>. It runs no rk code, so nothing else is checked out.
+# The key lives in the gth-release-bot environment, which only the release branch may use, so a workflow on any
+# other pushed branch can't read it (docs/github-app.md).
 name: release
 
 on:
@@ -21,7 +23,7 @@ on:
         default: ""
     secrets:
       RELEASE_BOT_PRIVATE_KEY:
-        description: gth-release-bot's private key
+        description: gth-release-bot's private key. Pass it by name; it resolves only in the gth-release-bot environment
         required: true
 
 permissions: {}
@@ -37,6 +39,8 @@ jobs:
     # Every write goes through the App token: its release PR triggers CI, and it may create v* tags.
     permissions:
       contents: read
+    # The key resolves only in this environment, which only the release branch may use.
+    environment: gth-release-bot
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -68,6 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    environment: gth-release-bot
     steps:
       - id: token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0

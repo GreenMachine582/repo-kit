@@ -1,5 +1,10 @@
 {
   "files": {
+    ".github/workflows/update-prs-trigger.yml": {
+      "layer": "common",
+      "mode": "managed",
+      "sha256": "3a0fb729db67402f41c375a593815d4879d4a4e6930850a8b1a0256da6afcc34"
+    },
     ".gitignore": {
       "blocks": {
         "local": {
