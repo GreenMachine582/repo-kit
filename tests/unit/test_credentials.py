@@ -342,3 +342,11 @@ def test_round_trip_with_real_sops(tmp_path, monkeypatch):
     loaded = load_credentials(config, SOURCE, sops)
     assert loaded[PR_BOT.key].private_key == PEM
     assert loaded[RELEASE_BOT.key].client_id == "Iv23r"
+
+
+def test_the_suggested_secrets_file_starts_from_home(monkeypatch, tmp_path):
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
+    monkeypatch.setenv("OneDrive", str(tmp_path / "OneDrive"))
+    assert creds_module.suggested_secrets_file() == "~/OneDrive/repo-kit/secrets.sops.json"
+    monkeypatch.setenv("OneDrive", str(tmp_path.parent / "elsewhere"))
+    assert creds_module.suggested_secrets_file().endswith("elsewhere/repo-kit/secrets.sops.json")

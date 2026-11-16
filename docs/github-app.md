@@ -41,14 +41,18 @@ to sops on stdin, never as an argument, and no command prints one.
 
 1. Install the tools. On Windows: `winget install SecretsOPerationS.SOPS`, then `winget install FiloSottile.age`,
    and open a new terminal so both are on `PATH`.
-2. `rk secrets init`, add the `secrets_file = …` line it prints to the user config, then run `rk secrets init` again
-   to create the file.
-3. Create the Apps ([below](#creating-gth-pr-bot-once-per-account)) and store each with `rk secrets set-app`.
+2. Run `rk secrets init`. It creates this machine's age key and prints a `secrets_file = …` line.
+3. Put that line at the top of this machine's user config, `~/.config/repo-kit/config.toml`
+   (`C:\Users\<you>\.config\repo-kit\config.toml`). Create the file if it doesn't exist. Each machine has its own user
+   config, never synced, so different user names on different machines don't clash. Write the path from `~`, as in
+   `secrets_file = "~/OneDrive/repo-kit/secrets.sops.json"`, and the same line works on every machine.
+4. Run `rk secrets init` again. It creates the encrypted file.
+5. Create the Apps ([below](#creating-gth-pr-bot-once-per-account)) and store each with `rk secrets set-app`.
 
 ### Another machine
 
-1. Install the tools, add the same `secrets_file` line, and run `rk secrets init`. It prints this machine's public key
-   and the command to run.
+1. Install the tools, put the same `secrets_file` line in that machine's own user config, and run `rk secrets init`.
+   It prints this machine's public key and the command to run.
 2. On a machine that can already decrypt the file, run `rk secrets add-recipient age1…` with that key.
 3. Once the file has synced back, `rk secrets show` on the new machine lists both Apps.
 

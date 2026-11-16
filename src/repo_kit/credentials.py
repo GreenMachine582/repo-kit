@@ -286,9 +286,13 @@ def app_by_arg(arg: str) -> App:
 
 
 def suggested_secrets_file() -> str:
+    """In OneDrive when there is one, written from `~` so the line works under any user name."""
     onedrive = os.environ.get("OneDrive")  # noqa: SIM112  # Windows sets it in this case
-    base = Path(onedrive) if onedrive else Path.home()
-    return (base / "repo-kit" / "secrets.sops.json").as_posix()
+    path = (Path(onedrive) if onedrive else Path.home()) / "repo-kit" / "secrets.sops.json"
+    try:
+        return "~/" + path.relative_to(Path.home()).as_posix()
+    except ValueError:
+        return path.as_posix()
 
 
 def init(
@@ -312,9 +316,14 @@ def init(
 
     path = user_config.secrets_path
     if path is None:
+        create = "" if source.is_file() else " (create it: it doesn't exist yet)"
         say(
-            f"Add this line to {source} (above any [table]), then run `rk secrets init` again:\n\n"
-            f'secrets_file = "{suggested_secrets_file()}"   # encrypted, so a synced folder is fine'
+            f"Next, tell rk where the shared credentials file goes. This machine's user config is "
+            f"{source}{create}. It stays on this machine, so each machine has its own. Put this "
+            "line at the top, before any [table]:\n\n"
+            f'secrets_file = "{suggested_secrets_file()}"\n\n'
+            "The file it names is encrypted, so a synced folder is fine, and `~` means each "
+            "machine's own home folder. Then run `rk secrets init` again to create it."
         )
         return
     if not path.exists():
