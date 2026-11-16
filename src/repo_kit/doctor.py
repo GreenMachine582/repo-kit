@@ -34,6 +34,8 @@ from repo_kit.credentials import (
     Sops,
     SopsCli,
     apps_for,
+    conflict_copy_warning,
+    key_fingerprint,
     load_credentials,
 )
 from repo_kit.errors import RkError
@@ -203,12 +205,17 @@ def check_credentials(
     if user_config is None:
         return _skip("credentials file", "need a valid user config"), None
     apps = apps_for(config) if config else APPS
+    path = user_config.secrets_path
+    conflict = conflict_copy_warning(path) if path else None
     try:
         credentials = load_credentials(user_config, source, sops, apps)
     except RkError as exc:
-        return _warn("credentials file can't be read", str(exc)), None
+        detail = f"{exc}\n{conflict}" if conflict else str(exc)
+        return _warn("credentials file can't be read", detail), None
     names = ", ".join(app.name for app in apps)
-    return _ok(f"credentials file: {names}", str(user_config.secrets_path)), credentials
+    if conflict:
+        return _warn(f"credentials file: {names}, with a conflict copy", conflict), credentials
+    return _ok(f"credentials file: {names}", str(path)), credentials
 
 
 # --- files ---------------------------------------------------------------------------------
@@ -331,15 +338,36 @@ def check_enrolment(
             problems.append(
                 f"variable {app.client_id_variable} isn't the Client ID in your credentials file"
             )
-        if app.private_key_secret not in secrets:
-            problems.append(f"secret {app.private_key_secret} is missing")
-        if problems:
-            checks.append(
-                _fail(f"{app.name} not enrolled", "\n".join([*problems, "run `rk configure`"]))
+        enrolled = not problems
+        # A secret can't be read back: its fingerprint variable says which key it holds.
+        secret, fingerprint_variable = app.private_key_secret, app.key_fingerprint_variable
+        fingerprint = variables.get(fingerprint_variable)
+        replace_key = False
+        unknown_key = ""
+        if secret not in secrets:
+            problems.append(f"secret {secret} is missing")
+            enrolled = False
+        elif not fingerprint:
+            unknown_key = (
+                f"variable {fingerprint_variable} is missing, so rk can't tell which key "
+                f"secret {secret} holds"
             )
+            replace_key = True
+        elif found and fingerprint != key_fingerprint(found.private_key):
+            problems.append(f"secret {secret} holds an older key than your credentials file")
+            replace_key = True
+        fix = "run `rk configure --replace-key`" if replace_key else "run `rk configure`"
+        if problems:
+            label = f"{app.name} not enrolled" if not enrolled else f"{app.name}: older key"
+            lines = [*problems, unknown_key] if unknown_key else problems
+            checks.append(_fail(label, "\n".join([*lines, fix])))
+        elif unknown_key:
+            checks.append(_warn(f"{app.name}: key unknown", f"{unknown_key}: {fix}"))
         else:
             what = "labels, " if app is PR_BOT else ""
             label = f"{app.name}: {what}Client ID variable and private key secret present"
+            if found:
+                label += ", key fingerprint matches"
             checks.append(_ok(label))
     return checks
 

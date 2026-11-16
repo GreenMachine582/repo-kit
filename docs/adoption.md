@@ -7,7 +7,7 @@
 | Command | Does |
 |---|---|
 | `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The steps are [below](#install-step-by-step) |
-| `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot` and `gth-release-bot`: create the update-prs labels, and set each App's Client ID variable and private key secret from the encrypted credentials file ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
+| `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot` and `gth-release-bot`: create the update-prs labels, and set each App's Client ID variable, private key secret and key fingerprint variable from the encrypted credentials file ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
 | `rk bootstrap` | `install` + `configure` + `doctor`. It decrypts the Apps' credentials first, so a machine that can't enrol the repo stops before anything is written. The `doctor` report ends the run |
 | `rk secrets init / set-app / add-recipient / show` | Set up and maintain the sops + age encrypted credentials file `configure` reads ([github-app.md](github-app.md#credentials-sops--age)) |
 | `rk upgrade [vX.Y.Z]` | Move `version` to this rk's release and re-render with the `sync` planner. Templates new in the release are added. Migration notes and `github diff` arrive in Phase 1D. The steps are [below](#upgrade-step-by-step) |
@@ -72,8 +72,8 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 [WARN] override in use: CHANGELOG.md is unmanaged
 [OK]   plugin: repo-kit is in .claude/settings.json
 [OK]   base branch: origin/dev exists (as of the last fetch)
-[OK]   gth-pr-bot: labels, Client ID variable and private key secret present
-[OK]   gth-release-bot: Client ID variable and private key secret present
+[OK]   gth-pr-bot: labels, Client ID variable and private key secret present, key fingerprint matches
+[OK]   gth-release-bot: Client ID variable and private key secret present, key fingerprint matches
 [SKIP] Apps installed and token mint
 [OK]   repo settings and rulesets match: repo-kit: dev, repo-kit: main, repo-kit: tags
 [SKIP] repo settings
@@ -90,12 +90,12 @@ command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` a
 | Tools | FAIL: Git, gh or Python is below its minimum. WARN: gh isn't installed (`sync` and `install` work without it), or sops is missing or too old (only `configure` and `secrets` need it) |
 | `.repo-kit.toml` | FAIL: missing, an unknown key or a bad value, or `version` empty or not `X.Y.Z`. WARN: the pin isn't this rk's release, and the files check is skipped until `rk upgrade` |
 | User config | FAIL: an unknown key, a leftover `[pr_bot]` table (the error names the migration), or a synced `worktree_root` |
-| Credentials file | WARN: `secrets_file` is unset or missing, this machine can't decrypt it, or the Client ID or key of an App this repo uses is missing (`rk secrets …`; gth-pr-bot isn't needed when update-prs is disabled). The Client ID comparison below is skipped |
+| Credentials file | WARN: `secrets_file` is unset or missing, this machine can't decrypt it, or the Client ID or key of an App this repo uses is missing (`rk secrets …`; gth-pr-bot isn't needed when update-prs is disabled), and the Client ID and key comparisons below are skipped. Also WARN when a sync conflict copy such as `secrets.sops-DESKTOP-AB12.json` sits beside the file: merge the two and delete the copy ([github-app.md](github-app.md#conflict-copies)) |
 | Managed files | FAIL: a file is missing, differs from the render, was edited by hand, or the lock is stale: the same test as `rk sync --check`. WARN: a lock entry is no longer a template |
 | Overrides | WARN: each `unmanaged` file. A file that is a reusable workflow (it has a `workflow_call:` trigger) is OK instead: a caller never is one, so the override can only be repo-kit's own, where the callers' paths are the workflows themselves |
 | Plugin | WARN: `.claude/settings.json` lacks the repo-kit marketplace or plugin (`rk install`) |
 | Base branch | FAIL: origin has no profile base branch (`rk install`) |
-| gth-pr-bot, gth-release-bot | FAIL, per App: a label (gth-pr-bot only), the Client ID variable or the key secret is missing, or the variable isn't the credentials file's Client ID (`rk configure`). gth-pr-bot is skipped when update-prs is disabled |
+| gth-pr-bot, gth-release-bot | FAIL, per App: a label (gth-pr-bot only), the Client ID variable or the key secret is missing, or the variable isn't the credentials file's Client ID (`rk configure`); or the key fingerprint variable names another key than the credentials file's, so the secret holds an older key (`rk configure --replace-key`). WARN: the secret is set but its fingerprint variable is missing, so rk can't tell which key it holds (`rk configure --replace-key`). gth-pr-bot is skipped when update-prs is disabled |
 | Repo settings and rulesets | WARN: a setting or a `repo-kit: …` ruleset is missing or differs from the config, with the same lines as `rk github diff` (`rk github apply`); or the API can't be read |
 | Worktrees | WARN: a worktree under `worktree_root` whose PR is merged or closed (`rk wt done`) |
 

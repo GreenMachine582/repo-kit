@@ -11,7 +11,7 @@ from harness import git, push_branch, remote_sha
 import repo_kit
 from repo_kit import bootstrap
 from repo_kit.config import ProjectConfig, RepoConfig, UserConfig, load_repo_config
-from repo_kit.credentials import PR_BOT, RELEASE_BOT
+from repo_kit.credentials import PR_BOT, RELEASE_BOT, key_fingerprint
 from repo_kit.errors import RkError
 from repo_kit.files import LOCK_NAME, SyncError, collect_templates, templates_root
 
@@ -294,7 +294,9 @@ def test_bootstrap_installs_then_enrols_the_repo(clone, github, tmp_path):
     assert (work / CALLER).is_file()
     assert setup.vars == {
         PR_BOT.client_id_variable: "Iv23abc",
+        PR_BOT.key_fingerprint_variable: key_fingerprint(PEM),
         RELEASE_BOT.client_id_variable: "Iv23rel",
+        RELEASE_BOT.key_fingerprint_variable: key_fingerprint(RELEASE_PEM),
     }
     assert setup.secrets == {
         PR_BOT.private_key_secret: PEM,

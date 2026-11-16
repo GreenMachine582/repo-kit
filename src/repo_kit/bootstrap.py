@@ -33,7 +33,14 @@ from repo_kit.config import (
     load_user_config,
     user_config_path,
 )
-from repo_kit.credentials import Credentials, Sops, SopsCli, apps_for, load_credentials
+from repo_kit.credentials import (
+    Credentials,
+    Sops,
+    SopsCli,
+    apps_for,
+    key_fingerprint,
+    load_credentials,
+)
 from repo_kit.errors import RkError
 from repo_kit.github import GhCliGitHub, GitHub, NoGitHub, RepoSetup
 
@@ -92,16 +99,38 @@ def configure(
             else:
                 say(f"would set variable {app.client_id_variable}")
 
-        # A secret can't be read back: it's only written when missing or when asked to replace it.
+        # A secret can't be read back: it's only written when missing or when asked to replace it,
+        # and always with its key's fingerprint, which tells later runs which key it holds.
         secret = app.private_key_secret
+        fingerprint_variable = app.key_fingerprint_variable
+        fingerprint = key_fingerprint(creds.private_key)
+        stored = variables.get(fingerprint_variable)
         has_key = secret in secret_names
         if has_key and not replace_key:
-            say(f"secret {secret} is already set (--replace-key replaces it)")
-        elif dry_run:
+            if not stored:
+                say(
+                    f"secret {secret} is already set, but variable {fingerprint_variable} is "
+                    "missing, so rk can't tell which key it holds: `rk configure --replace-key` "
+                    "sets both"
+                )
+            elif stored != fingerprint:
+                say(
+                    f"secret {secret} holds a different key from your credentials file: "
+                    "`rk configure --replace-key` replaces it"
+                )
+            else:
+                say(f"secret {secret} is already set (--replace-key replaces it)")
+            continue
+        if dry_run:
             say(f"would {'replace' if has_key else 'set'} secret {secret}")
-        else:
-            setup.set_secret(secret, creds.private_key)
-            changed.append(f"{'replaced' if has_key else 'set'} secret {secret}")
+            if stored != fingerprint:
+                say(f"would set variable {fingerprint_variable}")
+            continue
+        setup.set_secret(secret, creds.private_key)
+        changed.append(f"{'replaced' if has_key else 'set'} secret {secret}")
+        if stored != fingerprint:
+            setup.set_variable(fingerprint_variable, fingerprint)
+            changed.append(f"set variable {fingerprint_variable}")
 
     names = " and ".join(app.name for app in apps)
     say(
