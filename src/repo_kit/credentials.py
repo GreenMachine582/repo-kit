@@ -31,6 +31,11 @@ from repo_kit.config import (
 from repo_kit.errors import RkError
 
 MIN_SOPS = (3, 10)  # `sops set --value-stdin`
+
+# Where a missing binary is explained: what to install, and the new terminal winget needs.
+_INSTALL_HINT = (
+    "install sops and age, then open a new terminal (docs/github-app.md#installing-sops-and-age)"
+)
 AGE_KEY_ENV = "SOPS_AGE_KEY_FILE"
 _AGE_RECIPIENT = re.compile(r"age1[0-9a-z]{58}")
 
@@ -151,9 +156,7 @@ class SopsCli:
                 errors="replace",
             )
         except FileNotFoundError as exc:
-            raise SopsError(
-                "sops is not on PATH: install sops and age (docs/github-app.md)"
-            ) from exc
+            raise SopsError(f"sops is not on PATH: {_INSTALL_HINT}") from exc
         if proc.returncode != 0:
             raise SopsError(f"`sops {' '.join(args)}` failed:\n{proc.stderr.strip()}")
         return proc.stdout
@@ -167,7 +170,7 @@ class SopsCli:
     def _require_version(self) -> None:
         have = self.version()
         if have is None:
-            raise SopsError("sops is not on PATH: install sops and age (docs/github-app.md)")
+            raise SopsError(f"sops is not on PATH: {_INSTALL_HINT}")
         if have < MIN_SOPS:
             raise SopsError(f"rk needs sops {'.'.join(map(str, MIN_SOPS))} or newer")
 
@@ -250,7 +253,7 @@ def run_age_keygen(path: Path) -> None:
             errors="replace",
         )
     except FileNotFoundError as exc:
-        raise RkError("age-keygen is not on PATH: install age (docs/github-app.md)") from exc
+        raise RkError(f"age-keygen is not on PATH: {_INSTALL_HINT}") from exc
     if proc.returncode != 0:
         raise RkError(f"`age-keygen -o {path}` failed:\n{proc.stderr.strip()}")
 

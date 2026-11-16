@@ -61,10 +61,33 @@ to sops on stdin, never as an argument, and no command prints one.
 | `rk secrets add-recipient age1…` | Lets another machine's key decrypt the file (`sops rotate --add-age`) |
 | `rk secrets show` | Each App's Client ID, and whether its key is present. Exits 1 if one is missing. Warns about a sync conflict copy ([below](#conflict-copies)) |
 
+### Installing sops and age
+
+Every machine that runs `rk secrets`, `rk configure` or `rk bootstrap` needs both, once.
+
+| OS | Install |
+|---|---|
+| Windows | `winget install -e --id SecretsOPerationS.SOPS`, then `winget install -e --id FiloSottile.age` |
+| macOS | `brew install sops age` |
+| Linux | `age` from the distro (`apt install age`, `dnf install age`); `sops` from its [releases](https://github.com/getsops/sops/releases) (most distros ship one older than 3.10) |
+
+winget adds both to `PATH` for new terminals only, so the one it ran in still reports `age-keygen is not on PATH`.
+Open a new terminal (and restart VS Code if it's the integrated one), or reload `PATH` in place:
+
+```powershell
+$env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
+```
+
+Then check both answer, and that sops is 3.10 or newer:
+
+```
+sops --version
+age-keygen --version
+```
+
 ### First machine
 
-1. Install the tools. On Windows: `winget install SecretsOPerationS.SOPS`, then `winget install FiloSottile.age`,
-   and open a new terminal so both are on `PATH`.
+1. Install the tools ([above](#installing-sops-and-age)).
 2. Run `rk secrets init`. It creates the age key, the user config entry and the credentials file in OneDrive.
 3. Store each App with `rk secrets set-app` ([below](#creating-gth-pr-bot-once-per-account)).
 
