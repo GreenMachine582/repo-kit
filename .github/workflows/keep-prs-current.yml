@@ -6,7 +6,7 @@ name: keep PRs current
 on:
   push:
   pull_request:
-    types: [edited, ready_for_review, reopened, closed]
+    types: [edited, ready_for_review, reopened, closed, labeled, unlabeled]
   workflow_dispatch:
     inputs:
       dry-run:

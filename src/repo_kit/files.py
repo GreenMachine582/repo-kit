@@ -398,6 +398,16 @@ def read_target(repo_root: Path, path: str) -> tuple[str | None, str]:
         return None, _NOT_TEXT
 
 
+def line_ending(target: Path) -> str:
+    """The line ending an existing file uses (CRLF if most of its lines do), else LF."""
+    try:
+        data = target.read_bytes()
+    except OSError:
+        return "\n"
+    crlf = data.count(b"\r\n")
+    return "\r\n" if crlf and crlf * 2 >= data.count(b"\n") else "\n"
+
+
 def _render_source(root: Path, source: Path, variables: dict[str, str]) -> str:
     label = f"templates/{source.relative_to(root).as_posix()}"
     return lf(render(source.read_text(encoding="utf-8"), variables, label))
@@ -485,6 +495,9 @@ def _plan_one(
         new_entry: dict[str, Any] = {"layer": template.layer, "mode": mode}
         recorded = entry.get("sha256") if entry else None
         if current is None and not problem:
+            if entry is not None:
+                # The lock has it, so it was created once and the consumer deleted it: theirs now.
+                return FilePlan(path, mode, Action.UNCHANGED, "deleted by the repo; left"), entry
             new_entry["sha256"] = digest(wanted)
             return FilePlan(path, mode, Action.CREATE, write=wanted), new_entry
         # It exists, so it's the consumer's: never compared, never written.
@@ -605,7 +618,12 @@ def apply_plan(
             shutil.copy2(target, backup)
             backed_up = True
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(file_plan.write, encoding="utf-8", newline="\n")
+        text = file_plan.write
+        if line_ending(target) == "\r\n":
+            text = text.replace("\n", "\r\n")
+        # newline="": the text already has the endings the file is to keep.
+        with target.open("w", encoding="utf-8", newline="") as f:
+            f.write(text)
         changed.append(f"{file_plan.action} {file_plan.path}")
     if plan.lock_changed:
         (repo_root / LOCK_NAME).write_text(lock_text(plan.lock), encoding="utf-8", newline="\n")

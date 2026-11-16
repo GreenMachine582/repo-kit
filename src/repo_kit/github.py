@@ -71,6 +71,10 @@ class GitHub(Protocol):
         """Every PR whose head is `branch` in this repo, in any state, with its head SHA."""
         ...
 
+    def pr(self, number: int) -> PullRequest | None:
+        """PR `number` as it is now, or None if there is no such PR."""
+        ...
+
     def remove_label(self, number: int, label: str) -> None:
         """Remove `label` from PR `number`; a label that isn't there is not an error."""
         ...
@@ -91,8 +95,11 @@ class GitHub(Protocol):
         """Add `label` to PR `number`."""
         ...
 
-    def upsert_comment(self, number: int, marker: str, body: str) -> None:
-        """Keep one comment on PR `number`, found again by the hidden `marker`."""
+    def upsert_comment(self, number: int, marker: str, body: str) -> bool:
+        """Keep one comment on PR `number`, found again by the hidden `marker`.
+
+        True if it created or edited the comment, False if it was already as wanted.
+        """
         ...
 
     def read_file(self, path: str) -> str | None:
@@ -136,6 +143,9 @@ class NoGitHub:
     def prs_for_branch(self, branch: str) -> list[PullRequest]:
         return []
 
+    def pr(self, number: int) -> PullRequest | None:
+        return None
+
     def remove_label(self, number: int, label: str) -> None:
         return None
 
@@ -151,8 +161,8 @@ class NoGitHub:
     def add_label(self, number: int, label: str) -> None:
         return None
 
-    def upsert_comment(self, number: int, marker: str, body: str) -> None:
-        return None
+    def upsert_comment(self, number: int, marker: str, body: str) -> bool:
+        return False
 
     def read_file(self, path: str) -> str | None:
         return None
@@ -264,6 +274,10 @@ class GhCliGitHub:
         data = self._api(f"repos/{self.owner}/{self.repo}/pulls?head={head}&state=all&per_page=100")
         return [pr_from_api(item) for item in data or []]
 
+    def pr(self, number: int) -> PullRequest | None:
+        data = self._api(f"{self._repo}/pulls/{number}", allow_404=True)
+        return None if data is None else pr_from_api(data)
+
     def remove_label(self, number: int, label: str) -> None:
         self._api(
             "-X",
@@ -306,15 +320,18 @@ class GhCliGitHub:
     def add_label(self, number: int, label: str) -> None:
         self._api("-X", "POST", f"{self._repo}/issues/{number}/labels", "-f", f"labels[]={label}")
 
-    def upsert_comment(self, number: int, marker: str, body: str) -> None:
+    def upsert_comment(self, number: int, marker: str, body: str) -> bool:
         text = f"{marker}\n{body}"
         path = f"{self._repo}/issues/{number}/comments"
         existing = next((c for c in self._paged(path) if marker in c["body"]), None)
         if existing is None:
             self._api("-X", "POST", path, "-f", f"body={text}")
-        elif existing["body"] != text:
-            comment = f"{self._repo}/issues/comments/{existing['id']}"
-            self._api("-X", "PATCH", comment, "-f", f"body={text}")
+            return True
+        if existing["body"] == text:
+            return False
+        comment = f"{self._repo}/issues/comments/{existing['id']}"
+        self._api("-X", "PATCH", comment, "-f", f"body={text}")
+        return True
 
     def read_file(self, path: str) -> str | None:
         data = self._api(f"{self._repo}/contents/{quote(path)}", allow_404=True)

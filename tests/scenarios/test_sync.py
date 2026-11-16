@@ -374,3 +374,36 @@ def test_the_release_manifest_is_seeded_from_the_project_version(tmp_path, repo)
     assert code == 0
     assert ".release-please-manifest.json" not in changed
     assert json.loads(read(repo, ".release-please-manifest.json")) == {".": "0.5.0"}
+
+
+def test_a_seeded_file_the_repo_deleted_is_not_recreated(repo, templates):
+    sync(repo, templates)
+    (repo / "CHANGELOG.md").unlink()
+
+    code, changed, said = sync(repo, templates)
+
+    assert not (repo / "CHANGELOG.md").exists()
+    assert changed == []
+    assert f"{Action.UNCHANGED}  CHANGELOG.md" in said
+    assert "CHANGELOG.md" in json.loads(read(repo, LOCK_NAME))["files"]
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_block_writes_keep_a_crlf_file_crlf(repo, templates):
+    (repo / "CONTRIBUTING.md").write_bytes(b"# Ours\r\n\r\nSome text.\r\n")
+    sync(repo, templates)
+    set_version(repo, "1.1.0")
+
+    sync(repo, templates)
+
+    data = (repo / "CONTRIBUTING.md").read_bytes()
+    assert b"Some text.\r\n" in data
+    assert b"(v1.1.0)" in data
+    assert data.count(b"\n") == data.count(b"\r\n")
+
+
+def test_lf_files_stay_lf_and_new_files_are_lf(repo, templates):
+    (repo / "CONTRIBUTING.md").write_bytes(b"# Ours\n")
+    sync(repo, templates)
+    assert b"\r" not in (repo / "CONTRIBUTING.md").read_bytes()
+    assert b"\r" not in (repo / "ci/caller.yml").read_bytes()
