@@ -1,7 +1,6 @@
 """Scenario 11: `wt done` refuses each unsafe state with the matching message."""
 
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 from harness import commit, git
@@ -266,10 +265,10 @@ def test_the_rerun_still_refuses_real_changes(finished, make_ctx, monkeypatch):
 
 
 def test_a_worktree_whose_folder_is_already_gone_finishes(finished, make_ctx):
-    import shutil
+    from repo_kit.worktree import _rmtree
 
     local, path = finished
-    shutil.rmtree(path, onexc=lambda f, p, e: (Path(p).chmod(0o700), f(p)))
+    _rmtree(path)
     done(make_ctx(local), "feat/x")
     assert git(local, "branch", "--list", "feat/x") == ""
     assert "feat/x" not in git(local, "worktree", "list")
