@@ -18,7 +18,8 @@ NOT_VISIBLE = "(not visible: needs admin)"
 
 
 def build(config: RepoConfig) -> dict[str, Any]:
-    """The settings `PATCH /repos/{o}/{r}` takes, for the `dev-main` profile."""
+    """The settings for the `dev-main` profile: what `PATCH /repos/{o}/{r}` takes, plus
+    `immutable_releases`, which has its own endpoint (see `github.GhCliGitHub`)."""
     return {
         "default_branch": config.default_base,
         # Merge commits only: history is never rewritten, and release-please reads every commit.
@@ -31,6 +32,8 @@ def build(config: RepoConfig) -> dict[str, Any]:
         # The merge commit is titled "Merge pull request #N from …", with the PR title as its body.
         "merge_commit_title": "MERGE_MESSAGE",
         "merge_commit_message": "PR_TITLE",
+        # A published release, and its tag, can't be changed: consumers pin @vX.Y.Z and trust it.
+        "immutable_releases": True,
     }
 
 

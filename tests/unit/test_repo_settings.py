@@ -18,6 +18,7 @@ def test_the_dev_main_settings_snapshot():
         "allow_auto_merge": True,
         "merge_commit_title": "MERGE_MESSAGE",
         "merge_commit_message": "PR_TITLE",
+        "immutable_releases": True,
     }
 
 

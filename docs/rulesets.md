@@ -12,7 +12,7 @@ Rulesets are built in `rulesets.py` and settings in `settings.py`, as Python dic
 
 | Item | Setting |
 |---|---|
-| Repo settings | Default branch `dev`; merge commits only (no squash, no rebase), titled "Merge pull request #N from …" with the PR title as the body; delete branch on merge; Update branch button; auto-merge allowed |
+| Repo settings | Default branch `dev`; merge commits only (no squash, no rebase), titled "Merge pull request #N from …" with the PR title as the body; delete branch on merge; Update branch button; auto-merge allowed; immutable releases, so a published release and its tag can't be changed (consumers pin `@vX.Y.Z` and run what it points to). Immutable releases have their own API endpoint, which only an admin can read: without admin, the diff shows the setting as not visible |
 | `repo-kit: dev` ruleset | `refs/heads/dev`: no deletion, no force-push, a PR required (0 approvals, merge commit only), required checks |
 | `repo-kit: main` ruleset | The same, on `refs/heads/main` |
 | `repo-kit: tags` ruleset | `refs/tags/v*`: no deletion, update or creation, except by `[release].app` |

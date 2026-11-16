@@ -207,3 +207,35 @@ def test_retarget_patches_the_base(client, monkeypatch):
     gh = FakeGh(monkeypatch, {})
     client.retarget(7, "dev")
     assert gh.calls == [["-X", "PATCH", "repos/o/r/pulls/7", "-f", "base=dev"]]
+
+
+def ok() -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess([], 0, "", "")
+
+
+def test_repo_settings_add_immutable_releases(client, monkeypatch):
+    gh = FakeGh(monkeypatch, {"allow_merge_commit": True}, {"enabled": False})
+    settings = client.repo_settings()
+    assert settings == {"allow_merge_commit": True, "immutable_releases": False}
+    assert gh.calls == [["repos/o/r"], ["repos/o/r/immutable-releases"]]
+
+
+def test_immutable_releases_are_left_out_when_not_visible(client, monkeypatch):
+    FakeGh(
+        monkeypatch, {"allow_merge_commit": True}, failure("gh: Must have admin rights (HTTP 403)")
+    )
+    assert client.repo_settings() == {"allow_merge_commit": True}
+
+
+def test_immutable_releases_have_their_own_endpoint(client, monkeypatch):
+    gh = FakeGh(monkeypatch, ok(), ok())
+    client.update_repo_settings({"immutable_releases": True, "allow_squash_merge": False})
+    assert gh.calls[0] == ["-X", "PUT", "repos/o/r/immutable-releases"]
+    assert gh.calls[1] == ["-X", "PATCH", "repos/o/r", "--input", "-"]
+    assert json.loads(gh.stdin[1]) == {"allow_squash_merge": False}
+
+
+def test_only_immutable_releases_sends_no_patch(client, monkeypatch):
+    gh = FakeGh(monkeypatch, ok())
+    client.update_repo_settings({"immutable_releases": False})
+    assert gh.calls == [["-X", "DELETE", "repos/o/r/immutable-releases"]]

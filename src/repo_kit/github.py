@@ -20,6 +20,9 @@ from repo_kit.errors import RkError
 _PAGE_SIZE = 100
 
 
+IMMUTABLE_RELEASES = "immutable_releases"  # a repo setting rk manages that PATCH can't set
+
+
 class GitHubError(RkError):
     """A GitHub API call failed."""
 
@@ -372,10 +375,24 @@ class GhCliGitHub:
 
     def repo_settings(self) -> dict[str, Any]:
         data = self._api(self._repo)
-        return data if isinstance(data, dict) else {}
+        settings = data if isinstance(data, dict) else {}
+        # Immutable releases have their own endpoint, readable only by an admin: without it the
+        # key is left out, and the diff shows it as not visible.
+        try:
+            immutable = self._api(f"{self._repo}/immutable-releases")
+        except GitHubError:
+            immutable = None
+        if isinstance(immutable, dict) and "enabled" in immutable:
+            settings = {**settings, IMMUTABLE_RELEASES: immutable["enabled"]}
+        return settings
 
     def update_repo_settings(self, values: dict[str, Any]) -> None:
-        self._send("PATCH", self._repo, values)
+        rest = dict(values)
+        if IMMUTABLE_RELEASES in rest:
+            method = "PUT" if rest.pop(IMMUTABLE_RELEASES) else "DELETE"
+            self._api("-X", method, f"{self._repo}/immutable-releases")
+        if rest:
+            self._send("PATCH", self._repo, rest)
 
     def set_secret(self, name: str, value: str) -> None:
         # Without --body, gh reads the value from stdin: it never appears in a process listing.
