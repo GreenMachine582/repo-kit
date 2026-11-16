@@ -63,6 +63,9 @@ GitHub differs from .repo-kit.toml (- live, + wanted). `rk github apply` applies
 
 ### `rk github apply`
 
+Install `gth-release-bot` on the repo first ([github-app.md](github-app.md#releases-gth-release-bot)): the rulesets
+name it as a bypass actor, and GitHub refuses one that isn't installed with `Validation Failed (HTTP 422)`.
+
 1. Refuses when `CI` or `GITHUB_ACTIONS` is set.
 2. Prints the diff. If nothing differs, it stops there.
 3. Asks `Apply these changes to <owner>/<repo>?`. Anything but yes, or no terminal to answer on, writes nothing.
