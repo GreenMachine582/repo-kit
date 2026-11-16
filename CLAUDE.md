@@ -10,7 +10,7 @@ every repo shares. Design details are in [docs/](docs/); open work and phases ar
 
 ## Hard rules
 
-1. **Standard library only at runtime.** `dependencies = []` stays empty. Python 3.11+: `tomllib`, `string.Template`,
+1. **Standard library only at runtime.** `dependencies = []` stays empty. Python 3.12+: `tomllib`, `string.Template`,
    `json`, `pathlib`, `subprocess`, `argparse`. Dev tools (pytest, ruff) go in the `dev` extra only.
 2. **Merge only.** Nothing in rk rebases, or pushes with `--force` or `--force-with-lease`. The bot never merges a PR.
 3. **Never write a consumer's version or `CHANGELOG.md`.** release-please owns both. `seeded` files are never touched
