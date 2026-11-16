@@ -224,6 +224,26 @@ def test_override_and_orphan_warn(adopted, github, user_config, tmp_path):
     assert orphan.status is Status.WARN
 
 
+def test_an_override_on_a_reusable_workflow_is_ok(adopted, github, user_config, tmp_path):
+    # repo-kit's case: the caller's path holds the reusable workflow itself.
+    work, setup, _said = adopted
+    (work / CALLER).write_text(
+        "name: update-prs\n\non:\n  workflow_call:\n    inputs: {}\n", encoding="utf-8"
+    )
+    config = work / ".repo-kit.toml"
+    config.write_text(
+        config.read_text(encoding="utf-8") + f'\n[overrides.files]\n"{CALLER}" = "unmanaged"\n',
+        encoding="utf-8",
+    )
+
+    checks = run(work, github, setup, user_config, tmp_path)
+
+    assert find(checks, "override in use") == []
+    (override,) = find(checks, f"override: {CALLER}")
+    assert override.status is Status.OK
+    assert "reusable workflow" in override.detail
+
+
 def test_merged_worktree_is_stale(adopted, github, user_config, tmp_path, make_ctx):
     work, setup, _said = adopted
     path = start(make_ctx(work), "feat/x", no_setup=True)
