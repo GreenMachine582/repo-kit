@@ -71,7 +71,7 @@ secrets_file = "~/OneDrive/repo-kit/secrets.sops.json"   # the Apps' credentials
 
 `worktree_root` must not be inside OneDrive or any other synced folder: rk refuses one under a `OneDrive*`, Dropbox
 or iCloud folder. `secrets_file` may be, since it's encrypted. The age key that decrypts it must not be; `rk secrets`
-refuses one that is. `rk secrets init` prints the `secrets_file` line to add. See
+refuses one that is. `rk secrets init` writes the `secrets_file` line, creating this file if needed. See
 [github-app.md](github-app.md#credentials-sops--age).
 
 The old `[pr_bot]` table is an error that names the migration

@@ -113,7 +113,7 @@ def _secrets(action: str) -> Handler:
         changed: list[str] = []
         try:
             if action == "init":
-                credentials.run_init(changed=changed)
+                credentials.run_init(file=args.file, changed=changed)
             elif action == "set-app":
                 credentials.run_set_app(
                     args.app, client_id=args.client_id, pem=Path(args.pem), changed=changed
@@ -311,9 +311,17 @@ def _add_setup_side(sub: SubParsers) -> None:
 
     secrets = sub.add_parser("secrets", help="the Apps' credentials, in a sops + age file")
     sec_sub = secrets.add_subparsers(dest="secrets_command", required=True, metavar="<command>")
-    sec_sub.add_parser(
-        "init", help="create this machine's age key and the credentials file (safe to re-run)"
-    ).set_defaults(handler=_secrets("init"))
+    init = sec_sub.add_parser(
+        "init",
+        help="set this machine up: age key, user config entry, credentials file (safe to re-run)",
+    )
+    init.add_argument(
+        "--file",
+        metavar="PATH",
+        help="where the shared credentials file goes (default: ~/OneDrive/repo-kit/"
+        "secrets.sops.json, or the home folder without OneDrive)",
+    )
+    init.set_defaults(handler=_secrets("init"))
     set_app = sec_sub.add_parser("set-app", help="store an App's Client ID and private key")
     set_app.add_argument("app", choices=["pr-bot", "release-bot"])
     set_app.add_argument("--client-id", required=True, help="the App's Client ID (Iv23…)")

@@ -22,17 +22,23 @@ Pushes and PRs made with an App token trigger CI. GitHub doesn't run CI on PRs o
 ## Credentials: sops + age
 
 Both Apps' Client IDs and private keys live in one [sops](https://github.com/getsops/sops) file, encrypted with
-[age](https://github.com/FiloSottile/age). It's named by `secrets_file` in the user config
-([configuration.md](configuration.md#user-config-configrepo-kitconfigtoml)). Because it's encrypted, it can sit in
-OneDrive and follow you between machines. What decrypts it is each machine's own age key, which never leaves that
-machine: rk refuses an age key inside a synced folder.
+[age](https://github.com/FiloSottile/age). Three files are involved, and only one of them is shared:
+
+| File | Where | Holds | Shared |
+|---|---|---|---|
+| The credentials file | OneDrive, `~/OneDrive/repo-kit/secrets.sops.json` by default | Both Apps' Client IDs and keys, encrypted | Yes: OneDrive carries it between machines |
+| The age key | `%APPDATA%\sops\age\keys.txt` on Windows, `~/.config/sops/age/keys.txt` on Linux | What decrypts the credentials file on this machine | Never: rk refuses one inside a synced folder |
+| The user config | `~/.config/repo-kit/config.toml` | `secrets_file`: where this machine finds the credentials file | Never: one per machine ([configuration.md](configuration.md#user-config-configrepo-kitconfigtoml)) |
+
+`rk secrets init` sets up all three, so nothing needs editing by hand. It writes `secrets_file` from `~`, so the path
+is the same on every machine even when the user names differ.
 
 rk calls the `sops` (3.10 or newer) and `age-keygen` binaries; nothing is added to rk's Python dependencies. Keys go
 to sops on stdin, never as an argument, and no command prints one.
 
 | Command | Does |
 |---|---|
-| `rk secrets init` | Creates this machine's age key if it has none (where sops looks: `SOPS_AGE_KEY_FILE`, else `%APPDATA%\sops\age\keys.txt` on Windows and `~/.config/sops/age/keys.txt` on Linux), and prints its public key. Without `secrets_file`, prints the line to add. Creates the file if it doesn't exist yet; if it exists but can't be decrypted here, prints the `add-recipient` command to run elsewhere. Safe to re-run |
+| `rk secrets init [--file PATH]` | Creates this machine's age key if it has none (where sops looks: `SOPS_AGE_KEY_FILE`, else the default above) and prints its public key. Adds `secrets_file` to the user config if it's missing, creating the config if needed and backing up an existing one to `config.toml.bak`; `--file` picks another place than the OneDrive default. Creates the credentials file if no machine has yet. If it exists but this machine can't decrypt it, prints the `add-recipient` command to run on one that can. Safe to re-run |
 | `rk secrets set-app {pr-bot,release-bot} --client-id … --pem …` | Stores one App's Client ID and key, then reads them back to check |
 | `rk secrets add-recipient age1…` | Lets another machine's key decrypt the file (`sops rotate --add-age`) |
 | `rk secrets show` | Each App's Client ID, and whether its key is present. Exits 1 if one is missing |
@@ -41,20 +47,16 @@ to sops on stdin, never as an argument, and no command prints one.
 
 1. Install the tools. On Windows: `winget install SecretsOPerationS.SOPS`, then `winget install FiloSottile.age`,
    and open a new terminal so both are on `PATH`.
-2. Run `rk secrets init`. It creates this machine's age key and prints a `secrets_file = …` line.
-3. Put that line at the top of this machine's user config, `~/.config/repo-kit/config.toml`
-   (`C:\Users\<you>\.config\repo-kit\config.toml`). Create the file if it doesn't exist. Each machine has its own user
-   config, never synced, so different user names on different machines don't clash. Write the path from `~`, as in
-   `secrets_file = "~/OneDrive/repo-kit/secrets.sops.json"`, and the same line works on every machine.
-4. Run `rk secrets init` again. It creates the encrypted file.
-5. Create the Apps ([below](#creating-gth-pr-bot-once-per-account)) and store each with `rk secrets set-app`.
+2. Run `rk secrets init`. It creates the age key, the user config entry and the credentials file in OneDrive.
+3. Store each App with `rk secrets set-app` ([below](#creating-gth-pr-bot-once-per-account)).
 
 ### Another machine
 
-1. Install the tools, put the same `secrets_file` line in that machine's own user config, and run `rk secrets init`.
-   It prints this machine's public key and the command to run.
-2. On a machine that can already decrypt the file, run `rk secrets add-recipient age1…` with that key.
-3. Once the file has synced back, `rk secrets show` on the new machine lists both Apps.
+1. Wait until OneDrive has synced the credentials file to this machine. Otherwise `init` makes a second one.
+2. Install the tools and run `rk secrets init`. It finds the file, sees it can't decrypt it yet, and prints the
+   `rk secrets add-recipient age1…` command to run.
+3. Run that command on a machine that can already decrypt the file.
+4. Once the file has synced back, `rk secrets show` here lists both Apps.
 
 ### Moving from `[pr_bot]`
 

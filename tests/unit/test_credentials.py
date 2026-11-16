@@ -6,6 +6,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -31,6 +32,19 @@ from repo_kit.errors import RkError
 
 SOURCE = Path("config.toml")
 RECIPIENT = "age1" + "q" * 58
+
+
+@pytest.fixture(autouse=True)
+def fake_home(tmp_path, monkeypatch):
+    """`~`, OneDrive and the age key all inside tmp_path: no test may reach the real home."""
+    home = tmp_path / "home"
+    home.mkdir()
+    for var in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(var, str(home))
+    monkeypatch.setenv("OneDrive", str(home / "OneDrive"))
+    monkeypatch.setenv(AGE_KEY_ENV, str(home / "age" / "keys.txt"))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    return home
 
 
 def key_file(tmp_path: Path, recipient: str = RECIPIENT) -> Path:
@@ -137,28 +151,71 @@ def test_a_bad_key_is_refused(tmp_path):
 # --- rk secrets init -----------------------------------------------------------------------
 
 
-def test_init_makes_the_key_then_asks_for_the_config_line(tmp_path):
+def test_init_does_the_whole_first_machine_setup_in_one_run(tmp_path, fake_home):
+    source = fake_home / ".config" / "repo-kit" / "config.toml"
     made: list[Path] = []
 
     def keygen(path: Path) -> None:
         made.append(path)
         key_file(tmp_path)
 
+    sops = FakeSops()
     changed: list[str] = []
-    said: list[str] = []
     init(
         UserConfig(),
-        SOURCE,
-        FakeSops(),
+        source,
+        sops,
         changed=changed,
         key_file=tmp_path / "age" / "keys.txt",
         keygen=keygen,
-        say=said.append,
+        say=lambda _m: None,
     )
+    shared = fake_home / "OneDrive" / "repo-kit" / "secrets.sops.json"
     assert made == [tmp_path / "age" / "keys.txt"]
-    assert changed == [f"created age key {tmp_path / 'age' / 'keys.txt'}"]
-    assert any(RECIPIENT in line for line in said)
-    assert any("secrets_file = " in line for line in said)
+    assert source.read_text(encoding="utf-8") == (
+        'secrets_file = "~/OneDrive/repo-kit/secrets.sops.json"\n'
+    )
+    assert sops.recipients[shared] == [RECIPIENT]
+    assert changed == [
+        f"created age key {tmp_path / 'age' / 'keys.txt'}",
+        f"created {source} with secrets_file",
+        f"created {shared}, readable by this machine's age key",
+    ]
+
+
+def test_init_adds_the_line_above_an_existing_config(tmp_path):
+    source = tmp_path / "config.toml"
+    source.write_text('worktree_root = "~/dev/wt"\n', encoding="utf-8")
+    changed: list[str] = []
+    init(
+        UserConfig(),
+        source,
+        FakeSops(),
+        changed=changed,
+        file=str(tmp_path / "shared" / "s.json"),
+        key_file=key_file(tmp_path),
+        say=lambda _m: None,
+    )
+    assert parse_user_config(
+        tomllib.loads(source.read_text(encoding="utf-8")), source
+    ).secrets_path == (tmp_path / "shared" / "s.json")
+    assert (tmp_path / "config.toml.bak").read_text(encoding="utf-8") == (
+        'worktree_root = "~/dev/wt"\n'
+    )
+    assert changed[0] == f"added secrets_file to {source} (backup: config.toml.bak)"
+
+
+def test_init_wont_silently_move_an_existing_secrets_file(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    with pytest.raises(RkError, match="already names"):
+        init(
+            UserConfig(secrets_file=str(path)),
+            SOURCE,
+            sops,
+            changed=[],
+            file=str(tmp_path / "other.json"),
+            key_file=key_file(tmp_path),
+        )
 
 
 def test_init_creates_the_file_for_this_machine(tmp_path):

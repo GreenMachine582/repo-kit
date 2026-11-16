@@ -168,7 +168,7 @@ def test_branches_prune_reaches_run_prune(monkeypatch, capsys, argv, applies):
 def test_secrets_commands_reach_credentials(monkeypatch, capsys):
     seen: list[tuple[str, object]] = []
 
-    def init(*, changed):
+    def init(*, file, changed):
         seen.append(("init", None))
         changed.append("created age key")
 
