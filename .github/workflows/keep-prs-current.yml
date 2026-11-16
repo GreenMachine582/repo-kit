@@ -19,8 +19,10 @@ permissions: {}
 jobs:
   update-prs:
     if: vars.GTH_PR_BOT_CLIENT_ID != ''
+    # pull-requests: read is for the pre-check that skips pushes no PR depends on.
     permissions:
       contents: read
+      pull-requests: read
     # The documented local form: it resolves to this same commit, and actionlint checks it.
     uses: ./.github/workflows/update-prs.yml # zizmor: ignore[self-repository]
     with:
