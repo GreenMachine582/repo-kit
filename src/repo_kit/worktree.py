@@ -308,6 +308,17 @@ def sync(ctx: Context, branch: str | None = None) -> None:
         )
 
     git.fetch(wt.path)
+    pr = ctx.github.pr_for_branch(branch)
+    if (
+        pr
+        and git.config_get(wt.path, f"branch.{branch}.merge")
+        and not git.remote_branch_exists(wt.path, branch)
+        and _pr_finishes(wt.path, branch, pr)
+    ):
+        raise RkError(
+            f"origin/{branch} is gone and PR #{pr.number} is {pr_state(pr)}, so {branch} is "
+            f"finished: not pushing it back. Run `rk wt done {branch}` to remove it."
+        )
     remote_before = (
         git.out(["rev-parse", f"origin/{branch}"], wt.path)
         if git.remote_branch_exists(wt.path, branch)
@@ -316,7 +327,6 @@ def sync(ctx: Context, branch: str | None = None) -> None:
     if remote_before:
         _merge(ctx, wt.path, branch, f"origin/{branch}")
 
-    pr = ctx.github.pr_for_branch(branch)
     if pr and pr.state == "open":
         base, why = pr.base_ref, f"the base of PR #{pr.number}"
     elif recorded := git.config_get(wt.path, f"branch.{branch}.{BASE_CONFIG_KEY}"):
@@ -364,6 +374,51 @@ def _rmtree(path: Path) -> None:
         shutil.rmtree(path, onerror=_force_remove_readonly)
 
 
+# Regenerable tool caches: ignored by Git, but not work worth refusing `wt done` over.
+_CACHE_DIRS = frozenset({"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"})
+_REMOVING_MARKER = "rk-removing"
+
+
+def _pr_finishes(cwd: Path, branch: str, pr: PullRequest) -> bool:
+    """Whether `pr` (merged or closed) finished this `branch`: the branch's current head must be
+    in the PR's head, or an old PR of a reused branch name would count for new work."""
+    return (
+        pr.finished
+        and bool(pr.head_sha)
+        and git.is_ancestor(cwd, f"refs/heads/{branch}", pr.head_sha)
+    )
+
+
+def _ignored_outside(ignored: Sequence[str], env_dirs: Sequence[str]) -> list[str]:
+    """The ignored paths that rk wouldn't remove anyway: not in an env dir, a cache or its own
+    links file."""
+    envs = [name.replace("\\", "/").strip("/") for name in env_dirs]
+    kept = []
+    for path in ignored:
+        bare = path.rstrip("/")
+        parts = bare.split("/")
+        if bare == LOCAL_CONFIG_NAME or any(
+            p in _CACHE_DIRS or p.endswith(".egg-info") for p in parts
+        ):
+            continue
+        if any(bare == env or bare.startswith(env + "/") for env in envs):
+            continue
+        kept.append(path)
+    return kept
+
+
+def _remove_env_dir(env_dir: Path) -> None:
+    try:
+        _rmtree(env_dir)
+    except OSError as exc:
+        locked = exc.filename or env_dir
+        raise RkError(
+            f"couldn't remove {locked}: {exc.strerror or exc}.\n"
+            f"Close whatever is using {env_dir} (a terminal, editor or running Python), then run "
+            "`rk wt done` again. Nothing else was removed."
+        ) from exc
+
+
 def done(
     ctx: Context,
     branch: str | None = None,
@@ -391,43 +446,84 @@ def done(
     git.fetch(ctx.main)
     problems: list[str] = []
     pr = ctx.github.pr_for_branch(branch)
-    if not allow_unmerged and not (pr and pr.finished):
-        what = f"PR #{pr.number} is still open" if pr else "no PR was found"
+    if not allow_unmerged and not (pr and _pr_finishes(ctx.main, branch, pr)):
+        if pr is None:
+            what = "no PR was found"
+        elif pr.finished:
+            what = (
+                f"PR #{pr.number} is {pr_state(pr)} but doesn't contain the latest commit of "
+                f"{branch} (an older PR of the same branch name?)"
+            )
+        else:
+            what = f"PR #{pr.number} is still open"
         problems.append(f"{what} (--allow-unmerged removes it anyway)")
-    config = load_repo_config(wt.path)
-    # The env dirs are rk's to remove: an untracked .venv is not work that could be lost.
-    dirty = git.status_porcelain(wt.path, exclude=config.worktree.env_dirs)
-    if dirty and not discard_changes:
-        problems.append(
-            f"{len(dirty)} uncommitted or untracked change(s) (--discard-changes loses them):\n"
-            + "\n".join(f"      {line}" for line in dirty[:20])
-        )
     unpushed = git.unpushed_commits(ctx.main, branch)
     if unpushed and not delete_unpushed:
         problems.append(
             f"{len(unpushed)} unpushed commit(s) (--delete-unpushed loses them):\n"
             + "\n".join(f"      {line}" for line in unpushed[:20])
         )
+
+    # A directory already gone means an earlier run got that far: only Git's record is left.
+    present = wt.path.is_dir()
+    config = load_repo_config(wt.path)
+    if present:
+        for name in config.worktree.env_dirs:
+            tracked = git.tracked_files(wt.path, name.replace("\\", "/").strip("/"))
+            if tracked:
+                raise RkError(
+                    f"refusing to remove {branch}: `[worktree].env_dirs` entry {name!r} holds "
+                    f"{len(tracked)} file(s) Git tracks (such as {tracked[0]}), and rk deletes env "
+                    "dirs. Take it out of env_dirs in .repo-kit.toml."
+                )
+        # The env dirs are rk's to remove: an untracked .venv is not work that could be lost.
+        dirty = git.status_porcelain(wt.path, exclude=config.worktree.env_dirs)
+        if git.git_path(wt.path, _REMOVING_MARKER).exists():
+            # An earlier run started removing and stopped: the files it deleted show as deleted.
+            dirty = [line for line in dirty if not line.startswith((" D", "D "))]
+        if dirty and not discard_changes:
+            problems.append(
+                f"{len(dirty)} uncommitted or untracked change(s) (--discard-changes loses "
+                "them):\n" + "\n".join(f"      {line}" for line in dirty[:20])
+            )
+        ignored = _ignored_outside(git.ignored_paths(wt.path), config.worktree.env_dirs)
+        if ignored:
+            problems.append(
+                f"{len(ignored)} ignored file(s) that removing the worktree would delete (move "
+                "or delete them first; there is no override):\n"
+                + "\n".join(f"      {line}" for line in ignored[:20])
+            )
     if problems:
         listing = "\n".join(f"  - {p}" for p in problems)
         raise RkError(f"refusing to remove {branch}:\n{listing}")
 
-    links = wt.path / LOCAL_CONFIG_NAME
-    if links.exists():
-        links.unlink()
-        ctx.changed.append(f"removed links ({LOCAL_CONFIG_NAME})")
-    for name in config.worktree.env_dirs:
-        env_dir = wt.path / name
-        if env_dir.is_dir() and _inside(env_dir, wt.path):
-            _rmtree(env_dir)
-            ctx.changed.append(f"removed {env_dir}")
-    git.worktree_remove(ctx.main, wt.path, force=discard_changes)
-    ctx.changed.append(f"removed worktree {wt.path}")
+    # Every check has passed. Remove the parts that fail on Windows file locks first, and leave a
+    # marker before the step that deletes tracked files, so a rerun after a failure there is clean.
+    if present:
+        links = wt.path / LOCAL_CONFIG_NAME
+        if links.exists():
+            links.unlink()
+            ctx.changed.append(f"removed links ({LOCAL_CONFIG_NAME})")
+        for name in config.worktree.env_dirs:
+            env_dir = wt.path / name
+            if env_dir.is_dir() and _inside(env_dir, wt.path):
+                _remove_env_dir(env_dir)
+                ctx.changed.append(f"removed {env_dir}")
+        git.git_path(wt.path, _REMOVING_MARKER).write_text("removing\n", encoding="utf-8")
+        try:
+            git.worktree_remove(ctx.main, wt.path, force=True)
+        except git.GitError as exc:
+            raise RkError(
+                f"couldn't remove the worktree {wt.path}; something may be using a file in it "
+                "(an editor, terminal or running program). Close it, then run `rk wt done` again; "
+                f"files already deleted from it are expected.\n{exc}"
+            ) from exc
+        ctx.changed.append(f"removed worktree {wt.path}")
+    git.worktree_prune(ctx.main)
     # -D, not -d: whether the work is safe was checked above against every remote ref (a merged
     # PR's commits live on its base), which `-d` can't see from the main checkout's HEAD.
     git.branch_delete(ctx.main, branch, force=True)
     ctx.changed.append(f"deleted local branch {branch}")
-    git.worktree_prune(ctx.main)
 
 
 # --- wt list (and `rk doctor`'s stale worktrees) -------------------------------------------

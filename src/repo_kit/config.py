@@ -13,7 +13,7 @@ import os
 import tomllib
 import typing
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from repo_kit.errors import RkError
@@ -174,6 +174,25 @@ def _read_toml(path: Path) -> dict[str, Any]:
         raise ConfigError(f"{path}: {exc}") from exc
 
 
+def _check_env_dir(entry: str, source: Path) -> None:
+    """`[worktree].env_dirs` entries are deleted by `wt done` and excluded from its dirty check, so
+    each must name one folder inside the worktree: no `.`, `..`, absolute path, pattern or magic."""
+    parts = entry.replace("\\", "/").split("/")
+    bad = (
+        not entry.strip()
+        or PureWindowsPath(entry).is_absolute()
+        or PurePosixPath(entry).is_absolute()
+        or entry.startswith(("/", "\\"))
+        or any(c in entry for c in "*?[]:")
+        or any(p in ("", ".", "..", ".git") or p != p.strip() for p in parts)
+    )
+    if bad:
+        raise ConfigError(
+            f"{source}: `worktree.env_dirs` entry {entry!r} must be a plain relative folder name "
+            "such as `.venv`: no `.` or `..`, no absolute path, no `*`/`?`/`[`/`:`, not `.git`"
+        )
+
+
 def parse_repo_config(data: dict[str, Any], source: Path) -> RepoConfig:
     config: RepoConfig = _build(RepoConfig, data, source)
     if config.profile not in PROFILE_DEFAULT_BASE:
@@ -182,6 +201,8 @@ def parse_repo_config(data: dict[str, Any], source: Path) -> RepoConfig:
     if config.checks.pr_title not in PR_TITLE_RULES:
         known = ", ".join(f'"{rule}"' for rule in PR_TITLE_RULES)
         raise ConfigError(f"{source}: `checks.pr_title` must be one of {known}")
+    for entry in config.worktree.env_dirs:
+        _check_env_dir(entry, source)
     for path, mode in config.overrides.files.items():
         if mode != "unmanaged":
             raise ConfigError(f'{source}: `overrides.files."{path}"` must be "unmanaged"')

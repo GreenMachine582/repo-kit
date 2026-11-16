@@ -111,6 +111,22 @@ def test_unknown_pr_title_rule_is_an_error():
         parse_repo_config({"checks": {"pr_title": "squash"}}, SRC)
 
 
+@pytest.mark.parametrize(
+    "entry",
+    [".", "..", "../x", "a/../b", "./.venv", "*", ".v*", "[ab]", "?", "/abs", "C:\\venv", "\\x"]
+    + ["", " ", "a//b", ".git", ":(top)src"],
+)
+def test_env_dirs_must_be_plain_relative_names(entry):
+    with pytest.raises(ConfigError, match="`worktree.env_dirs` entry"):
+        parse_repo_config({"worktree": {"env_dirs": [".venv", entry]}}, SRC)
+
+
+@pytest.mark.parametrize("entry", [".venv", "venv", "node_modules", "build/cache", "my env"])
+def test_env_dirs_accepts_plain_names(entry):
+    config = parse_repo_config({"worktree": {"env_dirs": [entry]}}, SRC)
+    assert config.worktree.env_dirs == (entry,)
+
+
 def test_override_mode_must_be_unmanaged():
     with pytest.raises(ConfigError, match='must be "unmanaged"'):
         parse_repo_config({"overrides": {"files": {"a.yml": "managed"}}}, SRC)

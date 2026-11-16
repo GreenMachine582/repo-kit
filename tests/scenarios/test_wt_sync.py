@@ -143,3 +143,32 @@ def test_rejected_push_says_to_sync_again(session, clone, make_ctx, monkeypatch)
     monkeypatch.setattr(rk_git, "push", racing_push)
     with pytest.raises(RkError, match="rejected .* Run `rk wt sync` again"):
         sync(make_ctx(path))
+
+
+def test_does_not_push_back_a_branch_whose_merged_pr_deleted_it(session, github, clone, make_ctx):
+    local, path = session
+    github.add_pr("feat/x", merged=True, head_sha=git(path, "rev-parse", "HEAD"))
+    git(clone("other"), "push", "-q", "origin", ":feat/x")  # GitHub deletes the branch on merge
+
+    ctx = make_ctx(path)
+    with pytest.raises(RkError, match=r"origin/feat/x is gone and PR #1 is merged.*rk wt done"):
+        sync(ctx)
+    assert remote_sha(local, "feat/x") is None
+    assert ctx.changed == []
+
+
+def test_pushes_a_branch_whose_remote_is_gone_when_its_pr_is_open(session, github, clone, make_ctx):
+    local, path = session
+    github.add_pr("feat/x")
+    git(clone("other"), "push", "-q", "origin", ":feat/x")
+    sync(make_ctx(path))
+    assert remote_sha(local, "feat/x") == git(path, "rev-parse", "HEAD")
+
+
+def test_reused_branch_name_with_new_commits_is_pushed(session, github, clone, make_ctx):
+    local, path = session
+    github.add_pr("feat/x", merged=True, head_sha=git(path, "rev-parse", "HEAD"))
+    git(clone("other"), "push", "-q", "origin", ":feat/x")
+    commit(path, "again.txt", message="feat: new work after the old PR merged")
+    sync(make_ctx(path))  # the old PR doesn't contain this commit, so it isn't finished
+    assert remote_sha(local, "feat/x") == git(path, "rev-parse", "HEAD")
