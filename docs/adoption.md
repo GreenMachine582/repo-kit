@@ -7,8 +7,9 @@
 | Command | Does |
 |---|---|
 | `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The steps are [below](#install-step-by-step) |
-| `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot`: create the update-prs labels, and set the Client ID variable and private key secret from the user config ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
-| `rk bootstrap` | `install` + `configure` + `doctor`. It reads `gth-pr-bot`'s key first, so a machine that can't enrol the repo stops before anything is written. The `doctor` report ends the run |
+| `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot` and `gth-release-bot`: create the update-prs labels, and set each App's Client ID variable and private key secret from the encrypted credentials file ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
+| `rk bootstrap` | `install` + `configure` + `doctor`. It decrypts the Apps' credentials first, so a machine that can't enrol the repo stops before anything is written. The `doctor` report ends the run |
+| `rk secrets init / set-app / add-recipient / show` | Set up and maintain the sops + age encrypted credentials file `configure` reads ([github-app.md](github-app.md#credentials-sops--age)) |
 | `rk upgrade [vX.Y.Z]` | Move `version` to this rk's release and re-render with the `sync` planner. Templates new in the release are added. Migration notes and `github diff` arrive in Phase 1D. The steps are [below](#upgrade-step-by-step) |
 | `rk doctor` | Read-only health check. The checks are [below](#doctor) |
 
@@ -63,15 +64,17 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 ## `doctor`
 
 ```
-[OK]   git 2.47 / gh 2.63 / Python 3.12
+[OK]   git 2.47 / gh 2.63 / sops 3.10 / Python 3.12
 [OK]   .repo-kit.toml valid (profile dev-main, version 1.4.0)
 [OK]   user config valid
+[OK]   credentials file: gth-pr-bot, gth-release-bot
 [OK]   managed files: 9 in sync, 0 drifted
 [WARN] override in use: .github/workflows/release.yml is unmanaged
 [OK]   plugin: repo-kit is in .claude/settings.json
 [OK]   base branch: origin/dev exists (as of the last fetch)
 [OK]   gth-pr-bot: labels, Client ID variable and private key secret present
-[SKIP] gth-pr-bot installed and token mint
+[OK]   gth-release-bot: Client ID variable and private key secret present
+[SKIP] Apps installed and token mint
 [OK]   repo settings and rulesets match: repo-kit: dev, repo-kit: main, repo-kit: tags
 [SKIP] repo settings
 [WARN] 1 stale worktree
@@ -84,21 +87,23 @@ command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` a
 
 | Check | `[FAIL]` or `[WARN]` when |
 |---|---|
-| Tools | FAIL: Git, gh or Python is below its minimum. WARN: gh isn't installed (`sync` and `install` work without it) |
+| Tools | FAIL: Git, gh or Python is below its minimum. WARN: gh isn't installed (`sync` and `install` work without it), or sops is missing or too old (only `configure` and `secrets` need it) |
 | `.repo-kit.toml` | FAIL: missing, an unknown key or a bad value, or `version` empty or not `X.Y.Z`. WARN: the pin isn't this rk's release, and the files check is skipped until `rk upgrade` |
-| User config | FAIL: an unknown key, or a synced `worktree_root` or key path |
+| User config | FAIL: an unknown key, a leftover `[pr_bot]` table (the error names the migration), or a synced `worktree_root` |
+| Credentials file | WARN: `secrets_file` is unset or missing, this machine can't decrypt it, or an App's Client ID or key is missing (`rk secrets …`). The Client ID comparison below is skipped |
 | Managed files | FAIL: a file is missing, differs from the render, was edited by hand, or the lock is stale: the same test as `rk sync --check`. WARN: a lock entry is no longer a template |
 | Overrides | WARN: each `unmanaged` file |
 | Plugin | WARN: `.claude/settings.json` lacks the repo-kit marketplace or plugin (`rk install`) |
 | Base branch | FAIL: origin has no profile base branch (`rk install`) |
-| gth-pr-bot | FAIL: a label, the Client ID variable or the key secret is missing, or the variable isn't the user config's Client ID (`rk configure`) |
+| gth-pr-bot, gth-release-bot | FAIL, per App: a label (gth-pr-bot only), the Client ID variable or the key secret is missing, or the variable isn't the credentials file's Client ID (`rk configure`). gth-pr-bot is skipped when update-prs is disabled |
 | Repo settings and rulesets | WARN: a setting or a `repo-kit: …` ruleset is missing or differs from the config, with the same lines as `rk github diff` (`rk github apply`); or the API can't be read |
 | Worktrees | WARN: a worktree under `worktree_root` whose PR is merged or closed (`rk wt done`) |
 
-Still to come: the latest release next to the pin, and `gth-release-bot`. Whether the App is installed and its token mint works can't be seen from a local run: confirm
-the install at https://github.com/settings/installations and run the update-prs caller with dry-run ticked.
+Still to come: the latest release next to the pin. Whether the Apps are installed and their token mints work can't be seen from a local run: confirm
+the installs at https://github.com/settings/installations and run the update-prs caller with dry-run ticked.
 
-Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` command checks it too), gh 2.40+, Python 3.11+.
+Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` command checks it too), gh 2.40+, sops 3.10+
+(`credentials.MIN_SOPS`), Python 3.11+.
 
 ## 🏷️ Versioning
 
@@ -136,7 +141,7 @@ Moves from `main` only to `dev-main` (Phase 2).
    - `next-task` step 5 uses `worktree-start`;
    - `open-pr` targets `dev`, opens drafts, marks them ready, and syncs with `worktree-sync`;
    - `CLAUDE.md` gets a short prose note pointing to `.repo-kit.toml`;
-   - delete `.github/workflows/release-please.yml` (the managed `release.yml` replaces it), and set
+   - delete `.github/workflows/release-please.yml` (the managed `release.yml` replaces it). `bootstrap` already set
      `gth-release-bot`'s new variable and secret ([github-app.md](github-app.md#releases-gth-release-bot)).
 4. Local clones need `git fetch` and a checkout of `dev`.
 
@@ -150,7 +155,7 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
    `use-local-gth` extra is built (a Future item).
 2. Delete `scripts/apply-rulesets.sh`, `scripts/prune-branches.sh`, `.github/rulesets/*.json`,
    `.github/repo-settings.json` and `.github/workflows/release-please.yml` (the managed `release.yml` replaces it).
-   Set `gth-release-bot`'s new variable and secret, and delete the old `RELEASE_APP_*` ones
+   Run `rk configure` to set `gth-release-bot`'s new variable and secret, and delete the old `RELEASE_APP_*` ones
    ([github-app.md](github-app.md#releases-gth-release-bot)).
 3. Install `gth-release-bot` on the repo, then check that `rk github diff` shows no unexpected changes before
    `apply`. After applying, delete the old `dev`, `main`

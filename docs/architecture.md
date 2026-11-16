@@ -92,6 +92,7 @@ repo-kit/
 | `rulesets.py`, `settings.py` | Build the rulesets and repo settings, and diff them against GitHub | 1D |
 | `github_config.py` | `github diff / apply`: read, diff, back up, apply | 1D |
 | `branches.py` | `branches prune` (replaces `prune-branches.sh`) | 1D |
+| `credentials.py` | The Apps' credentials in a sops + age file, `rk secrets`; sops faked in tests | 1D |
 
 ## Constraints carried over
 

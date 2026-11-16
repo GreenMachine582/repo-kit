@@ -48,6 +48,10 @@ uv venv && uv pip install -e ".[dev]"
 `.venv` belongs to one machine: build it with uv on each device, and never keep it in a synced folder such as
 OneDrive. On Windows the tools are in `.venv/Scripts/`.
 
+`rk configure`, `rk bootstrap` and `rk secrets` also call the `sops` (3.10+) and `age-keygen` binaries, like `gh`.
+They're not Python dependencies, so hard rule 1 holds. Tests use `FakeSops`; one round trip runs real sops when
+it's installed.
+
 ## Conventions
 
 - `src/` layout. Templates live in `templates/` and ship inside the wheel as `repo_kit/templates`.

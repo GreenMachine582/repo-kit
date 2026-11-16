@@ -44,7 +44,7 @@ jobs:
       - name: Check gth-release-bot is set up
         if: inputs.client-id == ''
         run: |
-          echo "::error::GTH_RELEASE_BOT_CLIENT_ID isn't set: install gth-release-bot and set its Client ID and key (repo-kit's docs/github-app.md)"
+          echo "::error::GTH_RELEASE_BOT_CLIENT_ID isn't set: install gth-release-bot on this repo and run rk configure (repo-kit's docs/github-app.md)"
           exit 1
       - id: token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
