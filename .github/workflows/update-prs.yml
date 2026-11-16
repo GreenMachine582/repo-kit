@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      conflict-label:
+        description: The label update-prs puts on a conflicting PR ([update_prs].conflict_label)
+        required: false
+        type: string
+        default: needs-merge
     secrets:
       PR_BOT_PRIVATE_KEY:
         description: gth-pr-bot's private key
@@ -26,9 +31,71 @@ on:
 permissions: {}
 
 jobs:
+  # Most pushes are to a branch nothing depends on, so this read-only check decides whether the run
+  # below (and its App token) is needed. Only a push can be skipped; other events always run.
+  pre-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      needed: ${{ steps.check.outputs.needed }}
+    steps:
+      # No checkout: this only reads the API, so it works whichever rk version `ref` names.
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          BRANCH: ${{ github.ref_name }}
+          LABEL: ${{ inputs.conflict-label }}
+        run: |
+          # A branch name in an API path: escaped, apart from its slashes.
+          path_ref() { REF="$1" jq -rn 'env.REF | @uri | gsub("%2F"; "/")'; }
+          decide() {
+            echo "needed=$1" >> "$GITHUB_OUTPUT"
+            echo "::notice title=update-prs pre-check::needed=$1: $2"
+            exit 0
+          }
+
+          if [ "$EVENT" != "push" ]; then decide true "a $EVENT event always runs"; fi
+          if [ "$REF_TYPE" != "branch" ]; then decide false "a $REF_TYPE push can't change any PR"; fi
+
+          # Every open PR, all pages, that update-prs could touch: ready and not from a fork.
+          # One line per PR the push is related to: "base <n> <base>" or "head <n> <base> <labelled>".
+          related=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=open&per_page=100" \
+            | jq -rs '
+                add // [] | .[]
+                | select((.draft | not) and .head.repo != null
+                         and .head.repo.full_name == .base.repo.full_name)
+                | if .base.ref == env.BRANCH then ["base", .number, .base.ref]
+                  elif .head.ref == env.BRANCH then
+                    ["head", .number, .base.ref, (any(.labels[]; .name == env.LABEL) | tostring)]
+                  else empty end
+                | @tsv')
+
+          while IFS=$'\t' read -r kind number base labelled; do
+            [ -n "$kind" ] || continue
+            if [ "$kind" = "base" ]; then decide true "$BRANCH is the base of PR #$number"; fi
+            if [ "$labelled" = "true" ]; then
+              decide true "PR #$number is labelled $LABEL, which may now be resolved"
+            fi
+            # Behind its base: an earlier update was refused or never happened, so retry it now.
+            behind=$(gh api "repos/$GITHUB_REPOSITORY/compare/$(path_ref "$base")...$(path_ref "$BRANCH")?per_page=1" \
+              --jq .behind_by)
+            if [ "$behind" != "0" ]; then
+              decide true "PR #$number is $behind commit(s) behind $base"
+            fi
+          done <<< "$related"
+
+          decide false "no open PR is based on $BRANCH, and its own PR (if any) is current and unlabelled"
+
   update-prs:
+    needs: pre-check
     # A pull_request run from a fork gets no secrets, so it could only fail.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      needs.pre-check.outputs.needed == 'true'
+      && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     permissions:
       contents: read

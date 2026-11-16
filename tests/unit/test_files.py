@@ -9,7 +9,14 @@ from pathlib import Path
 import pytest
 
 from repo_kit.checks import REQUIRED_CHECKS, TYPES
-from repo_kit.config import ChecksConfig, ExtrasConfig, ProjectConfig, ReleaseConfig, RepoConfig
+from repo_kit.config import (
+    ChecksConfig,
+    ExtrasConfig,
+    ProjectConfig,
+    ReleaseConfig,
+    RepoConfig,
+    UpdatePrsConfig,
+)
 from repo_kit.files import (
     LOCK_NAME,
     MANIFEST_NAME,
@@ -48,6 +55,13 @@ def test_variables_default_the_project_name_to_the_repo():
     assert variables["default_base"] == "dev"
     assert variables["release_branch"] == "main"
     assert variables["back_merge_into"] == "dev"
+
+
+def test_the_conflict_label_is_rendered_as_a_quoted_string():
+    assert template_variables(RepoConfig(), "o", "r")["conflict_label"] == '"needs-merge"'
+
+    config = RepoConfig(update_prs=UpdatePrsConfig(conflict_label='merge "me": now'))
+    assert json.loads(template_variables(config, "o", "r")["conflict_label"]) == 'merge "me": now'
 
 
 def test_variables_carry_the_commit_and_pr_title_rules():

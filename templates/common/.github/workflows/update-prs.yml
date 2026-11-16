@@ -19,12 +19,15 @@ jobs:
   update-prs:
     # Idle until `rk configure` has enrolled this repo.
     if: vars.GTH_PR_BOT_CLIENT_ID != ''
+    # pull-requests: read is for the pre-check that skips pushes no PR depends on.
     permissions:
       contents: read
+      pull-requests: read
     uses: GreenMachine582/repo-kit/.github/workflows/update-prs.yml@v${version}
     with:
       ref: v${version}
       client-id: ${{ vars.GTH_PR_BOT_CLIENT_ID }}
       dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
+      conflict-label: ${conflict_label}
     secrets:
       PR_BOT_PRIVATE_KEY: ${{ secrets.GTH_PR_BOT_PRIVATE_KEY }}
