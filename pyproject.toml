@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Shared repo tooling: one worktree per Claude session, PRs that stay current, and one versioned definition of how every repo is set up."
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 # Runtime is standard library only. Don't add a dependency here: see CLAUDE.md.
 dependencies = []
 
@@ -30,7 +30,7 @@ packages = ["src/repo_kit"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 # B: likely bugs. SIM: simplifications. PTH: paths go through pathlib. S: security (bandit).

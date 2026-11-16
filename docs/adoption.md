@@ -103,7 +103,7 @@ Still to come: the latest release next to the pin. Whether the Apps are installe
 the installs at https://github.com/settings/installations and run the update-prs caller with dry-run ticked.
 
 Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` command checks it too), gh 2.40+, sops 3.10+
-(`credentials.MIN_SOPS`), Python 3.11+.
+(`credentials.MIN_SOPS`), Python 3.12+.
 
 ## 🏷️ Versioning
 

@@ -16,7 +16,6 @@ import shlex
 import shutil
 import stat
 import subprocess
-import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -358,10 +357,7 @@ def _force_remove_readonly(func: Callable[[str], object], path: str, _exc: objec
 
 
 def _rmtree(path: Path) -> None:
-    if sys.version_info >= (3, 12):
-        shutil.rmtree(path, onexc=_force_remove_readonly)
-    else:  # pragma: no cover - 3.11 only
-        shutil.rmtree(path, onerror=_force_remove_readonly)
+    shutil.rmtree(path, onexc=_force_remove_readonly)
 
 
 def done(

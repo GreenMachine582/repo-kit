@@ -27,7 +27,7 @@ Shared logic goes to the cheapest place that keeps one copy:
 
 ## Engine
 
-Python, standard library only, 3.11+:
+Python, standard library only, 3.12+:
 
 | Need | Module |
 |---|---|
@@ -123,7 +123,7 @@ These come from GTH's `CONTRIBUTING.md` and shape everything rk does:
 | Work in progress | Drafts, plus `wip` for ready PRs under rework | Uses GitHub's own signal; no bot races with an active session | A label only |
 | Scheduled runs | None for now | Every run reconciles everything, so a missed event is caught by the next one | A daily safety net (Future) |
 | Version pinning | One `version` in config; `rk upgrade` | Callers, managed files and rulesets move together | Dependabot bumping `uses:` lines, which breaks the drift check |
-| Engine language | Python, stdlib only (3.11+) | Windows-safe, testable, nothing to install beyond Python | Bash: quoting and Windows pain. Extra dependencies: harder to bundle |
+| Engine language | Python, stdlib only (3.12+) | Windows-safe, testable, nothing to install beyond Python | Bash: quoting and Windows pain. Extra dependencies: harder to bundle |
 | Branch model | `dev-main` is the only profile built; photo-ledger moves to it | One profile to test; every repo ends up the same | Building `main-only` now (Future) |
 | Name | `repo-kit`: CLI `rk`, package `repo_kit`, config `.repo-kit.toml`, lock `.repo-kit.lock`, markers `# >>> repo-kit: <name>` | Short, describes the scope beyond workflows | `dev-workflows` |
 

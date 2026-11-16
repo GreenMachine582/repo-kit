@@ -43,7 +43,7 @@ from repo_kit.github import GhCliGitHub, GitHub, NoGitHub, RepoSetup
 from repo_kit.worktree import pr_state, prs_for, repo_dir, rk_worktrees
 
 MIN_GH = (2, 40)
-MIN_PYTHON = (3, 11)
+MIN_PYTHON = (3, 12)
 
 
 class Status(StrEnum):
