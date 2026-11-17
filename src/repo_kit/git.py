@@ -6,6 +6,7 @@ Nothing here rebases or force-pushes: there is deliberately no wrapper that coul
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -17,6 +18,11 @@ from repo_kit.errors import RkError
 # `merge --no-edit`, `rev-list --not --remotes`, `push -u`) works well before this; 2.38 is the
 # floor we test against and `doctor` reports.
 MIN_GIT = (2, 38)
+
+
+# Where repo-kit's releases are published: `rk upgrade` resolves a tag's commit here.
+REPO_KIT_REMOTE = "https://github.com/GreenMachine582/repo-kit.git"
+_SHA = re.compile(r"[0-9a-f]{40}")
 
 
 class GitError(RkError):
@@ -67,6 +73,42 @@ def require_version(cwd: Path) -> None:
         need = ".".join(map(str, MIN_GIT))
         have = ".".join(map(str, found))
         raise GitError(f"rk needs Git {need} or newer; found {have}")
+
+
+def is_sha(text: str) -> bool:
+    return _SHA.fullmatch(text) is not None
+
+
+def resolve_release_sha(version: str, remote: str = REPO_KIT_REMOTE) -> str:
+    """The commit `v<version>` points at on `remote`, from `git ls-remote`: no clone, no token.
+    An annotated tag is followed to its commit. Raises RkError if the tag isn't there or the
+    remote can't be reached."""
+    tag = f"refs/tags/v{version}"
+    try:
+        proc = subprocess.run(
+            ["git", "ls-remote", "--tags", remote, tag, f"{tag}^{{}}"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+    except FileNotFoundError as exc:
+        raise GitError("git is not on PATH") from exc
+    except subprocess.TimeoutExpired:
+        raise GitError(f"`git ls-remote {remote}` timed out") from None
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout).strip()
+        raise GitError(f"can't reach {remote} to resolve v{version}:\n{detail}")
+    found: dict[str, str] = {}
+    for line in proc.stdout.splitlines():
+        sha, _tab, ref = line.partition("\t")
+        found[ref.strip()] = sha.strip()
+    sha = found.get(f"{tag}^{{}}") or found.get(tag) or ""  # the peeled line is the commit
+    if not is_sha(sha):
+        raise GitError(f"{remote} has no tag v{version}")
+    return sha
 
 
 # --- repository ----------------------------------------------------------------------------

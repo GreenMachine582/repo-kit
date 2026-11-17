@@ -214,6 +214,34 @@ def run_configure(cwd: Path, *, changed: list[str], dry_run: bool, replace_key: 
     )
 
 
+ShaResolver = Callable[[str], str]  # release version -> the commit its tag points at
+
+
+def resolve_ref(
+    repo_root: Path, version: str, resolve_sha: ShaResolver | None, say: Callable[[str], None]
+) -> str | files._Keep:
+    """The commit to record for `version`: left alone without a resolver; "" (the callers pin the
+    tag only) if the tag can't be resolved; refused if it moved since it was recorded."""
+    if resolve_sha is None:
+        return files.KEEP
+    try:
+        sha = resolve_sha(version)
+    except RkError as exc:
+        say(
+            f"warning: couldn't find the commit of v{version}, so the callers pin the tag only "
+            f"(re-run `rk upgrade` with network access to pin the commit too):\n{exc}"
+        )
+        return ""
+    recorded = files.lock_ref_sha(files.read_lock(repo_root), version)
+    if recorded and recorded != sha:
+        raise RkError(
+            f"tag v{version} now points at {sha}, but {files.LOCK_NAME} recorded {recorded}: "
+            "a release tag must not move. Find out why before going on; if it was deliberate, "
+            f"remove ref_sha and ref_sha_version from {files.LOCK_NAME} and re-run."
+        )
+    return sha
+
+
 # --- install -------------------------------------------------------------------------------
 
 
@@ -409,6 +437,7 @@ def install(
     confirm: Callable[[str], bool] = ask,
     say: Callable[[str], None] = print,
     templates: Path | None = None,
+    resolve_sha: ShaResolver | None = None,
 ) -> RepoConfig:
     """Adopt the repo at `repo_root`. Safe to re-run: only what's missing is written.
 
@@ -421,7 +450,8 @@ def install(
         # `.repo-kit.toml` is itself a seeded template, so the sync below creates it.
         config = seed_config(repo_root, repo, profile)
     files.require_pin(config)
-    plan = files.plan_sync(repo_root, config, owner, repo, templates)
+    ref_sha = resolve_ref(repo_root, config.version, resolve_sha, say)
+    plan = files.plan_sync(repo_root, config, owner, repo, templates, ref_sha)
     say(files.summary(plan))
     files.raise_if_refused(plan)
     settings = plan_plugin_settings(repo_root)
@@ -452,7 +482,10 @@ def run_install(cwd: Path, *, profile: str, changed: list[str], hooks: bool = Fa
     """The command: adopt the checkout `cwd` is in."""
     repo_root, url, owner, repo = _origin(cwd)
     github: GitHub = GhCliGitHub(owner, repo) if git.is_github_url(url) else NoGitHub()
-    install(repo_root, owner, repo, github, profile=profile, changed=changed, hooks=hooks)
+    install(
+        repo_root, owner, repo, github, profile=profile, changed=changed, hooks=hooks,
+        resolve_sha=git.resolve_release_sha,
+    )  # fmt: skip
 
 
 # --- upgrade -------------------------------------------------------------------------------
@@ -530,6 +563,7 @@ def upgrade(
     say: Callable[[str], None] = print,
     templates: Path | None = None,
     dry_run: bool = False,
+    resolve_sha: ShaResolver | None = None,
 ) -> UpgradeResult:
     """Move the pin to `target` (the running rk's release) and re-render the shared files.
 
@@ -579,7 +613,10 @@ def upgrade(
     old_text = config_path.read_bytes().decode("utf-8")  # not read_text: keep CRLF as written
     new_text = set_pin_text(old_text, version)
 
-    plan = files.plan_sync(repo_root, replace(config, version=version), owner, repo, templates)
+    ref_sha = resolve_ref(repo_root, version, resolve_sha, say)
+    plan = files.plan_sync(
+        repo_root, replace(config, version=version), owner, repo, templates, ref_sha
+    )
     say(files.summary(plan))
     files.raise_if_refused(plan)
     result = UpgradeResult(
@@ -612,7 +649,7 @@ def upgrade(
 def run_upgrade(cwd: Path, version: str | None, *, changed: list[str]) -> None:
     """The command: move the pin of the checkout `cwd` is in."""
     repo_root, _url, owner, repo = _origin(cwd)
-    upgrade(repo_root, owner, repo, version, changed=changed)
+    upgrade(repo_root, owner, repo, version, changed=changed, resolve_sha=git.resolve_release_sha)
 
 
 def bootstrap(
@@ -630,6 +667,7 @@ def bootstrap(
     confirm: Callable[[str], bool] = ask,
     say: Callable[[str], None] = print,
     templates: Path | None = None,
+    resolve_sha: ShaResolver | None = None,
 ) -> None:
     """`install`, then `configure`, then `doctor`. The Apps' credentials are decrypted first, so a
     machine that can't enrol the repo stops before anything is written."""
@@ -649,6 +687,7 @@ def bootstrap(
         confirm=confirm,
         say=say,
         templates=templates,
+        resolve_sha=resolve_sha,
     )
     configure(setup, config, credentials, changed=changed, say=say)
     checks = doctor.doctor(
@@ -661,6 +700,7 @@ def bootstrap(
         user_config=user_config,
         sops=sops,
         templates=templates,
+        release_sha=resolve_sha,
     )
     say(doctor.render(checks))
     if doctor.failed(checks):
@@ -686,4 +726,5 @@ def run_bootstrap(cwd: Path, *, profile: str, changed: list[str]) -> None:
         source=user_config_path(),
         profile=profile,
         changed=changed,
+        resolve_sha=git.resolve_release_sha,
     )

@@ -249,6 +249,7 @@ def test_fleet_commands_reach_fleet(monkeypatch, argv, name, expected):
     seen: list[tuple] = []
 
     def fake(_user, *args, **kwargs):
+        kwargs.pop("resolve_sha", None)  # the real resolver: not under test here
         seen.append((*args, *kwargs.values()))
         return 0
 
