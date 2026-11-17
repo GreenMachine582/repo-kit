@@ -106,7 +106,7 @@ A lock entry whose template is no longer in the layers is handled by its recorde
 
 | Mode | What happens |
 |---|---|
-| `managed` | The file is deleted (after a backup) if it still matches the lock. With local edits it is **refused** like any edited managed file, and the lock entry stays until you delete or fix the file yourself. A file already gone is just dropped from the lock |
+| `managed` | The file is deleted (after a backup) if it still matches the lock. With local edits it is **refused** like any edited managed file, and the lock entry stays until you delete it or restore it, then re-run. A file already gone is just dropped from the lock |
 | `block` | Each recorded block is stripped (with its markers and the blank line before it) if it still matches the lock, and the rest of the file is kept. An edited block refuses the file |
 | `seeded` | Never touched. The entry is dropped from the lock and the summary says the file is yours |
 

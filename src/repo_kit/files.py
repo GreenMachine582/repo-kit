@@ -593,7 +593,9 @@ def _plan_removal(
         return FilePlan(path, mode, Action.REFUSE, f"{why}, but it {problem}"), True
     if current is None:
         return FilePlan(path, mode, Action.UNCHANGED, f"{why}; already gone", note=dropped), False
-    edited = f"{why}, but its {mode} content was edited by hand: delete or fix it yourself"
+    edited = (
+        f"{why}, but {path} has {mode} content edited by hand: delete it or restore it, then re-run"
+    )
     if mode == "managed":
         if digest(current) != entry.get("sha256"):
             return FilePlan(path, mode, Action.REFUSE, edited), True
