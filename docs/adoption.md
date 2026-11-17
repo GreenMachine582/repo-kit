@@ -56,8 +56,9 @@ git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z`), then run `rk upgrade`.
    re-run finishes the job. Comments, other keys and the quote style are kept. The old file is backed up to
    `.git/repo-kit/backup/<UTC>/`.
 5. **Notices.** Migration notes are not built yet: `upgrade` points to the release notes, and to `rk github diff`,
-   since a release may change the rulesets or repo settings. Templates renamed or removed in the release are reported
-   as "not a template" and left in place: move or delete them by hand.
+   since a release may change the rulesets or repo settings. Templates renamed or removed in the release are
+   deleted, stripped or dropped from the lock by the sync, and listed under `Changed:`
+   ([rules](shared-files.md#removed-and-renamed-templates)). A hand-edited managed file refuses the sync.
 
 Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 

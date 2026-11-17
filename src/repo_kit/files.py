@@ -30,6 +30,7 @@ LOCK_NAME = ".repo-kit.lock"
 MANIFEST_NAME = "_manifest.toml"
 MODES = ("managed", "block", "seeded")
 _MANIFEST_KEYS = {"mode", "blocks", "source"}
+_MANIFEST_TABLES = {"files", "renames"}
 # The version of an engine that isn't a release: a source tree, or CI running rk from a checkout.
 UNRELEASED = "0.0.0"
 
@@ -148,19 +149,46 @@ def _safe_target(path: str, where: str) -> str:
     return pure.as_posix()
 
 
-def load_layer(root: Path, layer: str) -> list[TemplateFile]:
-    """The templates of one layer, from its manifest. A layer with no manifest has none."""
-    folder = root / layer
-    manifest = folder / MANIFEST_NAME
-    if not manifest.is_file():
-        return []
+def _read_manifest(root: Path, layer: str) -> tuple[dict[str, Any], str]:
+    """A layer's manifest as a table (empty if it has none), and its name for error messages."""
+    manifest = root / layer / MANIFEST_NAME
     where = f"templates/{layer}/{MANIFEST_NAME}"
+    if not manifest.is_file():
+        return {}, where
     try:
         data = tomllib.loads(manifest.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
         raise SyncError(f"{where}: {exc}") from exc
-    if set(data) - {"files"}:
-        raise SyncError(f"{where}: unknown key(s) {sorted(set(data) - {'files'})}")
+    if set(data) - _MANIFEST_TABLES:
+        raise SyncError(f"{where}: unknown key(s) {sorted(set(data) - _MANIFEST_TABLES)}")
+    return data, where
+
+
+def load_renames(root: Path, config: RepoConfig, template_paths: set[str]) -> dict[str, str]:
+    """The `[renames]` of every layer: old target path -> the path its template moved to."""
+    found: dict[str, str] = {}
+    for layer in layers_for(config):
+        data, where = _read_manifest(root, layer)
+        table = data.get("renames", {})
+        if not isinstance(table, dict):
+            raise SyncError(f"{where}: `renames` must be a table of old path = new path")
+        for raw_old, raw_new in table.items():
+            if not isinstance(raw_new, str):
+                raise SyncError(f"{where}: the rename of `{raw_old}` must name a path")
+            old, new = _safe_target(raw_old, where), _safe_target(raw_new, where)
+            if old in template_paths:
+                raise SyncError(f"{where}: `{old}` is renamed but is still a template")
+            if new not in template_paths:
+                raise SyncError(f"{where}: `{old}` is renamed to `{new}`, which isn't a template")
+            if found.setdefault(old, new) != new:
+                raise SyncError(f"{where}: `{old}` is renamed to two different paths")
+    return found
+
+
+def load_layer(root: Path, layer: str) -> list[TemplateFile]:
+    """The templates of one layer, from its manifest. A layer with no manifest has none."""
+    folder = root / layer
+    data, where = _read_manifest(root, layer)
     files = data.get("files", {})
     if not isinstance(files, dict):
         raise SyncError(f"{where}: `files` must be a table")
@@ -336,6 +364,7 @@ class Action(StrEnum):
     REFUSE = "refused"
     SKIP = "skipped"
     ORPHAN = "not a template"
+    REMOVE = "removed"
 
 
 @dataclass
@@ -347,6 +376,8 @@ class FilePlan:
     write: str | None = None  # the whole new file, when it must be written
     diff: str = ""
     was: str = ""  # the mode the lock recorded, when the template has changed it
+    delete: bool = False  # the file itself is to be deleted
+    note: str = ""  # for the change list, when the lock entry is all that changes
 
 
 @dataclass
@@ -362,7 +393,7 @@ class SyncPlan:
     @property
     def drifted(self) -> bool:
         """What `--check` fails on: anything sync would write or refuse, or a stale lock."""
-        writes = {Action.CREATE, Action.UPDATE, Action.REFUSE}
+        writes = {Action.CREATE, Action.UPDATE, Action.REFUSE, Action.REMOVE}
         return self.lock_changed or any(f.action in writes for f in self.files)
 
 
@@ -532,6 +563,58 @@ def _plan_one(
     return FilePlan(path, mode, action, detail, write, diff, was), new_entry
 
 
+def _strip_block(text: str, path: str, name: str) -> str:
+    """`text` without block `name`, its markers and the blank line that set it apart."""
+    span = find_block(text, path, name)
+    if span is None:
+        return text
+    lines = text.split("\n")
+    start = span[0]
+    if start > 0 and not lines[start - 1].strip():
+        start -= 1
+    return "\n".join(lines[:start] + lines[span[1] + 1 :])
+
+
+def _plan_removal(
+    repo_root: Path, path: str, entry: dict[str, Any], new_path: str | None
+) -> tuple[FilePlan, bool]:
+    """What to do with a locked file whose template has gone: the plan, and whether the lock
+    keeps its entry (only a refusal does). A rename is a removal here: the new path is planned
+    like any other template."""
+    mode = entry["mode"]
+    why = f"renamed to {new_path}" if new_path else "no longer a template"
+    dropped = f"dropped from the lock ({why})"
+    if mode == "seeded":
+        # Seeded files are the repo's once created: never touched, only forgotten.
+        plan = FilePlan(path, mode, Action.UNCHANGED, f"{why}; yours, left", note=dropped)
+        return plan, False
+    current, problem = read_target(repo_root, path)
+    if problem:
+        return FilePlan(path, mode, Action.REFUSE, f"{why}, but it {problem}"), True
+    if current is None:
+        return FilePlan(path, mode, Action.UNCHANGED, f"{why}; already gone", note=dropped), False
+    edited = f"{why}, but its {mode} content was edited by hand: delete or fix it yourself"
+    if mode == "managed":
+        if digest(current) != entry.get("sha256"):
+            return FilePlan(path, mode, Action.REFUSE, edited), True
+        return FilePlan(path, mode, Action.REMOVE, why, delete=True), False
+    blocks = entry.get("blocks")
+    text, stripped = current, []
+    for name, block in sorted((blocks if isinstance(blocks, dict) else {}).items()):
+        span = find_block(text, path, name)
+        if span is None:
+            continue
+        sha = block.get("sha256") if isinstance(block, dict) else None
+        if digest(block_inner(text, span)) != sha:
+            return FilePlan(path, mode, Action.REFUSE, edited), True
+        text = _strip_block(text, path, name)
+        stripped.append(name)
+    if not stripped:
+        return FilePlan(path, mode, Action.UNCHANGED, f"{why}; no blocks left", note=dropped), False
+    detail = f"{why}; {', '.join(stripped)} block removed"
+    return FilePlan(path, mode, Action.REMOVE, detail, write=text), False
+
+
 _PROJECT_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$")
 
 
@@ -586,10 +669,18 @@ def plan_sync(
             new_files[template.path] = entry
 
     template_paths = {t.path for t in templates}
+    renames = load_renames(root, config, template_paths)
     for path in sorted(set(old_files) - template_paths):
-        detail = "left in place; remove it by hand if it's no longer wanted"
-        plan.files.append(FilePlan(path, old_files[path].get("mode", "?"), Action.ORPHAN, detail))
-        new_files[path] = old_files[path]
+        entry = old_files[path]
+        if path in unmanaged or entry.get("mode") not in MODES:
+            detail = "left in place; remove it by hand if it's no longer wanted"
+            plan.files.append(FilePlan(path, entry.get("mode", "?"), Action.ORPHAN, detail))
+            new_files[path] = entry
+            continue
+        file_plan, keep = _plan_removal(repo_root, path, entry, renames.get(path))
+        plan.files.append(file_plan)
+        if keep:
+            new_files[path] = entry
 
     plan.lock = {"files": new_files, "version": config.version}
     plan.lock_changed = lock_text(plan.lock) != lock_text(old_lock)
@@ -624,7 +715,9 @@ def apply_plan(
     for file_plan in plan.files:
         if file_plan.was and file_plan.write is None:
             changed.append(f"recorded {file_plan.path} as {file_plan.mode} (was {file_plan.was})")
-        if file_plan.write is None:
+        if file_plan.note and file_plan.write is None and not file_plan.delete:
+            changed.append(f"{file_plan.path}: {file_plan.note}")
+        if file_plan.write is None and not file_plan.delete:
             continue
         target = repo_root / file_plan.path
         if target.is_file():
@@ -632,8 +725,12 @@ def apply_plan(
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(target, backup)
             backed_up = True
+        if file_plan.delete:
+            target.unlink()
+            changed.append(f"{file_plan.action} {file_plan.path} ({file_plan.detail})")
+            continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        text = file_plan.write
+        text = file_plan.write or ""
         if line_ending(target) == "\r\n":
             text = text.replace("\n", "\r\n")
         # newline="": the text already has the endings the file is to keep.
