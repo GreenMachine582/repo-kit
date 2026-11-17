@@ -593,6 +593,16 @@ def render(checks: list[Check]) -> str:
     return "\n".join(lines)
 
 
+def check_dict(check: Check) -> dict[str, str]:
+    """A check as the JSON documents of `doctor --json` and `status --json` show it."""
+    return {
+        "id": check.id,
+        "name": check.label,
+        "status": str(check.status),
+        "detail": check.detail,
+    }
+
+
 def to_json(checks: list[Check]) -> str:
     """One stable document for tools such as a fleet view: `ok` is False only if a check
     FAILed (the exit-code rule). `status` is OK, WARN, FAIL or SKIP; `name` is the report label
@@ -600,10 +610,7 @@ def to_json(checks: list[Check]) -> str:
     document = {
         "schema_version": SCHEMA_VERSION,
         "ok": not failed(checks),
-        "checks": [
-            {"id": c.id, "name": c.label, "status": str(c.status), "detail": c.detail}
-            for c in checks
-        ],
+        "checks": [check_dict(c) for c in checks],
     }
     return json.dumps(document, indent=2, ensure_ascii=False)
 
@@ -614,24 +621,30 @@ def error_json(message: str) -> str:
     return json.dumps(document, indent=2, ensure_ascii=False)
 
 
-def run_doctor(cwd: Path, *, as_json: bool = False, say: Callable[[str], None] = print) -> int:
-    """The command. Returns 1 if any check failed, else 0. With `as_json`, `say` gets only the
-    JSON document."""
-    try:
-        repo_root = git.toplevel(cwd)
-        url = git.remote_url(repo_root)
-        owner, repo = git.parse_owner_repo(url)
-    except RkError as exc:
-        if not as_json:
-            raise
-        say(error_json(str(exc)))
-        return 1
+def run_checks(cwd: Path) -> list[Check]:
+    """Every check for the repo at `cwd`, against the real GitHub client. Raises `RkError` if
+    there's no repo or origin to check."""
+    repo_root = git.toplevel(cwd)
+    url = git.remote_url(repo_root)
+    owner, repo = git.parse_owner_repo(url)
     if git.is_github_url(url):
         client = GhCliGitHub(owner, repo)
         github: GitHub = client
         setup: RepoSetup | None = client
     else:
         github, setup = NoGitHub(), None
-    checks = doctor(repo_root, owner, repo, github, setup, user_source=user_config_path())
+    return doctor(repo_root, owner, repo, github, setup, user_source=user_config_path())
+
+
+def run_doctor(cwd: Path, *, as_json: bool = False, say: Callable[[str], None] = print) -> int:
+    """The command. Returns 1 if any check failed, else 0. With `as_json`, `say` gets only the
+    JSON document."""
+    try:
+        checks = run_checks(cwd)
+    except RkError as exc:
+        if not as_json:
+            raise
+        say(error_json(str(exc)))
+        return 1
     say(to_json(checks) if as_json else render(checks))
     return 1 if failed(checks) else 0

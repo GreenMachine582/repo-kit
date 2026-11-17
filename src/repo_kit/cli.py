@@ -215,6 +215,12 @@ def _doctor(args: argparse.Namespace) -> int:
     return doctor.run_doctor(Path.cwd(), as_json=args.json)
 
 
+def _status(args: argparse.Namespace) -> int:
+    from repo_kit import status
+
+    return status.run_status(Path.cwd(), as_json=args.json)
+
+
 def _fleet(action: str) -> Handler:
     def handler(args: argparse.Namespace) -> int:
         from repo_kit import fleet
@@ -449,6 +455,12 @@ def _add_setup_side(sub: SubParsers) -> None:
     doctor = sub.add_parser("doctor", help="read-only health check")
     doctor.add_argument("--json", action="store_true", help="print one JSON document, nothing else")
     doctor.set_defaults(handler=_doctor)
+
+    status = sub.add_parser(
+        "status", help="worktrees and PRs, doctor's result and the pin, in one read-only summary"
+    )
+    status.add_argument("--json", action="store_true", help="print one JSON document, nothing else")
+    status.set_defaults(handler=_status)
 
 
 def build_parser() -> argparse.ArgumentParser:
