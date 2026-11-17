@@ -8,6 +8,7 @@ config describes; the latest release comes later. See docs/adoption.md.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -513,8 +514,20 @@ def render(checks: list[Check]) -> str:
     return "\n".join(lines)
 
 
-def run_doctor(cwd: Path, *, say: Callable[[str], None] = print) -> int:
-    """The command. Returns 1 if any check failed, else 0."""
+def to_json(checks: list[Check]) -> str:
+    """One stable document for tools such as a fleet view: `ok` is False only if a check
+    FAILed (the exit-code rule). `status` is OK, WARN, FAIL or SKIP; `name` is the report label
+    and `detail` its text underneath, or "" if none."""
+    document = {
+        "ok": not failed(checks),
+        "checks": [{"name": c.label, "status": str(c.status), "detail": c.detail} for c in checks],
+    }
+    return json.dumps(document, indent=2, ensure_ascii=False)
+
+
+def run_doctor(cwd: Path, *, as_json: bool = False, say: Callable[[str], None] = print) -> int:
+    """The command. Returns 1 if any check failed, else 0. With `as_json`, `say` gets only the
+    JSON document."""
     repo_root = git.toplevel(cwd)
     url = git.remote_url(repo_root)
     owner, repo = git.parse_owner_repo(url)
@@ -525,5 +538,5 @@ def run_doctor(cwd: Path, *, say: Callable[[str], None] = print) -> int:
     else:
         github, setup = NoGitHub(), None
     checks = doctor(repo_root, owner, repo, github, setup, user_source=user_config_path())
-    say(render(checks))
+    say(to_json(checks) if as_json else render(checks))
     return 1 if failed(checks) else 0
