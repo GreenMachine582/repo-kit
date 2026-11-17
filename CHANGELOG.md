@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.0](https://github.com/GreenMachine582/repo-kit/compare/v0.3.0...v0.4.0) (2026-11-17)
+
+
+### Features
+
+* pin generated callers by commit as well as tag ([87a4c18](https://github.com/GreenMachine582/repo-kit/commit/87a4c182fb84efb657293f312bf7aa02a26de03f))
+* require signed commits on dev and main ([7d383a9](https://github.com/GreenMachine582/repo-kit/commit/7d383a924877e9f3d03540430e98d74a25530cf9))
+
+
+### Bug Fixes
+
+* let wt done remove a branch with no commits, and point wt sync at setup ([ede99fd](https://github.com/GreenMachine582/repo-kit/commit/ede99fdba78ff9a238856a4b35cc8f4209863ca1))
+* refuse rk github in a checkout without .repo-kit.toml ([4410069](https://github.com/GreenMachine582/repo-kit/commit/441006975aef53964b7d76fc57a10a33f39ab29c))
+
 ## [0.3.0](https://github.com/GreenMachine582/repo-kit/compare/v0.2.0...v0.3.0) (2026-11-17)
 
 
