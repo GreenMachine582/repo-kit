@@ -11,6 +11,7 @@ import pytest
 from repo_kit.checks import REQUIRED_CHECKS, TYPES
 from repo_kit.config import (
     ChecksConfig,
+    ExtraFile,
     ExtrasConfig,
     ProjectConfig,
     ReleaseConfig,
@@ -300,6 +301,41 @@ def test_the_release_please_config_is_json_for_this_project():
     assert data["packages"] == {".": {"package-name": "demo", "changelog-path": "CHANGELOG.md"}}
     assert data["include-v-in-tag"] is True
     assert data["bump-minor-pre-major"] is True
+
+
+def test_no_extra_files_leaves_the_package_as_it_was():
+    data = json.loads(render_caller("release-please-config.json"))
+    assert "extra-files" not in data["packages"]["."]
+
+
+def test_extra_files_feed_the_release_please_package():
+    config = RepoConfig(
+        version="1.2.3",
+        project=ProjectConfig(
+            name="demo",
+            extra_files=(
+                ExtraFile("src/demo/version.py"),
+                ExtraFile(".repo-kit.toml", "toml", "$.version"),
+            ),
+        ),
+    )
+    text = render_caller("release-please-config.json", config)
+    assert json.loads(text)["packages"]["."] == {
+        "package-name": "demo",
+        "changelog-path": "CHANGELOG.md",
+        "extra-files": [
+            {"type": "generic", "path": "src/demo/version.py"},
+            {"type": "toml", "path": ".repo-kit.toml", "jsonpath": "$.version"},
+        ],
+    }
+    # Indented like the rest of the file, so a managed file looks hand-written.
+    assert '      "extra-files": [\n        {\n          "type": "generic"' in text
+
+
+def test_paths_with_quotes_stay_valid_json():
+    config = RepoConfig(project=ProjectConfig(extra_files=(ExtraFile('a "b"' + chr(92) + "c.py"),)))
+    data = json.loads(render_caller("release-please-config.json", config))
+    assert data["packages"]["."]["extra-files"][0]["path"] == 'a "b"' + chr(92) + "c.py"
 
 
 def test_the_changelog_sections_match_the_commit_types_and_contributing():
