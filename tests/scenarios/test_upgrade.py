@@ -10,7 +10,7 @@ import pytest
 import repo_kit
 from repo_kit.bootstrap import upgrade
 from repo_kit.errors import RkError
-from repo_kit.files import LOCK_NAME, MANIFEST_NAME, run_sync
+from repo_kit.files import LOCK_NAME, MANIFEST_NAME, SyncError, run_sync
 
 MANIFEST = """
 [files."ci/caller.yml"]
@@ -168,10 +168,35 @@ def test_scenario_18_the_old_config_is_backed_up_outside_the_tree(repo, template
     assert Path(backup).read_text(encoding="utf-8") == TOML
 
 
-def test_scenario_18_a_template_removed_in_the_new_release_is_reported_and_left(repo, templates):
+def test_scenario_18_a_template_removed_in_the_new_release_is_deleted(repo, templates):
     remove_caller_template(templates)
-    said = run(repo, templates, "1.1.0")
+    changed: list[str] = []
+    said = run(repo, templates, "1.1.0", changed)
     assert "ci/caller.yml" in said
-    assert (repo / "ci/caller.yml").is_file()
+    assert not (repo / "ci/caller.yml").exists()
     lock = json.loads((repo / LOCK_NAME).read_text(encoding="utf-8"))
-    assert "ci/caller.yml" in lock["files"]
+    assert "ci/caller.yml" not in lock["files"]
+    assert any(c.startswith("removed ci/caller.yml") for c in changed)
+
+
+def test_scenario_18_an_edited_file_of_a_removed_template_stops_the_upgrade(repo, templates):
+    (repo / "ci/caller.yml").write_text("mine\n", encoding="utf-8")
+    remove_caller_template(templates)
+    with pytest.raises(SyncError, match=r"ci/caller\.yml"):
+        run(repo, templates, "1.1.0")
+    assert (repo / "ci/caller.yml").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_scenario_18_a_declared_rename_moves_the_file_in_one_upgrade(repo, templates):
+    (templates / "common" / MANIFEST_NAME).write_text(
+        '[files."ci/new.yml"]\nmode = "managed"\n\n[renames]\n"ci/caller.yml" = "ci/new.yml"\n',
+        encoding="utf-8",
+    )
+    changed: list[str] = []
+    run(repo, templates, "1.1.0", changed)
+    assert not (repo / "ci/caller.yml").exists()
+    assert (repo / "ci/new.yml").read_text(encoding="utf-8") == "new at v1.1.0\n"
+    assert any("renamed to ci/new.yml" in c for c in changed)
+    again: list[str] = []
+    assert "already at 1.1.0" in run(repo, templates, "1.1.0", again)
+    assert again == []
