@@ -4,6 +4,10 @@
 
 Tests only ever touch `tmp_path`: never a real repo, never GitHub.
 
+The suite runs in parallel across every core (pytest-xdist, `-n auto` in `pyproject.toml`), because scenario tests
+spend most of their time waiting on git, and starting git is slow on Windows. Each test process builds the bare
+origin once and copies it per test. Pass `-n0` to run in one process when debugging.
+
 ## Unit (`tests/unit/`)
 
 - Config parsing, including unknown keys
