@@ -124,6 +124,26 @@ def test_failed_check_pushes_nothing(clone, make_ctx):
     assert remote_sha(local, "feat/x") is None
 
 
+def test_a_failed_check_without_the_env_says_to_run_setup(clone, make_ctx):
+    """A worktree started with --no-setup has no .venv, so its check fails for that reason."""
+    local = clone("local")
+    python = sys.executable.replace("\\", "/")
+    commit(
+        local,
+        ".repo-kit.toml",
+        f"[worktree]\nsetup = ['uv venv']\ncheck = '{python} -c \"raise SystemExit(1)\"'\n",
+    )
+    git(local, "push", "-q", "origin", "HEAD:dev")
+    path = start(make_ctx(local), "feat/x", no_setup=True)
+    commit(path, "x.txt")
+
+    with pytest.raises(RkError, match="check .* failed") as exc:
+        sync(make_ctx(path))
+    assert ".venv is missing" in str(exc.value)
+    assert "`uv venv`" in str(exc.value)
+    assert remote_sha(local, "feat/x") is None
+
+
 def test_rejected_push_says_to_sync_again(session, clone, make_ctx, monkeypatch):
     local, path = session
     commit(path, "y.txt")

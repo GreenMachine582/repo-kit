@@ -51,7 +51,8 @@ Merge only. With no branch, it syncs the current worktree's branch.
    `wt start`, then the profile's default. The output says which it used.
 4. On a conflict, stop and list the files. The merge is left in progress for Claude to resolve and commit; then run
    `rk wt sync` again. Nothing is pushed.
-5. Run `[worktree].check`. If it fails, nothing is pushed.
+5. Run `[worktree].check`. If it fails, nothing is pushed. When an env dir is missing too (a worktree started with
+   `--no-setup`, or before `[worktree].setup` existed), the error names it and the setup steps to run.
 6. Push without force, if there's anything new. A rejected push (the branch moved again) says to run `wt sync` again.
 7. Clear the conflict label (`needs-merge`) from the open PR.
 
@@ -66,7 +67,7 @@ Refuses unless every condition holds. Each has its own override:
 | The worktree belongs to this repo, under `<worktree_root>/<owner>-<repo>/` (not the main checkout) | None |
 | It's run from outside that worktree | None |
 | No `[worktree].env_dirs` entry holds files Git tracks (rk deletes env dirs) | None: edit `env_dirs` |
-| The PR is merged or closed, and the branch's current head is in that PR (no PR found, or an older PR of a reused branch name, counts as unmerged) | `--allow-unmerged` |
+| The PR is merged or closed, and the branch's current head is in that PR (no PR found, or an older PR of a reused branch name, counts as unmerged). With no PR, a branch with no commits of its own passes: its head is already in origin's copy of its base (the one `wt start` recorded, else the profile's default) | `--allow-unmerged` |
 | Nothing is uncommitted or untracked (`[worktree].env_dirs` excepted) | `--discard-changes` |
 | Nothing is unpushed: every commit is on some remote branch, such as a merged PR's base | `--delete-unpushed` |
 | No ignored files would be deleted (`.env`, local databases): outside `env_dirs`, tool caches (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `*.egg-info`) and rk's links file | None: move or delete them first |

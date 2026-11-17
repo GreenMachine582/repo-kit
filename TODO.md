@@ -8,36 +8,23 @@ Future items (below) start only after Phase 4, unless pulled forward.
 
 ## Next: Phase 2, pilot on photo-ledger (`main` only → `dev-main`, pinned to 0.3.0)
 
-Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Done when every check below holds:
+Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Adoption, the branch model, worktrees, PR updates,
+`wt done`, the managed-files and title checks, and live checks 1, 5 and 6 passed on 2026-11-17 (pilot PRs
+photo-ledger#38–#46). What's left needs a release. Done when every check below holds:
 
-- **Setup**
-  - [ ] **(you)** `rk configure`, then `rk github apply` after reading the diff, then merge the adoption PR
-    (photo-ledger#36)
-  - [ ] **(you)** After the next repo-kit release: `rk upgrade` and `rk github apply` in photo-ledger, which brings
-    back signed commits (its old `main` ruleset required them; 0.3.0's rulesets don't)
-- **Branch model**
-  - [ ] **(lead)** `dev` exists and is the default branch; open PRs were retargeted to `dev`
-  - [ ] **(lead)** A `dev` → `main` release PR passes `pr-title`
-- **Worktrees**
-  - [ ] **(lead)** Two photo-ledger worktrees run side by side with separate environments
-  - [ ] **(you)** Claude starts directly in one
-- **PR updates**
-  - [ ] **(lead)** A merge to `dev` updates every eligible ready PR, and CI re-runs
-  - [ ] **(lead)** Drafts and `wip` PRs are skipped with reasons
-  - [ ] **(lead)** A deliberate conflict gets `needs-merge` and exactly one comment; `wt sync` clears it
-  - [ ] **(lead)** Re-runs create no duplicates; a concurrent local commit is never lost
-  - [ ] **(lead)** A chain of three stays current; a cancelled run re-runs safely
-- **Cleanup**
-  - [ ] **(lead)** `wt done` refuses every unsafe state
-- **Shared files**
-  - [ ] **(lead)** Hand-editing a managed file fails `pr-checks / managed-files`
-  - [ ] **(lead)** `rk upgrade` to a new repo-kit release produces one clean PR
-  - [ ] **(you)** `github diff` shows no drift
-- **Checks and release**
-  - [ ] **(lead)** A conventional PR title fails `pr-title`, and a release PR passes it
+- **Release** (photo-ledger's first on `dev-main`)
+  - [ ] **(you)** Merge the release PR with the admin bypass: `pr-checks / commits` fails on #36's squash commit
+    (`ed6c402`), which nothing can rewrite. Once it's on `main`, no later release checks it
+  - [ ] **(lead)** The `dev` → `main` release PR passes `pr-title`
   - [ ] **(you)** A release cut through `release.yml` behaves exactly as before
-- **Live checks** ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot))
-  - [ ] **(lead)** All six pass
+  - [ ] **(lead)** Live checks 2–4 ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot)): a bot merge adds
+    no changelog line, a merged chain gives no duplicates, and the release back-merges, signed. Use real PRs, not
+    pilot ones
+- **Upgrade** (after the next repo-kit release)
+  - [ ] **(lead)** `rk upgrade` produces one clean PR
+  - [ ] **(you)** `rk github apply`, which brings back signed commits on `dev` and `main`
+- **Worktrees**
+  - [ ] **(you)** Claude starts directly in one
 
 ## Phase 3: GTH repos (`dev-main`, migrating)
 
