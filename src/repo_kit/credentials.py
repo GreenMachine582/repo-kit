@@ -37,6 +37,7 @@ _INSTALL_HINT = (
     "install sops and age, then open a new terminal (docs/github-app.md#installing-sops-and-age)"
 )
 AGE_KEY_ENV = "SOPS_AGE_KEY_FILE"
+LABELS_KEY = "_recipients"  # recipient -> label, inside the encrypted data
 _AGE_RECIPIENT = re.compile(r"age1[0-9a-z]{58}")
 
 
@@ -129,6 +130,16 @@ class Sops(Protocol):
 
     def add_recipient(self, path: Path, recipient: str) -> None: ...
 
+    def remove_recipient(self, path: Path, recipient: str) -> None:
+        """Drop one age recipient and re-encrypt, so its key can't decrypt the file any more."""
+        ...
+
+    def unset_value(self, path: Path, keys: tuple[str, ...]) -> None: ...
+
+    def list_recipients(self, path: Path) -> list[str]:
+        """The age recipients the file is encrypted to. Needs no key: sops keeps them in clear."""
+        ...
+
 
 def parse_sops_version(text: str) -> tuple[int, int]:
     """`sops 3.10.2 (latest)` -> (3, 10)."""
@@ -203,6 +214,24 @@ class SopsCli:
         self._require_version()
         self._sops("rotate", "--input-type", "json", "-i", "--add-age", recipient, str(path))
 
+    def remove_recipient(self, path: Path, recipient: str) -> None:
+        self._require_version()
+        self._sops("rotate", "--input-type", "json", "-i", "--rm-age", recipient, str(path))
+
+    def unset_value(self, path: Path, keys: tuple[str, ...]) -> None:
+        self._require_version()
+        index = "".join(f"[{json.dumps(k)}]" for k in keys)
+        self._sops("unset", "--input-type", "json", str(path), index)
+
+    def list_recipients(self, path: Path) -> list[str]:
+        try:
+            meta = json.loads(path.read_text(encoding="utf-8")).get("sops", {})
+            entries = meta.get("age") or []
+        except (OSError, ValueError, AttributeError) as exc:
+            raise SopsError(f"can't read {path}'s sops metadata: {exc}") from None
+        found = [e.get("recipient") for e in entries if isinstance(e, dict)]
+        return [r for r in found if isinstance(r, str)]
+
 
 # --- age -----------------------------------------------------------------------------------
 
@@ -261,36 +290,80 @@ def run_age_keygen(path: Path) -> None:
 # --- credentials ---------------------------------------------------------------------------
 
 
-def _pem_der(text: str) -> bytes:
-    """The DER bytes of a PEM: the base64 lines between its BEGIN and END lines."""
+_PEM_LINE = re.compile(r"-----(BEGIN|END) ([A-Z0-9 ]+)-----")
+_PEM_PRIVATE_LABELS = ("RSA PRIVATE KEY", "PRIVATE KEY")  # PKCS#1 and PKCS#8
+_RSA_OID = bytes.fromhex("2a864886f70d010101")  # rsaEncryption, inside a PKCS#8 key
+
+
+def _pem_parts(text: str) -> tuple[str, bytes]:
+    """The label and DER bytes of the one PEM block in `text`. Raises ValueError with a message
+    that never includes key material."""
+    text = text.lstrip(chr(0xFEFF))
+    labels = [m[2] for m in _PEM_LINE.finditer(text) if m[1] == "BEGIN"]
+    if not labels:
+        raise ValueError("isn't a PEM private key (no -----BEGIN ...----- line)")
+    if len(labels) > 1:
+        raise ValueError("holds more than one PEM block: it should hold only the private key")
+    label = labels[0]
+    if label.endswith("PUBLIC KEY") or label == "CERTIFICATE":
+        raise ValueError(
+            f"is a {label.lower()}, not the private key: generate a private key on the App's "
+            "settings page and use the .pem it downloads"
+        )
+    if label == "ENCRYPTED PRIVATE KEY":
+        raise ValueError("is a passphrase-protected key: GitHub's downloaded .pem isn't")
+    if label not in _PEM_PRIVATE_LABELS:
+        raise ValueError(f"is a {label.lower()}: a GitHub App needs an RSA private key")
     body: list[str] = []
-    inside = False
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("-----BEGIN"):
-            inside, body = True, []
-        elif line.startswith("-----END"):
-            if inside:
-                return base64.b64decode("".join(body), validate=True)
+    inside = ended = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        found = _PEM_LINE.fullmatch(line)
+        if found and found[1] == "BEGIN":
+            inside = True
+        elif found and found[1] == "END":
+            if found[2] != label:
+                raise ValueError("has an END line that doesn't match its BEGIN line")
+            ended = True
             break
         elif inside and line:
             body.append(line)
-    raise ValueError("no BEGIN and END lines")
+    if not ended:
+        raise ValueError("isn't a complete PEM key (no matching -----END ...----- line)")
+    if not body:
+        raise ValueError("has an empty PEM body")
+    try:
+        der = base64.b64decode("".join(body), validate=True)
+    except ValueError:  # binascii.Error is one
+        raise ValueError("isn't a PEM private key (its body isn't valid base64)") from None
+    if not der or der[0] != 0x30:  # every PKCS#1 and PKCS#8 key is an ASN.1 SEQUENCE
+        raise ValueError("isn't a PEM private key (its body isn't a DER key)")
+    if label == "PRIVATE KEY" and _RSA_OID not in der[:64]:
+        raise ValueError("is a PKCS#8 key but not an RSA one: a GitHub App needs an RSA key")
+    return label, der
 
 
 def key_fingerprint(pem: str) -> str:
     """SHA-256 (hex) of a PEM key's DER bytes. Safe to store and show: it can't rebuild the key."""
-    return hashlib.sha256(_pem_der(pem)).hexdigest()
+    return hashlib.sha256(_pem_parts(pem)[1]).hexdigest()
 
 
 def pem_problem(text: str) -> str | None:
-    if "-----BEGIN" not in text or "PRIVATE KEY-----" not in text:
-        return "isn't a PEM private key (the App's downloaded .pem)"
+    """Why `text` isn't a usable App private key, or None. Never quotes the key."""
     try:
-        _pem_der(text)
-    except ValueError:  # binascii.Error is one
-        return "isn't a PEM private key (its body isn't valid base64)"
+        _pem_parts(text)
+    except ValueError as exc:
+        return str(exc)
     return None
+
+
+def normalise_pem(text: str) -> str:
+    """The key with LF line endings, no BOM or stray blank lines, 64-character body lines and
+    one trailing newline. Raises ValueError if it isn't a usable key."""
+    label, der = _pem_parts(text)
+    body = base64.b64encode(der).decode("ascii")
+    lines = [body[i : i + 64] for i in range(0, len(body), 64)]
+    return "\n".join([f"-----BEGIN {label}-----", *lines, f"-----END {label}-----"]) + "\n"
 
 
 def conflict_copies(path: Path) -> list[Path]:
@@ -489,12 +562,18 @@ def set_app(
     client_id = client_id.strip()
     if not client_id or any(c.isspace() for c in client_id):
         raise RkError(f"{client_id!r} isn't a Client ID (GitHub shows it as `Iv23…`)")
+    if pem.is_dir():
+        raise RkError(f"{pem} is a folder: give the path of the .pem file")
     if not pem.is_file():
         raise RkError(f"{pem} doesn't exist")
-    key = pem.read_text(encoding="utf-8")
-    problem = pem_problem(key)
-    if problem:
-        raise RkError(f"{pem} {problem}")
+    try:
+        raw = pem.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        raise RkError(f"{pem} isn't a PEM private key (it isn't a text file)") from None
+    try:
+        key = normalise_pem(raw)
+    except ValueError as exc:
+        raise RkError(f"{pem} {exc}") from None
 
     sops.set_value(path, (app.key, "client_id"), client_id)
     sops.set_value(path, (app.key, "private_key"), key)
@@ -514,14 +593,108 @@ def add_recipient(
     sops: Sops,
     recipient: str,
     *,
+    label: str | None = None,
     changed: list[str],
 ) -> None:
     """Let another machine's age key decrypt the credentials file."""
     if not _AGE_RECIPIENT.fullmatch(recipient):
         raise RkError(f"{recipient!r} isn't an age public key (age1 followed by 58 characters)")
     path = secrets_path(user_config, source)
+    label = label.strip() if label else None
+    if label and label.startswith("age1"):
+        raise RkError("a label can't start with `age1`: it would look like a recipient")
     sops.add_recipient(path, recipient)
     changed.append(f"added recipient {recipient} to {path}")
+    if label:
+        # Labels live inside the encrypted data: the recipients list in sops' metadata has no
+        # room for them, and a sidecar file could drift from the file it describes.
+        sops.set_value(path, (LABELS_KEY, recipient), label)
+        changed.append(f"labelled {recipient} as {label!r}")
+
+
+def _labels(sops: Sops, path: Path) -> dict[str, str] | None:
+    """Recipient -> label, or None if this machine can't decrypt the file."""
+    try:
+        table = sops.decrypt(path).get(LABELS_KEY)
+    except SopsError:
+        return None
+    if not isinstance(table, dict):
+        return {}
+    return {k: v for k, v in table.items() if isinstance(v, str)}
+
+
+def _own_recipient() -> str | None:
+    try:
+        return public_key(age_key_path())
+    except (OSError, RkError):
+        return None
+
+
+def recipients(
+    user_config: UserConfig,
+    source: Path,
+    sops: Sops,
+    *,
+    own: str | None = None,
+    say: Callable[[str], None] = print,
+) -> None:
+    """List the age recipients the credentials file is encrypted to, with their labels."""
+    path = secrets_path(user_config, source)
+    found = sops.list_recipients(path)
+    labels = _labels(sops, path)
+    say(str(path))
+    if not found:
+        say("  no recipients")
+    for recipient in found:
+        notes = []
+        if labels is not None and labels.get(recipient):
+            notes.append(labels[recipient])
+        if recipient == own:
+            notes.append("this machine")
+        say(f"  {recipient}" + (f"  ({', '.join(notes)})" if notes else ""))
+    if labels is None:
+        say("  This machine can't decrypt the file, so labels aren't shown.")
+
+
+def remove_recipient(
+    user_config: UserConfig,
+    source: Path,
+    sops: Sops,
+    target: str,
+    *,
+    own: str | None = None,
+    include_self: bool = False,
+    changed: list[str],
+) -> None:
+    """Stop an age key decrypting the credentials file, by recipient or label, and re-encrypt.
+    Refuses to drop the last recipient, or this machine's own unless `include_self`."""
+    path = secrets_path(user_config, source)
+    found = sops.list_recipients(path)
+    labels = _labels(sops, path) or {}
+    if target in found:
+        recipient = target
+    else:
+        matches = [r for r in found if labels.get(r) == target]
+        if not matches:
+            raise RkError(
+                f"{target!r} isn't a recipient or label of {path}: see `rk secrets recipients`"
+            )
+        if len(matches) > 1:
+            raise RkError(
+                f"label {target!r} matches {len(matches)} recipients: use the age1... key"
+            )
+        recipient = matches[0]
+    if len(found) == 1:
+        raise RkError("that's the only recipient: removing it would lock everyone out")
+    if recipient == own and not include_self:
+        raise RkError(
+            f"{recipient} is this machine's own key: removing it stops this machine decrypting "
+            "the file. Pass --include-self if you mean that."
+        )
+    if recipient in labels:  # while this machine can still decrypt
+        sops.unset_value(path, (LABELS_KEY, recipient))
+    sops.remove_recipient(path, recipient)
+    changed.append(f"removed recipient {recipient} from {path}")
 
 
 def show(
@@ -562,8 +735,18 @@ def run_set_app(app_arg: str, *, client_id: str, pem: Path, changed: list[str]) 
     set_app(*_loaded(), app_arg, client_id=client_id, pem=pem.expanduser(), changed=changed)
 
 
-def run_add_recipient(recipient: str, *, changed: list[str]) -> None:
-    add_recipient(*_loaded(), recipient, changed=changed)
+def run_add_recipient(recipient: str, *, label: str | None = None, changed: list[str]) -> None:
+    add_recipient(*_loaded(), recipient, label=label, changed=changed)
+
+
+def run_recipients() -> None:
+    recipients(*_loaded(), own=_own_recipient())
+
+
+def run_remove_recipient(target: str, *, include_self: bool, changed: list[str]) -> None:
+    remove_recipient(
+        *_loaded(), target, own=_own_recipient(), include_self=include_self, changed=changed
+    )
 
 
 def run_show() -> int:
