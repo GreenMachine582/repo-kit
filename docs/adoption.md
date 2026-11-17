@@ -11,6 +11,7 @@
 | `rk bootstrap` | `install` + `configure` + `doctor`. It decrypts the Apps' credentials first, so a machine that can't enrol the repo stops before anything is written. The `doctor` report ends the run |
 | `rk secrets init / set-app / add-recipient / rotate / recipients / remove-recipient / show` | Set up and maintain the sops + age encrypted credentials file `configure` reads ([github-app.md](github-app.md#credentials-sops--age)) |
 | `rk upgrade [vX.Y.Z]` | Move `version` to this rk's release and re-render with the `sync` planner. Templates new in the release are added. Migration notes and `github diff` arrive in Phase 1D. The steps are [below](#upgrade-step-by-step) |
+| `rk fleet doctor / sync --check / configure / upgrade` | The same across every repo in `[fleet.repos]`, one row each ([fleet.md](fleet.md)) |
 | `rk doctor` | Read-only health check. The checks are [below](#doctor) |
 
 Every write checks tool versions and the remote, backs up what it replaces, and finishes with a list of exactly what

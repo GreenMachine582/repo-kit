@@ -17,7 +17,7 @@ import shutil
 import sys
 import tomllib
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -511,6 +511,15 @@ def set_pin_text(text: str, version: str) -> str:
     return new_text
 
 
+@dataclass(frozen=True)
+class UpgradeResult:
+    """What an upgrade moved (or, with `dry_run`, would move)."""
+
+    current: str  # the pin before
+    target: str  # the pin after
+    files: tuple[str, ...]  # the shared files it creates or updates
+
+
 def upgrade(
     repo_root: Path,
     owner: str,
@@ -520,10 +529,12 @@ def upgrade(
     changed: list[str],
     say: Callable[[str], None] = print,
     templates: Path | None = None,
-) -> None:
+    dry_run: bool = False,
+) -> UpgradeResult:
     """Move the pin to `target` (the running rk's release) and re-render the shared files.
 
-    Everything that can refuse is checked, and the sync planned, before the first write.
+    Everything that can refuse is checked, and the sync planned, before the first write. With
+    `dry_run` it stops there: nothing is written, and a refusal still raises.
     """
     engine = repo_kit.__version__
     if target is None:
@@ -571,6 +582,13 @@ def upgrade(
     plan = files.plan_sync(repo_root, replace(config, version=version), owner, repo, templates)
     say(files.summary(plan))
     files.raise_if_refused(plan)
+    result = UpgradeResult(
+        config.version,
+        version,
+        tuple(f.path for f in plan.files if f.action in (files.Action.CREATE, files.Action.UPDATE)),
+    )
+    if dry_run:
+        return result
 
     # The pin is written last: if applying the plan fails, the old pin stays and a re-run finishes.
     backup_root = files.new_backup_root(repo_root)
@@ -588,6 +606,7 @@ def upgrade(
         "release may change the rulesets or repo settings. Renamed or removed templates are left "
         "in place: move them by hand."
     )
+    return result
 
 
 def run_upgrade(cwd: Path, version: str | None, *, changed: list[str]) -> None:
