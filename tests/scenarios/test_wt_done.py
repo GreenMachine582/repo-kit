@@ -116,6 +116,38 @@ def test_scenario_11_refuses_each_unsafe_state(finished, make_ctx, github, make,
     assert not path.exists()
 
 
+@pytest.fixture
+def other_dev(clone):
+    def advance() -> None:
+        other = clone("other")
+        git(other, "switch", "-q", "dev")
+        commit(other, "dev.txt", message="feat: add dev")
+        git(other, "push", "-q", "origin", "HEAD:dev")
+
+    return advance
+
+
+def test_a_branch_with_no_commits_of_its_own_needs_no_pr(clone, make_ctx, other_dev):
+    """Started and never committed to: nothing to lose, even after its base moves on."""
+    local = clone("local")
+    path = start(make_ctx(local), "feat/idle", no_setup=True)
+    other_dev()
+    ctx = make_ctx(local)
+    done(ctx, "feat/idle")
+    assert not path.exists()
+    assert ctx.changed[-1] == "deleted local branch feat/idle"
+
+
+def test_a_pushed_branch_without_a_pr_is_still_refused(clone, make_ctx):
+    """Its commits are on origin, but not on its base: it may be work in progress."""
+    local = clone("local")
+    path = start(make_ctx(local), "feat/x", no_setup=True)
+    commit(path, "x.txt", message="feat: add x")
+    sync(make_ctx(path))
+    with pytest.raises(RkError, match="no PR was found"):
+        done(make_ctx(local), "feat/x")
+
+
 def test_all_problems_are_reported_together(finished, make_ctx, github):
     local, path = finished
     github.prs.clear()
