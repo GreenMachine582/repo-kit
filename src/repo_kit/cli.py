@@ -76,18 +76,17 @@ def _update_prs(args: argparse.Namespace) -> int:
 
 
 def _sync(args: argparse.Namespace) -> int:
-    if args.adopt:
-        print(
-            "rk sync --adopt: a Future item (see TODO.md). Plain `rk sync` takes over a file only "
-            "if it already matches, and refuses with the diff otherwise.",
-            file=sys.stderr,
-        )
-        return NOT_IMPLEMENTED
-    from repo_kit import files
+    from repo_kit import bootstrap, files
 
     changed: list[str] = []
     try:
-        return files.run_sync(Path.cwd(), check=args.check, changed=changed)
+        return files.run_sync(
+            Path.cwd(),
+            check=args.check,
+            changed=changed,
+            adopt=args.adopt,
+            confirm=bootstrap.ask,
+        )
     finally:
         if not args.check:
             _print_changes(changed)

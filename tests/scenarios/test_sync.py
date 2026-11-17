@@ -645,3 +645,118 @@ def test_a_rename_that_no_lock_mentions_does_nothing(repo, templates):
 
     assert (repo / "ci/call.yml").exists()
     assert not any("renamed" in c for c in changed)
+
+
+# --- rk sync --adopt -------------------------------------------------------------------------
+
+
+def adopt(work, templates, answers):
+    """`rk sync --adopt` with canned answers: a list of True/False in the order asked."""
+    asked: list[str] = []
+    queue = list(answers)
+
+    def confirm(question):
+        asked.append(question)
+        return queue.pop(0) if queue else False
+
+    changed: list[str] = []
+    said: list[str] = []
+    code = run_sync(
+        work,
+        check=False,
+        changed=changed,
+        say=said.append,
+        root=templates,
+        adopt=True,
+        confirm=confirm,
+    )
+    return code, changed, "\n".join(said), asked
+
+
+def _existing_differing(repo):
+    (repo / "ci").mkdir()
+    (repo / "ci/caller.yml").write_text("mine\n", encoding="utf-8")
+    (repo / "CONTRIBUTING.md").write_text("# Mine\n", encoding="utf-8")
+
+
+def test_adopt_replaces_a_differing_file_after_a_yes(repo, templates):
+    _existing_differing(repo)
+
+    code, changed, said, asked = adopt(repo, templates, [True])
+
+    assert code == 0
+    assert asked == ["Take over ci/caller.yml and replace it with repo-kit's render?"]
+    assert "-mine" in said and "+uses: repo-kit@v1.0.0" in said
+    assert read(repo, "ci/caller.yml") == "uses: repo-kit@v1.0.0\nwith: ${{ github.sha }}\n"
+    assert "ci/caller.yml" in _lock_files(repo)
+    assert f"{Action.ADOPT} ci/caller.yml" in changed
+    assert any(c.startswith("backed up") for c in changed)
+    # Everything the sync would write anyway is still written, and a re-run is a no-op.
+    assert "repo-kit: branches" in read(repo, "CONTRIBUTING.md")
+    code, changed, _said, asked = adopt(repo, templates, [])
+    assert changed == [] and asked == []
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_adopt_declined_leaves_the_file_and_lists_it(repo, templates):
+    _existing_differing(repo)
+
+    code, changed, said, asked = adopt(repo, templates, [False])
+
+    assert code == 0
+    assert read(repo, "ci/caller.yml") == "mine\n"
+    assert "ci/caller.yml" not in _lock_files(repo)
+    assert "declined ci/caller.yml (left as it is)" in changed
+    assert "declined; left as it is" in said
+    # Still out of sync, so --check says so.
+    assert sync(repo, templates, check=True)[0] == 1
+
+
+def test_adopt_with_no_terminal_answers_no(repo, templates):
+    _existing_differing(repo)
+    changed: list[str] = []
+    code = run_sync(
+        repo, check=False, changed=changed, say=lambda _: None, root=templates, adopt=True
+    )
+    assert code == 0
+    assert read(repo, "ci/caller.yml") == "mine\n"
+    assert "declined ci/caller.yml (left as it is)" in changed
+
+
+def test_adopt_offers_a_hand_edited_block(repo, templates):
+    sync(repo, templates)
+    text = read(repo, "CONTRIBUTING.md").replace("Branch off", "Please branch off")
+    (repo / "CONTRIBUTING.md").write_text(text, encoding="utf-8")
+
+    code, changed, said, asked = adopt(repo, templates, [True])
+
+    assert asked == ["Take over CONTRIBUTING.md and replace it with repo-kit's render?"]
+    assert "Please branch off" not in read(repo, "CONTRIBUTING.md")
+    assert f"{Action.ADOPT} CONTRIBUTING.md" in changed
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_adopt_never_offers_seeded_files_or_overrides(repo, templates):
+    (repo / "CHANGELOG.md").write_text("# mine\n", encoding="utf-8")
+    (repo / "ci").mkdir()
+    (repo / "ci/caller.yml").write_text("mine\n", encoding="utf-8")
+    set_version(repo, "1.0.0", '\n[overrides.files]\n"ci/caller.yml" = "unmanaged"\n')
+
+    code, changed, said, asked = adopt(repo, templates, [True, True])
+
+    assert asked == []
+    assert read(repo, "CHANGELOG.md") == "# mine\n"
+    assert read(repo, "ci/caller.yml") == "mine\n"
+
+
+def test_adopt_leaves_an_unadoptable_refusal_refused(repo, templates):
+    (repo / "ci/caller.yml").mkdir(parents=True)
+
+    with pytest.raises(SyncError, match="caller.yml"):
+        adopt(repo, templates, [True])
+
+
+def test_plain_sync_still_refuses_and_asks_nothing(repo, templates):
+    _existing_differing(repo)
+    with pytest.raises(SyncError, match="caller.yml"):
+        sync(repo, templates)
