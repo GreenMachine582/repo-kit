@@ -217,7 +217,7 @@ def _doctor(args: argparse.Namespace) -> int:
 
 def _fleet(action: str) -> Handler:
     def handler(args: argparse.Namespace) -> int:
-        from repo_kit import fleet
+        from repo_kit import fleet, git
         from repo_kit.config import load_user_config
 
         user = load_user_config()
@@ -231,7 +231,9 @@ def _fleet(action: str) -> Handler:
             return fleet.run_configure(
                 user, args.repo, dry_run=args.dry_run, replace_key=args.replace_key
             )
-        return fleet.run_upgrade(user, args.repo, apply=args.apply)
+        return fleet.run_upgrade(
+            user, args.repo, apply=args.apply, resolve_sha=git.resolve_release_sha
+        )
 
     return handler
 

@@ -31,6 +31,13 @@ MANIFEST_NAME = "_manifest.toml"
 MODES = ("managed", "block", "seeded")
 _MANIFEST_KEYS = {"mode", "blocks", "source"}
 _MANIFEST_TABLES = {"files", "renames"}
+# The generated callers that name repo-kit by tag or commit.
+CALLERS = (
+    ".github/workflows/pr-checks.yml",
+    ".github/workflows/update-prs.yml",
+    ".github/workflows/release.yml",
+)
+
 # The version of an engine that isn't a release: a source tree, or CI running rk from a checkout.
 UNRELEASED = "0.0.0"
 
@@ -101,8 +108,31 @@ def extra_files_json(config: RepoConfig) -> str:
     return f',\n      "extra-files": {body}'
 
 
-def template_variables(config: RepoConfig, owner: str, repo: str) -> dict[str, str]:
+class _Keep:
+    """`plan_sync`'s default: keep the commit the lock already records."""
+
+
+KEEP = _Keep()
+
+
+def lock_ref_sha(lock: dict[str, Any], version: str) -> str:
+    """The commit the lock records for release `version`, or "" if it records none, or one for
+    another release (the release PR moves the lock's `version`, but only `rk upgrade` can say
+    which commit that is)."""
+    sha = lock.get("ref_sha")
+    if lock.get("ref_sha_version") == version and isinstance(sha, str) and git.is_sha(sha):
+        return sha
+    return ""
+
+
+def template_variables(
+    config: RepoConfig, owner: str, repo: str, ref_sha: str = ""
+) -> dict[str, str]:
     return {
+        # How the callers name repo-kit: the commit with the tag as a comment when it's known,
+        # else the tag alone.
+        "ref": ref_sha or f"v{config.version}",
+        "ref_note": f" # v{config.version}" if ref_sha else "",
         "commit_header_max": str(config.checks.commit_header_max),
         "pr_title_rule": PR_TITLE_TEXT[config.checks.pr_title],
         "version": config.version,
@@ -655,14 +685,22 @@ def project_version(repo_root: Path) -> str:
 
 
 def plan_sync(
-    repo_root: Path, config: RepoConfig, owner: str, repo: str, root: Path | None = None
+    repo_root: Path,
+    config: RepoConfig,
+    owner: str,
+    repo: str,
+    root: Path | None = None,
+    ref_sha: str | _Keep = KEEP,
 ) -> SyncPlan:
+    """What a sync would do. `ref_sha` is the commit of release `config.version` to record in the
+    lock ("" records none). Left alone, the lock's own is used, so a sync stays offline."""
     root = root or templates_root()
     templates = collect_templates(root, config)
-    variables = template_variables(config, owner, repo)
+    old_lock = read_lock(repo_root)
+    sha = lock_ref_sha(old_lock, config.version) if isinstance(ref_sha, _Keep) else ref_sha
+    variables = template_variables(config, owner, repo, sha)
     # Read from the repo, so not in template_variables: only the seeded release manifest uses it.
     variables["current_version"] = project_version(repo_root)
-    old_lock = read_lock(repo_root)
     old_files: dict[str, Any] = old_lock["files"]
     unmanaged = set(config.overrides.files)
     plan = SyncPlan()
@@ -699,6 +737,12 @@ def plan_sync(
             new_files[path] = entry
 
     plan.lock = {"files": new_files, "version": config.version}
+    if isinstance(ref_sha, _Keep):  # carried as written, even if it names another release
+        for key in ("ref_sha", "ref_sha_version"):
+            if key in old_lock:
+                plan.lock[key] = old_lock[key]
+    elif ref_sha:
+        plan.lock |= {"ref_sha": ref_sha, "ref_sha_version": config.version}
     plan.lock_changed = lock_text(plan.lock) != lock_text(old_lock)
     return plan
 
