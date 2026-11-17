@@ -360,6 +360,7 @@ class FilePlan:
     detail: str = ""
     write: str | None = None  # the whole new file, when it must be written
     diff: str = ""
+    was: str = ""  # the mode the lock recorded, when the template has changed it
 
 
 @dataclass
@@ -489,6 +490,13 @@ def _plan_blocks(
     return plan, new_entry
 
 
+def _mode_change(entry: dict[str, Any] | None, mode: str) -> str:
+    """The mode the lock recorded if it differs from the template's now, else "". An entry with no
+    mode (an old lock) is taken to match."""
+    old = entry.get("mode") if entry else None
+    return old if isinstance(old, str) and old != mode else ""
+
+
 def _plan_one(
     repo_root: Path,
     root: Path,
@@ -507,6 +515,7 @@ def _plan_one(
 
     if mode == "seeded" and problem in ("", _NOT_TEXT):
         new_entry: dict[str, Any] = {"layer": template.layer, "mode": mode}
+        was = _mode_change(entry, mode)
         recorded = entry.get("sha256") if entry else None
         if current is None and not problem:
             if entry is not None:
@@ -516,21 +525,25 @@ def _plan_one(
             return FilePlan(path, mode, Action.CREATE, write=wanted), new_entry
         # It exists, so it's the consumer's: never compared, never written.
         new_entry["sha256"] = recorded or (digest(current) if current is not None else "")
-        return FilePlan(path, mode, Action.UNCHANGED), new_entry
+        return FilePlan(path, mode, Action.UNCHANGED, was=was), new_entry
 
     if problem:
         return FilePlan(path, mode, Action.REFUSE, problem), {}
 
     if mode == "block":
-        return _plan_blocks(template, bodies, current, entry)
+        plan, block_entry = _plan_blocks(template, bodies, current, entry)
+        plan.was = _mode_change(entry, mode)
+        return plan, block_entry
 
     new_entry = {"layer": template.layer, "mode": mode, "sha256": digest(wanted)}
     if current is None:
         return FilePlan(path, mode, Action.CREATE, write=wanted), new_entry
-    recorded = entry.get("sha256") if entry else None
+    was = _mode_change(entry, mode)
+    # A hash recorded under another mode (a seeded file's, say) says nothing about edits here.
+    recorded = entry.get("sha256") if entry and not was else None
     action, detail, diff = _plan_compare(path, "file", current, wanted, recorded)
     write = wanted if action is Action.UPDATE else None
-    return FilePlan(path, mode, action, detail, write, diff), new_entry
+    return FilePlan(path, mode, action, detail, write, diff, was), new_entry
 
 
 _PROJECT_VERSION = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$")
@@ -623,6 +636,8 @@ def apply_plan(
     backup_root = backup_root or new_backup_root(repo_root)
     backed_up = False
     for file_plan in plan.files:
+        if file_plan.was and file_plan.write is None:
+            changed.append(f"recorded {file_plan.path} as {file_plan.mode} (was {file_plan.was})")
         if file_plan.write is None:
             continue
         target = repo_root / file_plan.path
@@ -650,7 +665,10 @@ def summary(plan: SyncPlan, *, update_diffs: bool = False) -> str:
     """One line per file, then the diff of each refusal (and of each update, for `--check`)."""
     lines = []
     for f in plan.files:
-        detail = f" ({f.detail})" if f.detail else ""
+        notes = [f.detail] if f.detail else []
+        if f.was:
+            notes.append(f"mode changed from {f.was}")
+        detail = f" ({'; '.join(notes)})" if notes else ""
         lines.append(f"{f.action:>14}  {f.path}{detail}")
     shown = {Action.REFUSE, Action.UPDATE} if update_diffs else {Action.REFUSE}
     for f in plan.files:

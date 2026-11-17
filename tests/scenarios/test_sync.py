@@ -431,3 +431,53 @@ def test_lf_files_stay_lf_and_new_files_are_lf(repo, templates):
     sync(repo, templates)
     assert b"\r" not in (repo / "CONTRIBUTING.md").read_bytes()
     assert b"\r" not in (repo / "ci/caller.yml").read_bytes()
+
+
+def _set_mode(templates, path, was, mode):
+    manifest = templates / "common" / MANIFEST_NAME
+    text = manifest.read_text(encoding="utf-8")
+    old = f'[files."{path}"]\nmode = "{was}"'
+    assert old in text
+    manifest.write_text(text.replace(old, old.replace(was, mode)), encoding="utf-8")
+
+
+def test_a_template_turning_seeded_is_recorded_and_the_file_left(repo, templates):
+    sync(repo, templates)
+    (repo / "ci/caller.yml").write_text("mine\n", encoding="utf-8")
+    _set_mode(templates, "ci/caller.yml", "managed", "seeded")
+
+    assert sync(repo, templates, check=True)[0] == 1
+    code, changed, said = sync(repo, templates)
+
+    assert "mode changed from managed" in said
+    assert "recorded ci/caller.yml as seeded (was managed)" in changed
+    assert read(repo, "ci/caller.yml") == "mine\n"
+    assert json.loads(read(repo, LOCK_NAME))["files"]["ci/caller.yml"]["mode"] == "seeded"
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_a_template_turning_managed_does_not_trust_the_seeded_hash(repo, templates):
+    # CHANGELOG.md was seeded from the stub; left untouched, its recorded hash matches it.
+    sync(repo, templates)
+    (templates / "common" / "changelog.md").write_text("# New stub\n", encoding="utf-8")
+    _set_mode(templates, "CHANGELOG.md", "seeded", "managed")
+
+    with pytest.raises(SyncError, match="CHANGELOG.md"):
+        sync(repo, templates)
+    code, _changed, said = sync(repo, templates, check=True)
+
+    # Not trusted as managed: it differs from the render and isn't recorded as managed.
+    assert code == 1
+    assert "isn't in the lock" in said
+
+
+def test_an_old_lock_entry_without_a_mode_still_loads(repo, templates):
+    sync(repo, templates)
+    lock = json.loads(read(repo, LOCK_NAME))
+    del lock["files"]["ci/caller.yml"]["mode"]
+    (repo / LOCK_NAME).write_text(json.dumps(lock), encoding="utf-8")
+
+    code, changed, said = sync(repo, templates)
+
+    assert code == 0
+    assert "mode changed" not in said
