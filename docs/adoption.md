@@ -9,7 +9,7 @@
 | `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The steps are [below](#install-step-by-step) |
 | `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot` and `gth-release-bot`: create the update-prs labels, create each App's branch-locked environment, and set its Client ID variable, private key (in that environment) and key fingerprint variable from the encrypted credentials file ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
 | `rk bootstrap` | `install` + `configure` + `doctor`. It decrypts the Apps' credentials first, so a machine that can't enrol the repo stops before anything is written. The `doctor` report ends the run |
-| `rk secrets init / set-app / add-recipient / show` | Set up and maintain the sops + age encrypted credentials file `configure` reads ([github-app.md](github-app.md#credentials-sops--age)) |
+| `rk secrets init / set-app / add-recipient / recipients / remove-recipient / show` | Set up and maintain the sops + age encrypted credentials file `configure` reads ([github-app.md](github-app.md#credentials-sops--age)) |
 | `rk upgrade [vX.Y.Z]` | Move `version` to this rk's release and re-render with the `sync` planner. Templates new in the release are added. Migration notes and `github diff` arrive in Phase 1D. The steps are [below](#upgrade-step-by-step) |
 | `rk fleet doctor / sync --check / configure / upgrade` | The same across every repo in `[fleet.repos]`, one row each ([fleet.md](fleet.md)) |
 | `rk doctor` | Read-only health check. The checks are [below](#doctor) |
@@ -90,11 +90,16 @@ command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` a
 that read many repos. The exit code is the same.
 
 ```json
-{"ok": true, "checks": [{"name": "plugin: repo-kit is in .claude/settings.json", "status": "OK", "detail": ""}]}
+{"schema_version": 1, "ok": true, "checks": [{"id": "plugin", "name": "plugin: repo-kit is in .claude/settings.json", "status": "OK", "detail": ""}]}
 ```
 
-`ok` is false only when a check is `FAIL`. `status` is `OK`, `WARN`, `FAIL` or `SKIP`; `name` is the line's text and
-`detail` the lines under it joined with newlines (empty if none). Checks keep the report's order.
+`schema_version` is 1 and goes up only on a breaking change. `ok` is false only when a check is `FAIL`. `id` is a
+stable kebab-case slug (`tools`, `repo-config`, `files`, `app-gth-pr-bot`, `override-<path>`, ...), unique within a
+document: key on it, since `name` is the line's text and carries versions and counts. `status` is `OK`, `WARN`,
+`FAIL` or `SKIP`; `detail` is the lines under the name joined with newlines (empty if none). Checks keep the report's order.
+
+If doctor can't start (not a git repo, no `origin`), the document is `{"schema_version": 1, "ok": false, "error":
+"<message>", "checks": []}`, still on stdout with exit code 1.
 
 | Check | `[FAIL]` or `[WARN]` when |
 |---|---|
@@ -179,5 +184,6 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
 ### Other repos
 
 PyFinBot and the rest (Phase 4): one `rk bootstrap` each. PyFinBot's `release-please-config.json` has an `extra-files`
-entry (`src/pyfinbot/version.py`) that the managed config lacks, so `rk sync` refuses it until that is settled (see
-the Future item in TODO.md).
+entry (`src/pyfinbot/version.py`) that the managed config lacks: before `rk bootstrap`, list it as
+`[project].extra_files = [{ path = "src/pyfinbot/version.py" }]` in its `.repo-kit.toml`, so the rendered file keeps it
+([configuration.md](configuration.md#projectextra_files)).
