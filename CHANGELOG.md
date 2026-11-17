@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/GreenMachine582/repo-kit/compare/v0.2.0...v0.3.0) (2026-11-17)
+
+
+### Features
+
+* add [project].extra_files for release-please extra-files ([8835c66](https://github.com/GreenMachine582/repo-kit/commit/8835c66a30794af20a170c6f447066307fb3db0b))
+* add rk fleet for doctor, sync --check, configure and upgrade ([f18b82e](https://github.com/GreenMachine582/repo-kit/commit/f18b82e6ec0f83d0040b288c5970ec42135a7af3))
+* add rk secrets rotate ([a737cb2](https://github.com/GreenMachine582/repo-kit/commit/a737cb26bcda1d25bc238cb6059302aecd8e3ecc))
+* apply removed and renamed templates in rk sync and upgrade ([64dd778](https://github.com/GreenMachine582/repo-kit/commit/64dd778c03b1ec01bfc18bb8ed8857c905bc5d25))
+* **doctor:** add --json output ([2bd315b](https://github.com/GreenMachine582/repo-kit/commit/2bd315b32744c745922ee7dda804b38a178e612f))
+* **doctor:** add schema_version, stable check ids and error JSON ([17ffda3](https://github.com/GreenMachine582/repo-kit/commit/17ffda31fed06685d975b567a499e7ea4fd3582c))
+* **doctor:** warn when a stored App key is old ([6177349](https://github.com/GreenMachine582/repo-kit/commit/6177349765947bb2164e0af93c26abdf821a9cc8))
+* list and remove secrets recipients, and validate the App's .pem ([942c6d3](https://github.com/GreenMachine582/repo-kit/commit/942c6d36edaafa3b4fb6bd62a5762fa350c3f8eb))
+
+
+### Bug Fixes
+
+* compare the recorded mode as well as the hash in the lock ([6e85768](https://github.com/GreenMachine582/repo-kit/commit/6e8576890e9f75ba62caacb4ef5a098cbcb0d8d5))
+* name the file and the way out when a removed template's file was edited ([c876f4a](https://github.com/GreenMachine582/repo-kit/commit/c876f4a6262d7c7868b9bf72740af6e8a41e5dda))
+
 ## [0.2.0](https://github.com/GreenMachine582/repo-kit/compare/v0.1.0...v0.2.0) (2026-11-17)
 
 
