@@ -11,6 +11,12 @@ on:
 permissions:
   contents: read
 
+# A newer push to the same PR (often update-prs merging in its base) makes the older run moot,
+# so cancel it. Each push to dev or main keeps its own run.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     strategy:
