@@ -46,6 +46,7 @@ from repo_kit.worktree import pr_state, prs_for, repo_dir, rk_worktrees
 
 MIN_GH = (2, 40)
 MIN_PYTHON = (3, 12)
+SCHEMA_VERSION = 1  # of the `--json` document; bump on a breaking change
 
 
 class Status(StrEnum):
@@ -60,22 +61,27 @@ class Check:
     status: Status
     label: str
     detail: str = ""
+    id: str = ""  # a stable kebab-case slug for tools; the label is for people
 
 
-def _ok(label: str, detail: str = "") -> Check:
-    return Check(Status.OK, label, detail)
+def _ok(id: str, label: str, detail: str = "") -> Check:
+    return Check(Status.OK, label, detail, id)
 
 
-def _warn(label: str, detail: str = "") -> Check:
-    return Check(Status.WARN, label, detail)
+def _warn(id: str, label: str, detail: str = "") -> Check:
+    return Check(Status.WARN, label, detail, id)
 
 
-def _fail(label: str, detail: str = "") -> Check:
-    return Check(Status.FAIL, label, detail)
+def _fail(id: str, label: str, detail: str = "") -> Check:
+    return Check(Status.FAIL, label, detail, id)
 
 
-def _skip(label: str, detail: str = "") -> Check:
-    return Check(Status.SKIP, label, detail)
+def _skip(id: str, label: str, detail: str = "") -> Check:
+    return Check(Status.SKIP, label, detail, id)
+
+
+def _slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
 def _dotted(version: tuple[int, ...]) -> str:
@@ -154,8 +160,8 @@ def check_tools(
         failed = True
     label = " / ".join(found)
     if failed:
-        return _fail(label, "\n".join(problems))
-    return _warn(label, "\n".join(problems)) if problems else _ok(label)
+        return _fail("tools", label, "\n".join(problems))
+    return _warn("tools", label, "\n".join(problems)) if problems else _ok("tools", label)
 
 
 # --- config --------------------------------------------------------------------------------
@@ -164,40 +170,40 @@ def check_tools(
 def check_repo_config(repo_root: Path) -> tuple[Check, RepoConfig | None, bool]:
     """The check, the config if it loaded, and whether its pin matches this rk's templates."""
     if not (repo_root / REPO_CONFIG_NAME).is_file():
-        return _fail(f"{REPO_CONFIG_NAME} missing", "run `rk install`"), None, False
+        return _fail("repo-config", f"{REPO_CONFIG_NAME} missing", "run `rk install`"), None, False
     try:
         config = load_repo_config(repo_root)
     except RkError as exc:
-        return _fail(f"{REPO_CONFIG_NAME} invalid", str(exc)), None, False
+        return _fail("repo-config", f"{REPO_CONFIG_NAME} invalid", str(exc)), None, False
     label = f"{REPO_CONFIG_NAME} valid (profile {config.profile}, version {config.version})"
     if not config.version:
-        return _fail(f"{REPO_CONFIG_NAME}: `version` is empty"), config, False
+        return _fail("repo-config", f"{REPO_CONFIG_NAME}: `version` is empty"), config, False
     try:
         bootstrap.parse_version(config.version)
     except RkError:
         detail = f'`{config.version}` isn\'t a release: fix it to `version = "X.Y.Z"`'
-        return _fail(f"{REPO_CONFIG_NAME}: bad version", detail), config, False
+        return _fail("repo-config", f"{REPO_CONFIG_NAME}: bad version", detail), config, False
     engine = repo_kit.__version__
     if engine == files.UNRELEASED:
         detail = "this rk is an unreleased build: files are compared with its own templates"
-        return _ok(label, detail), config, True
+        return _ok("repo-config", label, detail), config, True
     if engine != config.version:
         detail = (
             f"this rk is {engine}: run `rk upgrade` to move the pin, or install rk "
             f"{config.version}. The files can't be checked until the two match."
         )
-        return _warn(label, detail), config, False
+        return _warn("repo-config", label, detail), config, False
     # "latest X.Y.Z" needs a published release to compare against: Phase 1D.
-    return _ok(label), config, True
+    return _ok("repo-config", label), config, True
 
 
 def check_user_config(source: Path) -> tuple[Check, UserConfig | None]:
     try:
         config = load_user_config(source)
     except RkError as exc:
-        return _fail("user config invalid", str(exc)), None
+        return _fail("user-config", "user config invalid", str(exc)), None
     where = str(source) if source.is_file() else f"{source} (not found, so the defaults)"
-    return _ok("user config valid", where), config
+    return _ok("user-config", "user config valid", where), config
 
 
 def check_credentials(
@@ -205,7 +211,7 @@ def check_credentials(
 ) -> tuple[Check, Credentials | None]:
     """The Apps this repo uses (every App without a valid repo config) must decrypt."""
     if user_config is None:
-        return _skip("credentials file", "need a valid user config"), None
+        return _skip("credentials", "credentials file", "need a valid user config"), None
     apps = apps_for(config) if config else APPS
     path = user_config.secrets_path
     conflict = conflict_copy_warning(path) if path else None
@@ -213,11 +219,13 @@ def check_credentials(
         credentials = load_credentials(user_config, source, sops, apps)
     except RkError as exc:
         detail = f"{exc}\n{conflict}" if conflict else str(exc)
-        return _warn("credentials file can't be read", detail), None
+        return _warn("credentials", "credentials file can't be read", detail), None
     names = ", ".join(app.name for app in apps)
     if conflict:
-        return _warn(f"credentials file: {names}, with a conflict copy", conflict), credentials
-    return _ok(f"credentials file: {names}", str(path)), credentials
+        return _warn(
+            "credentials", f"credentials file: {names}, with a conflict copy", conflict
+        ), credentials
+    return _ok("credentials", f"credentials file: {names}", str(path)), credentials
 
 
 # --- files ---------------------------------------------------------------------------------
@@ -236,7 +244,7 @@ def check_files(
     try:
         plan = files.plan_sync(repo_root, config, owner, repo, templates)
     except RkError as exc:
-        return [_fail("managed files can't be checked", str(exc))]
+        return [_fail("files", "managed files can't be checked", str(exc))]
     drifted = [f for f in plan.files if f.action in _OUT_OF_SYNC]
     in_sync = [f for f in plan.files if f.action is files.Action.UNCHANGED]
     label = f"managed files: {len(in_sync)} in sync, {len(drifted)} drifted"
@@ -247,14 +255,14 @@ def check_files(
             for f in drifted
         ]
         lines.append("`rk sync --check` shows the diffs; `rk sync` fixes all but hand edits")
-        checks.append(_fail(label, "\n".join(lines)))
+        checks.append(_fail("files", label, "\n".join(lines)))
     elif plan.lock_changed:
-        checks.append(_fail(label, f"{files.LOCK_NAME} is out of date: run `rk sync`"))
+        checks.append(_fail("files", label, f"{files.LOCK_NAME} is out of date: run `rk sync`"))
     else:
-        checks.append(_ok(label))
+        checks.append(_ok("files", label))
     for f in plan.files:
         if f.action is files.Action.ORPHAN:
-            checks.append(_warn(f"not a template: {f.path}", f.detail))
+            checks.append(_warn(f"orphan-{_slug(f.path)}", f"not a template: {f.path}", f.detail))
     return checks
 
 
@@ -276,10 +284,14 @@ def check_overrides(repo_root: Path, config: RepoConfig) -> list[Check]:
     for path, mode in sorted(config.overrides.files.items()):
         if _is_reusable_workflow(repo_root / path):
             checks.append(
-                _ok(f"override: {path} is {mode}", "a reusable workflow itself, not a caller")
+                _ok(
+                    f"override-{_slug(path)}",
+                    f"override: {path} is {mode}",
+                    "a reusable workflow itself, not a caller",
+                )
             )
         else:
-            checks.append(_warn(f"override in use: {path} is {mode}"))
+            checks.append(_warn(f"override-{_slug(path)}", f"override in use: {path} is {mode}"))
     return checks
 
 
@@ -287,20 +299,22 @@ def check_plugin(repo_root: Path) -> Check:
     try:
         missing = bootstrap.plan_plugin_settings(repo_root) is not None
     except RkError as exc:
-        return _fail(f"plugin: {bootstrap.SETTINGS_PATH} can't be read", str(exc))
+        return _fail("plugin", f"plugin: {bootstrap.SETTINGS_PATH} can't be read", str(exc))
     if missing:
         return _warn(
+            "plugin",
             f"plugin: {bootstrap.SETTINGS_PATH} lacks the repo-kit marketplace or plugin",
             "run `rk install`",
         )
-    return _ok(f"plugin: repo-kit is in {bootstrap.SETTINGS_PATH}")
+    return _ok("plugin", f"plugin: repo-kit is in {bootstrap.SETTINGS_PATH}")
 
 
 def check_base_branch(repo_root: Path, config: RepoConfig) -> Check:
     base = config.default_base
     if git.remote_branch_exists(repo_root, base):
-        return _ok(f"base branch: origin/{base} exists (as of the last fetch)")
+        return _ok("base-branch", f"base branch: origin/{base} exists (as of the last fetch)")
     return _fail(
+        "base-branch",
         f"base branch: origin/{base} missing (as of the last fetch)",
         "`git fetch` if it was created elsewhere; otherwise `rk install` creates it",
     )
@@ -325,7 +339,9 @@ def check_enrolment(
     except RkError as exc:
         return [
             _warn(
-                "Apps: can't read the repo's labels, variables, secrets and environments", str(exc)
+                "app-enrolment",
+                "Apps: can't read the repo's labels, variables, secrets and environments",
+                str(exc),
             )
         ]
     checks: list[Check] = []
@@ -333,7 +349,11 @@ def check_enrolment(
         problems: list[str] = []
         if app is PR_BOT:
             if not config.update_prs.enabled:
-                checks.append(_skip(f"{app.name}: update-prs is disabled in .repo-kit.toml"))
+                checks.append(
+                    _skip(
+                        f"app-{app.name}", f"{app.name}: update-prs is disabled in .repo-kit.toml"
+                    )
+                )
                 continue
             problems += [
                 f"label {name} is missing"
@@ -386,9 +406,11 @@ def check_enrolment(
         if problems:
             label = f"{app.name} not enrolled" if not enrolled else f"{app.name}: older key"
             lines = [*problems, unknown_key] if unknown_key else problems
-            checks.append(_fail(label, "\n".join([*lines, fix])))
+            checks.append(_fail(f"app-{app.name}", label, "\n".join([*lines, fix])))
         elif unknown_key:
-            checks.append(_warn(f"{app.name}: key unknown", f"{unknown_key}: {fix}"))
+            checks.append(
+                _warn(f"app-{app.name}", f"{app.name}: key unknown", f"{unknown_key}: {fix}")
+            )
         else:
             what = "labels, " if app is PR_BOT else ""
             label = (
@@ -397,7 +419,7 @@ def check_enrolment(
             )
             if found:
                 label += ", key fingerprint matches"
-            checks.append(_ok(label))
+            checks.append(_ok(f"app-{app.name}", label))
     return checks
 
 
@@ -405,12 +427,16 @@ def check_github(setup: RepoSetup, config: RepoConfig) -> Check:
     try:
         result = github_config.plan(config, setup)
     except RkError as exc:
-        return _warn("repo settings and rulesets: can't read them", str(exc))
+        return _warn("github-config", "repo settings and rulesets: can't read them", str(exc))
     if result.drift:
         lines = [*github_config.render(result), "see `rk github diff`, then `rk github apply`"]
-        return _warn("repo settings or rulesets differ from .repo-kit.toml", "\n".join(lines))
+        return _warn(
+            "github-config",
+            "repo settings or rulesets differ from .repo-kit.toml",
+            "\n".join(lines),
+        )
     names = ", ".join(r.name for r in result.rulesets.rulesets)
-    return _ok(f"repo settings and rulesets match: {names}")
+    return _ok("github-config", f"repo settings and rulesets match: {names}")
 
 
 def check_worktrees(
@@ -420,17 +446,17 @@ def check_worktrees(
     try:
         prs = prs_for([branch for _, branch in ours], github)
     except RkError as exc:
-        return [_warn(f"worktrees: {len(ours)}; can't look up their PRs", str(exc))]
+        return [_warn("worktrees", f"worktrees: {len(ours)}; can't look up their PRs", str(exc))]
     stale = [
         f"{path} ({branch}: PR #{pr.number} {pr_state(pr)})"
         for (path, branch), pr in zip(ours, prs, strict=True)
         if pr and pr.finished
     ]
     if not stale:
-        return [_ok(f"worktrees: {len(ours)}, none stale")]
+        return [_ok("worktrees", f"worktrees: {len(ours)}, none stale")]
     label = f"{len(stale)} stale worktree{'s' if len(stale) > 1 else ''}"
     detail = "\n".join([*stale, "remove each with `rk wt done <branch>`"])
-    return [_warn(label, detail)]
+    return [_warn("worktrees", label, detail)]
 
 
 # --- the report ----------------------------------------------------------------------------
@@ -460,29 +486,30 @@ def doctor(
     if user_config is None:
         user_check, user_config = check_user_config(user_source)
     else:
-        user_check = _ok("user config valid", str(user_source))
+        user_check = _ok("user-config", "user config valid", str(user_source))
     credentials_check, credentials = check_credentials(user_config, user_source, sops, config)
     checks += [repo_check, user_check, credentials_check]
 
     if config is None:
         needs = "managed files, plugin, base branch, App enrolment"
-        checks.append(_skip(needs, "need a valid config"))
+        checks.append(_skip("config-dependent", needs, "need a valid config"))
     else:
         if pin_matches:
             checks += check_files(repo_root, config, owner, repo, templates)
         else:
-            checks.append(_skip("managed files", "need the pin to match this rk"))
+            checks.append(_skip("files", "managed files", "need the pin to match this rk"))
         checks += check_overrides(repo_root, config)
         checks.append(check_plugin(repo_root))
         checks.append(check_base_branch(repo_root, config))
         if setup is None:
-            checks.append(_skip("App enrolment", "origin isn't on GitHub"))
+            checks.append(_skip("app-enrolment", "App enrolment", "origin isn't on GitHub"))
         else:
             checks += check_enrolment(setup, config, credentials)
 
     if setup is not None:
         checks.append(
             _skip(
+                "apps-installed",
                 "Apps installed and token mint",
                 f"can't be checked from here: confirm at {bootstrap.INSTALLATIONS_URL}, then "
                 "run the update-prs caller with dry-run ticked",
@@ -490,13 +517,17 @@ def doctor(
         )
     if config is None or setup is None:
         checks.append(
-            _skip("repo settings and rulesets", "need a valid config and a GitHub origin")
+            _skip(
+                "github-config",
+                "repo settings and rulesets",
+                "need a valid config and a GitHub origin",
+            )
         )
     else:
         checks.append(check_github(setup, config))
 
     if user_config is None:
-        checks.append(_skip("worktrees", "need a valid user config"))
+        checks.append(_skip("worktrees", "worktrees", "need a valid user config"))
     else:
         checks += check_worktrees(repo_root, owner, repo, github, user_config)
     return checks
@@ -519,18 +550,34 @@ def to_json(checks: list[Check]) -> str:
     FAILed (the exit-code rule). `status` is OK, WARN, FAIL or SKIP; `name` is the report label
     and `detail` its text underneath, or "" if none."""
     document = {
+        "schema_version": SCHEMA_VERSION,
         "ok": not failed(checks),
-        "checks": [{"name": c.label, "status": str(c.status), "detail": c.detail} for c in checks],
+        "checks": [
+            {"id": c.id, "name": c.label, "status": str(c.status), "detail": c.detail}
+            for c in checks
+        ],
     }
+    return json.dumps(document, indent=2, ensure_ascii=False)
+
+
+def error_json(message: str) -> str:
+    """The `--json` document when doctor can't start (no repo, no remote): no checks ran."""
+    document = {"schema_version": SCHEMA_VERSION, "ok": False, "error": message, "checks": []}
     return json.dumps(document, indent=2, ensure_ascii=False)
 
 
 def run_doctor(cwd: Path, *, as_json: bool = False, say: Callable[[str], None] = print) -> int:
     """The command. Returns 1 if any check failed, else 0. With `as_json`, `say` gets only the
     JSON document."""
-    repo_root = git.toplevel(cwd)
-    url = git.remote_url(repo_root)
-    owner, repo = git.parse_owner_repo(url)
+    try:
+        repo_root = git.toplevel(cwd)
+        url = git.remote_url(repo_root)
+        owner, repo = git.parse_owner_repo(url)
+    except RkError as exc:
+        if not as_json:
+            raise
+        say(error_json(str(exc)))
+        return 1
     if git.is_github_url(url):
         client = GhCliGitHub(owner, repo)
         github: GitHub = client
