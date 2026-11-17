@@ -112,6 +112,9 @@ def _secrets(action: str) -> Handler:
 
         if action == "show":
             return credentials.run_show()
+        if action == "recipients":
+            credentials.run_recipients()
+            return 0
         changed: list[str] = []
         code = 0
         try:
@@ -121,8 +124,14 @@ def _secrets(action: str) -> Handler:
                 credentials.run_set_app(
                     args.app, client_id=args.client_id, pem=Path(args.pem), changed=changed
                 )
+            elif action == "rotate":
+                credentials.run_rotate(args.app, pem=Path(args.pem), changed=changed)
+            elif action == "remove-recipient":
+                credentials.run_remove_recipient(
+                    args.recipient, include_self=args.include_self, changed=changed
+                )
             else:
-                credentials.run_add_recipient(args.recipient, changed=changed)
+                credentials.run_add_recipient(args.recipient, label=args.label, changed=changed)
         finally:
             _print_changes(changed)
         return code
@@ -203,7 +212,70 @@ def _prune(args: argparse.Namespace) -> int:
 def _doctor(args: argparse.Namespace) -> int:
     from repo_kit import doctor
 
-    return doctor.run_doctor(Path.cwd())
+    return doctor.run_doctor(Path.cwd(), as_json=args.json)
+
+
+def _fleet(action: str) -> Handler:
+    def handler(args: argparse.Namespace) -> int:
+        from repo_kit import fleet
+        from repo_kit.config import load_user_config
+
+        user = load_user_config()
+        if action == "list":
+            return fleet.run_list(user)
+        if action == "doctor":
+            return fleet.run_doctor(user, args.repo)
+        if action == "sync":
+            return fleet.run_sync_check(user, args.repo)
+        if action == "configure":
+            return fleet.run_configure(
+                user, args.repo, dry_run=args.dry_run, replace_key=args.replace_key
+            )
+        return fleet.run_upgrade(user, args.repo, apply=args.apply)
+
+    return handler
+
+
+def _add_fleet(sub: SubParsers) -> None:
+    fleet = sub.add_parser(
+        "fleet", help="doctor, sync --check, configure and upgrade across every adopting repo"
+    )
+    fleet_sub = fleet.add_subparsers(dest="fleet_command", required=True, metavar="<command>")
+    only = argparse.ArgumentParser(add_help=False)
+    only.add_argument(
+        "--repo",
+        action="append",
+        default=[],
+        metavar="OWNER/NAME",
+        help="only this repo from [fleet.repos] (repeatable)",
+    )
+
+    fleet_sub.add_parser(
+        "list", help="the repos in [fleet.repos] and whether each path is its checkout"
+    ).set_defaults(handler=_fleet("list"))
+    fleet_sub.add_parser(
+        "doctor", parents=[only], help="rk doctor in each repo (read-only)"
+    ).set_defaults(handler=_fleet("doctor"))
+    sync = fleet_sub.add_parser(
+        "sync", parents=[only], help="rk sync --check in each repo (read-only)"
+    )
+    sync.add_argument(
+        "--check", action="store_true", required=True, help="the only mode: write nothing"
+    )
+    sync.set_defaults(handler=_fleet("sync"))
+    configure = fleet_sub.add_parser(
+        "configure", parents=[only], help="rk configure in each repo, asking before each one"
+    )
+    configure.add_argument("--dry-run", action="store_true", help="report what would change")
+    configure.add_argument(
+        "--replace-key", action="store_true", help="overwrite the private key secrets if set"
+    )
+    configure.set_defaults(handler=_fleet("configure"))
+    upgrade = fleet_sub.add_parser(
+        "upgrade", parents=[only], help="one rk upgrade PR per repo (a dry run without --apply)"
+    )
+    upgrade.add_argument("--apply", action="store_true", help="push the branches and open the PRs")
+    upgrade.set_defaults(handler=_fleet("upgrade"))
 
 
 def _add_worktree(sub: SubParsers) -> None:
@@ -335,11 +407,29 @@ def _add_setup_side(sub: SubParsers) -> None:
     set_app.add_argument("--client-id", required=True, help="the App's Client ID (Iv23…)")
     set_app.add_argument("--pem", required=True, metavar="PATH", help="the App's downloaded .pem")
     set_app.set_defaults(handler=_secrets("set-app"))
+    rotate = sec_sub.add_parser(
+        "rotate", help="store a new private key for an App and list the repos to update"
+    )
+    rotate.add_argument("app", choices=["pr-bot", "release-bot"])
+    rotate.add_argument("--pem", required=True, metavar="PATH", help="the new downloaded .pem")
+    rotate.set_defaults(handler=_secrets("rotate"))
     add = sec_sub.add_parser(
         "add-recipient", help="let another machine's age key decrypt the credentials file"
     )
     add.add_argument("recipient", metavar="AGE_PUBLIC_KEY", help="age1…, from `rk secrets init`")
+    add.add_argument("--label", help="a name for the machine, shown by `rk secrets recipients`")
     add.set_defaults(handler=_secrets("add-recipient"))
+    sec_sub.add_parser(
+        "recipients", help="list the age keys (machines) that can decrypt the credentials file"
+    ).set_defaults(handler=_secrets("recipients"))
+    remove = sec_sub.add_parser(
+        "remove-recipient", help="stop an age key decrypting the file, and re-encrypt it"
+    )
+    remove.add_argument("recipient", metavar="AGE_PUBLIC_KEY_OR_LABEL")
+    remove.add_argument(
+        "--include-self", action="store_true", help="allow removing this machine's own key"
+    )
+    remove.set_defaults(handler=_secrets("remove-recipient"))
     sec_sub.add_parser(
         "show", help="list each App's Client ID and whether its key is present (never the key)"
     ).set_defaults(handler=_secrets("show"))
@@ -356,7 +446,9 @@ def _add_setup_side(sub: SubParsers) -> None:
     )
     upgrade.set_defaults(handler=_upgrade)
 
-    sub.add_parser("doctor", help="read-only health check").set_defaults(handler=_doctor)
+    doctor = sub.add_parser("doctor", help="read-only health check")
+    doctor.add_argument("--json", action="store_true", help="print one JSON document, nothing else")
+    doctor.set_defaults(handler=_doctor)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -369,6 +461,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_worktree(sub)
     _add_pr_side(sub)
     _add_setup_side(sub)
+    _add_fleet(sub)
     return parser
 
 

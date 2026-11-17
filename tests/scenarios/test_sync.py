@@ -97,6 +97,30 @@ def test_a_first_sync_writes_every_file_and_the_lock(repo, templates):
     assert sync(repo, templates, check=True)[0] == 0
 
 
+def test_a_release_pr_that_moves_the_pin_and_the_lock_passes_check(repo, templates):
+    """What release-please's `extra-files` do to a repo whose own version is the engine's, as
+    repo-kit is: the pin in `.repo-kit.toml` and the lock's copy move, and `--check` must pass."""
+    # Nothing rendered depends on the version, as in repo-kit, whose callers are unmanaged.
+    (templates / "common" / "branches.md").write_text("Branch off `${default_base}`.\n")
+    set_version(repo, "1.0.0", '[overrides]\nfiles."ci/caller.yml" = "unmanaged"\n')
+    sync(repo, templates)
+    assert sync(repo, templates, check=True)[0] == 0
+
+    (repo / ".repo-kit.toml").write_text(
+        read(repo, ".repo-kit.toml").replace('"1.0.0"', '"1.1.0"'), encoding="utf-8"
+    )
+    # The pin alone leaves the lock's copy behind: that is drift.
+    code, _changed, said = sync(repo, templates, check=True)
+    assert code == 1
+    assert "lock" in said.lower() or "Out of sync" in said
+
+    # The lock bump may reformat the file (indent, no final newline); only its content counts.
+    lock = json.loads(read(repo, LOCK_NAME))
+    lock["version"] = "1.1.0"
+    (repo / LOCK_NAME).write_text(json.dumps(lock), encoding="utf-8")
+    assert sync(repo, templates, check=True)[0] == 0
+
+
 def test_scenario_14_a_second_sync_changes_nothing(repo, templates):
     sync(repo, templates)
     code, changed, said = sync(repo, templates)
@@ -219,17 +243,6 @@ def test_a_replaced_file_is_backed_up_outside_the_tree(repo, templates):
     assert sorted(line.split(maxsplit=1)[1] for line in status) == sorted(
         [".repo-kit.lock", ".repo-kit.toml", "CONTRIBUTING.md", "ci/caller.yml"]
     )
-
-
-def test_a_template_dropped_from_the_manifest_is_reported_and_left(repo, templates):
-    sync(repo, templates)
-    manifest = templates / "common" / MANIFEST_NAME
-    manifest.write_text(
-        MANIFEST.replace('[files."ci/caller.yml"]\nmode = "managed"\n', ""), "utf-8"
-    )
-    code, changed, said = sync(repo, templates)
-    assert "not a template  ci/caller.yml" in said
-    assert (repo / "ci/caller.yml").exists()
 
 
 def test_a_missing_lock_is_drift(repo, templates):
@@ -407,3 +420,228 @@ def test_lf_files_stay_lf_and_new_files_are_lf(repo, templates):
     sync(repo, templates)
     assert b"\r" not in (repo / "CONTRIBUTING.md").read_bytes()
     assert b"\r" not in (repo / "ci/caller.yml").read_bytes()
+
+
+def _set_mode(templates, path, was, mode):
+    manifest = templates / "common" / MANIFEST_NAME
+    text = manifest.read_text(encoding="utf-8")
+    old = f'[files."{path}"]\nmode = "{was}"'
+    assert old in text
+    manifest.write_text(text.replace(old, old.replace(was, mode)), encoding="utf-8")
+
+
+def test_a_template_turning_seeded_is_recorded_and_the_file_left(repo, templates):
+    sync(repo, templates)
+    (repo / "ci/caller.yml").write_text("mine\n", encoding="utf-8")
+    _set_mode(templates, "ci/caller.yml", "managed", "seeded")
+
+    assert sync(repo, templates, check=True)[0] == 1
+    code, changed, said = sync(repo, templates)
+
+    assert "mode changed from managed" in said
+    assert "recorded ci/caller.yml as seeded (was managed)" in changed
+    assert read(repo, "ci/caller.yml") == "mine\n"
+    assert json.loads(read(repo, LOCK_NAME))["files"]["ci/caller.yml"]["mode"] == "seeded"
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_a_template_turning_managed_does_not_trust_the_seeded_hash(repo, templates):
+    # CHANGELOG.md was seeded from the stub; left untouched, its recorded hash matches it.
+    sync(repo, templates)
+    (templates / "common" / "changelog.md").write_text("# New stub\n", encoding="utf-8")
+    _set_mode(templates, "CHANGELOG.md", "seeded", "managed")
+
+    with pytest.raises(SyncError, match="CHANGELOG.md"):
+        sync(repo, templates)
+    code, _changed, said = sync(repo, templates, check=True)
+
+    # Not trusted as managed: it differs from the render and isn't recorded as managed.
+    assert code == 1
+    assert "isn't in the lock" in said
+
+
+def test_an_old_lock_entry_without_a_mode_still_loads(repo, templates):
+    sync(repo, templates)
+    lock = json.loads(read(repo, LOCK_NAME))
+    del lock["files"]["ci/caller.yml"]["mode"]
+    (repo / LOCK_NAME).write_text(json.dumps(lock), encoding="utf-8")
+
+    code, changed, said = sync(repo, templates)
+
+    assert code == 0
+    assert "mode changed" not in said
+
+
+# --- templates removed or renamed between releases -------------------------------------------
+
+
+def _drop(templates, path):
+    """The next release's manifest without `path`."""
+    manifest = templates / "common" / MANIFEST_NAME
+    text = manifest.read_text(encoding="utf-8")
+    start = text.index(f'[files."{path}"]')
+    end = text.find("\n[", start)
+    manifest.write_text(text[:start] + (text[end + 1 :] if end != -1 else ""), encoding="utf-8")
+
+
+def _lock_files(work):
+    return json.loads(read(work, LOCK_NAME))["files"]
+
+
+def test_a_removed_managed_template_deletes_the_unedited_file(repo, templates):
+    sync(repo, templates)
+    _drop(templates, "ci/caller.yml")
+
+    assert sync(repo, templates, check=True)[0] == 1
+    code, changed, said = sync(repo, templates)
+
+    assert not (repo / "ci/caller.yml").exists()
+    assert "ci/caller.yml" not in _lock_files(repo)
+    assert any(c.startswith("removed ci/caller.yml") for c in changed)
+    assert "no longer a template" in said
+    # The deleted file is backed up outside the tree.
+    assert any("backed up" in c for c in changed)
+    assert sync(repo, templates)[1] == []
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_a_removed_managed_template_with_local_edits_is_refused(repo, templates):
+    sync(repo, templates)
+    (repo / "ci/caller.yml").write_text("mine\n", encoding="utf-8")
+    _drop(templates, "ci/caller.yml")
+
+    with pytest.raises(SyncError, match=r"ci/caller\.yml"):
+        sync(repo, templates)
+    code, _changed, said = sync(repo, templates, check=True)
+
+    assert code == 1
+    assert "edited by hand" in said
+    assert read(repo, "ci/caller.yml") == "mine\n"
+    assert "ci/caller.yml" in _lock_files(repo)
+
+
+def test_a_removed_managed_file_the_repo_already_deleted_is_dropped_from_the_lock(repo, templates):
+    sync(repo, templates)
+    (repo / "ci/caller.yml").unlink()
+    _drop(templates, "ci/caller.yml")
+
+    code, changed, _said = sync(repo, templates)
+
+    assert "ci/caller.yml" not in _lock_files(repo)
+    assert any("ci/caller.yml: dropped from the lock" in c for c in changed)
+    assert sync(repo, templates)[1] == []
+
+
+def test_a_removed_seeded_template_is_forgotten_and_the_file_kept(repo, templates):
+    sync(repo, templates)
+    (repo / "CHANGELOG.md").write_text("# mine\n", encoding="utf-8")
+    _drop(templates, "CHANGELOG.md")
+
+    code, changed, said = sync(repo, templates)
+
+    assert read(repo, "CHANGELOG.md") == "# mine\n"
+    assert "CHANGELOG.md" not in _lock_files(repo)
+    assert any("CHANGELOG.md: dropped from the lock" in c for c in changed)
+    assert "yours, left" in said
+    assert sync(repo, templates)[1] == []
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_a_removed_block_template_strips_its_blocks_and_keeps_the_rest(repo, templates):
+    (repo / "CONTRIBUTING.md").write_text("# Mine\n\nHand-written.\n", encoding="utf-8")
+    sync(repo, templates)
+    assert "repo-kit: branches" in read(repo, "CONTRIBUTING.md")
+    _drop(templates, "CONTRIBUTING.md")
+
+    code, changed, said = sync(repo, templates)
+
+    assert read(repo, "CONTRIBUTING.md") == "# Mine\n\nHand-written.\n"
+    assert "CONTRIBUTING.md" not in _lock_files(repo)
+    assert any(c.startswith("removed CONTRIBUTING.md") for c in changed)
+    assert "block removed" in said
+    assert sync(repo, templates)[1] == []
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_a_removed_block_template_with_an_edited_block_is_refused(repo, templates):
+    sync(repo, templates)
+    text = read(repo, "CONTRIBUTING.md").replace("Branch off", "Please branch off")
+    (repo / "CONTRIBUTING.md").write_text(text, encoding="utf-8")
+    _drop(templates, "CONTRIBUTING.md")
+
+    with pytest.raises(SyncError, match="CONTRIBUTING.md"):
+        sync(repo, templates)
+    assert read(repo, "CONTRIBUTING.md") == text
+
+
+def _rename_release(templates, old, new, renames=True):
+    """The next release: `old`'s template now targets `new`, declared in `[renames]`."""
+    manifest = templates / "common" / MANIFEST_NAME
+    text = manifest.read_text(encoding="utf-8").replace(
+        f'[files."{old}"]', f'[files."{new}"]\nsource = "{old}"'
+    )
+    if renames:
+        text += f'\n[renames]\n"{old}" = "{new}"\n'
+    manifest.write_text(text, encoding="utf-8")
+
+
+def test_a_declared_rename_moves_a_managed_file(repo, templates):
+    sync(repo, templates)
+    _rename_release(templates, "ci/caller.yml", "ci/call.yml")
+
+    code, changed, said = sync(repo, templates)
+
+    assert not (repo / "ci/caller.yml").exists()
+    assert read(repo, "ci/call.yml") == "uses: repo-kit@v1.0.0\nwith: ${{ github.sha }}\n"
+    files = _lock_files(repo)
+    assert "ci/caller.yml" not in files and "ci/call.yml" in files
+    assert any("removed ci/caller.yml (renamed to ci/call.yml)" in c for c in changed)
+    assert any("created ci/call.yml" in c for c in changed)
+    assert sync(repo, templates)[1] == []
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_a_rename_of_an_edited_managed_file_is_refused(repo, templates):
+    sync(repo, templates)
+    (repo / "ci/caller.yml").write_text("mine\n", encoding="utf-8")
+    _rename_release(templates, "ci/caller.yml", "ci/call.yml")
+
+    with pytest.raises(SyncError, match=r"ci/caller\.yml"):
+        sync(repo, templates)
+    assert read(repo, "ci/caller.yml") == "mine\n"
+    assert not (repo / "ci/call.yml").exists()
+
+
+def test_a_rename_is_never_guessed_from_a_matching_hash(repo, templates):
+    sync(repo, templates)
+    _rename_release(templates, "ci/caller.yml", "ci/call.yml", renames=False)
+
+    sync(repo, templates)
+
+    # Treated as a removal plus a new file: no move is inferred.
+    assert not (repo / "ci/caller.yml").exists()
+    assert (repo / "ci/call.yml").exists()
+    assert not any("renamed" in c for c in sync(repo, templates)[1])
+
+
+def test_a_rename_to_a_path_that_is_not_a_template_is_an_error(repo, templates):
+    sync(repo, templates)
+    _drop(templates, "ci/caller.yml")
+    manifest = templates / "common" / MANIFEST_NAME
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8") + '\n[renames]\n"ci/caller.yml" = "ci/nowhere.yml"\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SyncError, match="isn't a template"):
+        sync(repo, templates)
+
+
+def test_a_rename_that_no_lock_mentions_does_nothing(repo, templates):
+    # A repo that never had the old path (installed after the rename) just gets the new one.
+    _rename_release(templates, "ci/caller.yml", "ci/call.yml")
+
+    code, changed, _said = sync(repo, templates)
+
+    assert (repo / "ci/call.yml").exists()
+    assert not any("renamed" in c for c in changed)

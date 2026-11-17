@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from repo_kit import doctor, git
+from repo_kit.credentials import APPS, AppCredentials
 from repo_kit.doctor import Check, Status
 from repo_kit.errors import RkError
 
@@ -94,3 +96,118 @@ def test_tools_missing_or_old_sops_warns(git_247):
     old = doctor.check_tools(Path(), lambda: (2, 63), lambda: (3, 8))
     assert old.status is Status.WARN
     assert "sops 3.10+" in old.detail
+
+
+def test_to_json_is_one_stable_document():
+    import json
+
+    checks = [
+        Check(Status.OK, "a", id="ia"),
+        Check(Status.WARN, "b", "x\ny", "ib"),
+        Check(Status.SKIP, "c", id="ic"),
+    ]
+    doc = json.loads(doctor.to_json(checks))
+    assert doc == {
+        "schema_version": 1,
+        "ok": True,
+        "checks": [
+            {"id": "ia", "name": "a", "status": "OK", "detail": ""},
+            {"id": "ib", "name": "b", "status": "WARN", "detail": "x\ny"},
+            {"id": "ic", "name": "c", "status": "SKIP", "detail": ""},
+        ],
+    }
+    assert json.loads(doctor.to_json([*checks, Check(Status.FAIL, "d")]))["ok"] is False
+
+
+def test_run_doctor_json_says_only_json(monkeypatch, tmp_path):
+    import json
+
+    monkeypatch.setattr(git, "toplevel", lambda cwd: tmp_path)
+    monkeypatch.setattr(git, "remote_url", lambda root: "https://example.com/o/r.git")
+    monkeypatch.setattr(doctor, "user_config_path", lambda: tmp_path / "none.toml")
+    monkeypatch.setattr(doctor, "doctor", lambda *a, **k: [Check(Status.FAIL, "x", "d")])
+    said: list[str] = []
+    assert doctor.run_doctor(tmp_path, as_json=True, say=said.append) == 1
+    assert len(said) == 1
+    assert json.loads(said[0])["ok"] is False
+
+
+def test_error_json_has_no_checks():
+    import json
+
+    doc = json.loads(doctor.error_json("not a git repository"))
+    assert doc == {
+        "schema_version": 1,
+        "ok": False,
+        "error": "not a git repository",
+        "checks": [],
+    }
+
+
+def test_run_doctor_json_reports_an_early_error(monkeypatch, tmp_path):
+    import json
+
+    def boom(cwd):
+        raise RkError("not a git repository")
+
+    monkeypatch.setattr(git, "toplevel", boom)
+    said: list[str] = []
+    assert doctor.run_doctor(tmp_path, as_json=True, say=said.append) == 1
+    assert json.loads(said[0])["error"] == "not a git repository"
+    with pytest.raises(RkError):
+        doctor.run_doctor(tmp_path, say=said.append)
+
+
+TODAY = date(2026, 6, 1)
+
+
+def _creds(pr: str, release: str) -> dict[str, AppCredentials]:
+    return {
+        "pr_bot": AppCredentials("c1", "k", stored_at=pr),
+        "release_bot": AppCredentials("c2", "k", stored_at=release),
+    }
+
+
+def test_key_age_ok_when_both_are_recent():
+    check = doctor.check_key_age(_creds("2026-05-01", "2026-01-01"), APPS, 365, TODAY)
+    assert check.status is Status.OK
+    assert check.id == "key-age"
+
+
+def test_key_age_warns_past_the_limit():
+    check = doctor.check_key_age(_creds("2026-05-01", "2025-05-31"), APPS, 365, TODAY)
+    assert check.status is Status.WARN
+    assert "gth-release-bot's key was stored 366 days ago" in check.detail
+    assert "gth-pr-bot" not in check.detail
+
+
+def test_key_age_exactly_at_the_limit_is_fine():
+    assert (
+        doctor.check_key_age(_creds("2025-06-01", "2025-06-01"), APPS, 365, TODAY).status
+        is Status.OK
+    )
+
+
+def test_key_age_without_a_date_skips_never_fails():
+    check = doctor.check_key_age(_creds("", "2026-05-01"), APPS, 365, TODAY)
+    assert check.status is Status.SKIP
+    assert "gth-pr-bot" in check.label
+    assert doctor.check_key_age(_creds("not-a-date", ""), APPS, 365, TODAY).status is Status.SKIP
+
+
+def test_key_age_a_warn_beats_a_missing_date():
+    check = doctor.check_key_age(_creds("", "2020-01-01"), APPS, 365, TODAY)
+    assert check.status is Status.WARN
+
+
+def test_key_age_skips_without_credentials():
+    assert doctor.check_key_age(None, APPS, 365, TODAY).status is Status.SKIP
+
+
+def test_fleet_reads_the_key_age_check_from_the_json():
+    from repo_kit import fleet
+
+    old = doctor.check_key_age(_creds("2020-01-01", "2026-05-01"), APPS, 365, TODAY)
+    status, detail = fleet.summarise_doctor(doctor.to_json([old]))
+    assert status.name == "WARN"
+    assert "App key age" in detail

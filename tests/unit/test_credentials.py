@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,7 @@ from repo_kit.credentials import (
     AGE_KEY_ENV,
     PR_BOT,
     RELEASE_BOT,
+    KnownRepo,
     SopsCli,
     add_recipient,
     age_key_path,
@@ -32,8 +34,14 @@ from repo_kit.credentials import (
     init,
     key_fingerprint,
     load_credentials,
+    normalise_pem,
     parse_sops_version,
+    pem_problem,
     public_key,
+    recipients,
+    remove_recipient,
+    rotate,
+    rotate_key,
     set_app,
     show,
 )
@@ -320,7 +328,9 @@ def test_set_app_stores_both_values(tmp_path):
         changed=changed,
         say=lambda _m: None,
     )
-    assert sops.files[path]["release_bot"] == {"client_id": "Iv23new", "private_key": new_pem}
+    stored = sops.files[path]["release_bot"]
+    assert stored.pop("stored_at") == datetime.now(UTC).date().isoformat()
+    assert stored == {"client_id": "Iv23new", "private_key": new_pem}
     assert sops.files[path]["pr_bot"]["private_key"] == PEM
     assert changed == [f"stored gth-release-bot's Client ID and private key in {path}"]
 
@@ -442,6 +452,35 @@ def test_round_trip_with_real_sops(tmp_path, monkeypatch):
     assert loaded[RELEASE_BOT.key].client_id == "Iv23r"
 
 
+@pytest.mark.skipif(
+    not (shutil.which("sops") and shutil.which("age-keygen")), reason="needs sops and age"
+)
+def test_recipients_with_real_sops(tmp_path, monkeypatch):
+    key_a, key_b = tmp_path / "a.txt", tmp_path / "b.txt"
+    creds_module.run_age_keygen(key_a)
+    creds_module.run_age_keygen(key_b)
+    pub_a, pub_b = public_key(key_a), public_key(key_b)
+    path = tmp_path / "secrets.sops.json"
+    sops = SopsCli()
+
+    monkeypatch.setenv(AGE_KEY_ENV, str(key_a))
+    sops.create(path, pub_a)
+    sops.add_recipient(path, pub_b)
+    sops.set_value(path, ("_recipients", pub_b), "laptop")
+    assert sops.list_recipients(path) == [pub_a, pub_b]
+    monkeypatch.setenv(AGE_KEY_ENV, str(key_b))
+    assert sops.decrypt(path)["_recipients"] == {pub_b: "laptop"}
+
+    monkeypatch.setenv(AGE_KEY_ENV, str(key_a))
+    sops.unset_value(path, ("_recipients", pub_b))
+    sops.remove_recipient(path, pub_b)
+    assert sops.list_recipients(path) == [pub_a]
+    assert pub_b not in sops.decrypt(path).get("_recipients", {})
+    monkeypatch.setenv(AGE_KEY_ENV, str(key_b))
+    with pytest.raises(creds_module.SopsError):
+        sops.decrypt(path)
+
+
 def test_the_suggested_secrets_file_starts_from_home(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
     monkeypatch.setenv("OneDrive", str(tmp_path / "OneDrive"))
@@ -468,9 +507,9 @@ def test_only_the_apps_a_repo_uses_must_be_in_the_file(tmp_path):
 
 
 def test_the_fingerprint_is_the_sha256_of_the_der_bytes():
-    # PEM's body is base64 of b"abc", whose SHA-256 is the FIPS 180-2 test vector
+    # PEM's body is base64 of the DER bytes 30 03 02 01 00
     assert key_fingerprint(PEM) == (
-        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        "b560833d6f787af46113b96aad4dd5b5d1ae00dccc69cf30cc92bed651c56617"
     )
     assert key_fingerprint(PEM.replace("\n", "\r\n")) == key_fingerprint(PEM)
     assert key_fingerprint(RELEASE_PEM) != key_fingerprint(PEM)
@@ -511,3 +550,261 @@ def test_show_warns_about_a_conflict_copy(tmp_path):
     assert "secrets.sops-LAPTOP-9Z.json" in warning
     assert "merge the two" in warning
     assert "delete the copy" in warning
+
+
+def test_load_reads_the_stored_date_and_tolerates_none(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    sops.files[path]["pr_bot"]["stored_at"] = "2025-01-31"
+    loaded = load_credentials(UserConfig(secrets_file=str(path)), SOURCE, sops)
+    assert loaded["pr_bot"].stored_at == "2025-01-31"
+    assert loaded["release_bot"].stored_at == ""
+
+
+def test_show_lists_the_stored_date(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    sops.files[path]["pr_bot"]["stored_at"] = "2025-01-31"
+    said: list[str] = []
+    show(UserConfig(secrets_file=str(path)), SOURCE, sops, say=said.append)
+    assert any("gth-pr-bot" in line and "stored 2025-01-31" in line for line in said)
+    assert not any("gth-release-bot" in line and "stored" in line for line in said)
+
+
+# --- .pem validation -------------------------------------------------------------------------
+
+PKCS8_RSA = "-----BEGIN PRIVATE KEY-----\nMA4GCSqGSIb3DQEBAQUA\n-----END PRIVATE KEY-----\n"
+PKCS8_EC = "-----BEGIN PRIVATE KEY-----\nMAMCAQA=\n-----END PRIVATE KEY-----\n"
+
+
+def _block(label: str, body: str = "MAMCAQA=") -> str:
+    return f"-----BEGIN {label}-----\n{body}\n-----END {label}-----\n"
+
+
+@pytest.mark.parametrize(
+    ("text", "message"),
+    [
+        ("", "no -----BEGIN"),
+        (_block("PUBLIC KEY"), "not the private key"),
+        (_block("CERTIFICATE"), "not the private key"),
+        (_block("ENCRYPTED PRIVATE KEY"), "passphrase"),
+        (_block("EC PRIVATE KEY"), "needs an RSA"),
+        ("-----BEGIN RSA PRIVATE KEY-----\nMAMCAQA=\n", "no matching -----END"),
+        ("-----BEGIN RSA PRIVATE KEY-----\n-----END RSA PRIVATE KEY-----\n", "empty"),
+        (_block("RSA PRIVATE KEY", "!!!!"), "base64"),
+        (_block("RSA PRIVATE KEY", "YWJj"), "DER"),
+        ("-----BEGIN RSA PRIVATE KEY-----\nMAMCAQA=\n-----END PRIVATE KEY-----\n", "doesn't match"),
+        (PEM + PEM, "more than one"),
+        (PKCS8_EC, "not an RSA"),
+    ],
+)
+def test_pem_problem_says_what_is_wrong(text, message):
+    assert message in (pem_problem(text) or "")
+
+
+def test_pem_problem_accepts_pkcs1_and_rsa_pkcs8():
+    assert pem_problem(PEM) is None
+    assert pem_problem(PKCS8_RSA) is None
+
+
+def test_normalise_pem_fixes_line_endings_bom_and_wrapping():
+    messy = "﻿" + PEM.replace("\n", "\r\n") + "\r\n\r\n"
+    assert normalise_pem(messy) == PEM
+    assert key_fingerprint(messy) == key_fingerprint(PEM)
+    assert normalise_pem(PEM.rstrip("\n")) == PEM
+
+
+def test_set_app_stores_the_normalised_key(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    set_app(
+        UserConfig(secrets_file=str(path)), SOURCE, sops, "pr-bot",
+        client_id="Iv23x", pem=pem_file(tmp_path, PEM.replace("\n", "\r\n")),
+        changed=[], say=lambda _m: None,
+    )  # fmt: skip
+    assert sops.files[path]["pr_bot"]["private_key"] == PEM
+
+
+def test_set_app_errors_for_missing_folder_binary_and_public_key(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    config = UserConfig(secrets_file=str(path))
+
+    def attempt(pem):
+        with pytest.raises(RkError) as info:
+            set_app(config, SOURCE, sops, "pr-bot", client_id="Iv23x", pem=pem, changed=[])
+        return str(info.value)
+
+    assert "doesn't exist" in attempt(tmp_path / "nope.pem")
+    assert "is a folder" in attempt(tmp_path)
+    binary = tmp_path / "bin.pem"
+    binary.write_bytes(b"\xff\xfe\x00\x80")
+    assert "isn't a text file" in attempt(binary)
+    assert "not the private key" in attempt(pem_file(tmp_path, _block("PUBLIC KEY")))
+    assert sops.writes == []
+
+
+def test_set_app_errors_never_echo_the_key(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    secret = _block("RSA PRIVATE KEY", "TOPSECRETBODY!")
+    with pytest.raises(RkError) as info:
+        set_app(
+            UserConfig(secrets_file=str(path)), SOURCE, sops, "pr-bot",
+            client_id="Iv23x", pem=pem_file(tmp_path, secret), changed=[],
+        )  # fmt: skip
+    assert "TOPSECRET" not in str(info.value)
+
+
+# --- rk secrets recipients / remove-recipient ------------------------------------------------
+
+OTHER = "age1" + "w" * 58
+THIRD = "age1" + "e" * 58
+
+
+def two_machines(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    config = UserConfig(secrets_file=str(path))
+    sops.recipients[path] = [RECIPIENT]
+    add_recipient(config, SOURCE, sops, OTHER, label="laptop", changed=[])
+    return path, sops, config
+
+
+def test_add_recipient_records_a_label(tmp_path):
+    path, sops, _ = two_machines(tmp_path)
+    assert sops.recipients[path] == [RECIPIENT, OTHER]
+    assert sops.files[path]["_recipients"] == {OTHER: "laptop"}
+
+
+def test_add_recipient_refuses_a_label_that_looks_like_a_key(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    with pytest.raises(RkError, match="label"):
+        add_recipient(
+            UserConfig(secrets_file=str(path)), SOURCE, sops, OTHER, label="age1x", changed=[]
+        )
+    assert sops.writes == []
+
+
+def test_recipients_lists_labels_and_marks_this_machine(tmp_path):
+    _, sops, config = two_machines(tmp_path)
+    said: list[str] = []
+    recipients(config, SOURCE, sops, own=RECIPIENT, say=said.append)
+    assert f"  {RECIPIENT}  (this machine)" in said
+    assert f"  {OTHER}  (laptop)" in said
+
+
+def test_recipients_without_access_still_lists_keys(tmp_path):
+    _, sops, config = two_machines(tmp_path)
+    sops.readable = False
+    said: list[str] = []
+    recipients(config, SOURCE, sops, say=said.append)
+    assert f"  {OTHER}" in said
+    assert any("labels aren't shown" in line for line in said)
+
+
+def test_remove_recipient_by_label_or_key_drops_its_label(tmp_path):
+    path, sops, config = two_machines(tmp_path)
+    changed: list[str] = []
+    remove_recipient(config, SOURCE, sops, "laptop", own=RECIPIENT, changed=changed)
+    assert sops.recipients[path] == [RECIPIENT]
+    assert OTHER not in sops.files[path]["_recipients"]
+    assert changed == [f"removed recipient {OTHER} from {path}"]
+    add_recipient(config, SOURCE, sops, THIRD, changed=[])
+    remove_recipient(config, SOURCE, sops, THIRD, own=RECIPIENT, changed=[])
+    assert sops.recipients[path] == [RECIPIENT]
+
+
+def test_remove_recipient_refuses_the_last_one(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    sops.recipients[path] = [RECIPIENT]
+    with pytest.raises(RkError, match="only recipient"):
+        remove_recipient(
+            UserConfig(secrets_file=str(path)), SOURCE, sops, RECIPIENT, include_self=True,
+            changed=[],
+        )  # fmt: skip
+    assert sops.recipients[path] == [RECIPIENT]
+
+
+def test_remove_recipient_refuses_this_machine_unless_asked(tmp_path):
+    path, sops, config = two_machines(tmp_path)
+    with pytest.raises(RkError, match="--include-self"):
+        remove_recipient(config, SOURCE, sops, RECIPIENT, own=RECIPIENT, changed=[])
+    remove_recipient(config, SOURCE, sops, RECIPIENT, own=RECIPIENT, include_self=True, changed=[])
+    assert sops.recipients[path] == [OTHER]
+
+
+def test_remove_recipient_unknown_or_ambiguous(tmp_path):
+    _, sops, config = two_machines(tmp_path)
+    with pytest.raises(RkError, match="isn't a recipient or label"):
+        remove_recipient(config, SOURCE, sops, "phone", changed=[])
+    add_recipient(config, SOURCE, sops, THIRD, label="laptop", changed=[])
+    with pytest.raises(RkError, match="matches 2"):
+        remove_recipient(config, SOURCE, sops, "laptop", changed=[])
+
+
+def test_sops_cli_reads_recipients_from_the_files_metadata(tmp_path):
+    path = tmp_path / "s.json"
+    meta = {"sops": {"age": [{"recipient": RECIPIENT, "enc": "x"}, {"recipient": OTHER}]}}
+    path.write_text(json.dumps(meta), encoding="utf-8")
+    assert SopsCli().list_recipients(path) == [RECIPIENT, OTHER]
+
+
+# --- rk secrets rotate -----------------------------------------------------------------------
+
+
+def test_rotate_key_stores_the_new_key_and_keeps_the_old_fingerprint(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    config = UserConfig(secrets_file=str(path))
+    changed: list[str] = []
+    rotation = rotate_key(
+        config, SOURCE, sops, "release-bot", pem=pem_file(tmp_path, NEW_PEM), changed=changed
+    )
+    table = sops.files[path]["release_bot"]
+    assert table["private_key"] == NEW_PEM
+    assert table["client_id"] == "Iv23rel"
+    assert table["previous_key_fingerprint"] == key_fingerprint(RELEASE_PEM)
+    assert table["stored_at"] == datetime.now(UTC).date().isoformat()
+    assert rotation.previous_fingerprint == key_fingerprint(RELEASE_PEM)
+    assert rotation.new_fingerprint == key_fingerprint(NEW_PEM)
+    assert changed == [f"stored a new private key for gth-release-bot in {path}"]
+    loaded = load_credentials(config, SOURCE, sops)
+    assert loaded[RELEASE_BOT.key].previous_fingerprint == key_fingerprint(RELEASE_PEM)
+    assert loaded[PR_BOT.key].previous_fingerprint is None
+
+
+def test_rotate_key_refuses_before_writing(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    config = UserConfig(secrets_file=str(path))
+    with pytest.raises(RkError, match="already stored"):
+        rotate_key(
+            config, SOURCE, sops, "release-bot", pem=pem_file(tmp_path, RELEASE_PEM), changed=[]
+        )
+    with pytest.raises(RkError, match="not the private key"):
+        pub = _block("PUBLIC KEY")
+        rotate_key(config, SOURCE, sops, "pr-bot", pem=pem_file(tmp_path, pub), changed=[])
+    del sops.files[path]["pr_bot"]["private_key"]
+    with pytest.raises(RkError, match="set-app pr-bot"):
+        rotate_key(config, SOURCE, sops, "pr-bot", pem=pem_file(tmp_path, NEW_PEM), changed=[])
+    assert sops.writes == []
+
+
+def test_rotate_prints_the_commands_for_each_repo_and_never_the_key(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    repos = [
+        KnownRepo(tmp_path / "a", "o/a", (PR_BOT, RELEASE_BOT)),
+        KnownRepo(tmp_path / "b", "o/b", (RELEASE_BOT,)),
+    ]
+    said: list[str] = []
+    rotate(
+        UserConfig(secrets_file=str(path)), SOURCE, sops, "pr-bot",
+        pem=pem_file(tmp_path, NEW_PEM), repos=repos, changed=[], say=said.append,
+    )  # fmt: skip
+    text = " ".join(said)
+    assert f'cd "{tmp_path / "a"}" && rk configure --replace-key' in said[1] + said[2]
+    assert str(tmp_path / "b") not in text  # doesn't use gth-pr-bot
+    assert "BEGIN" not in text and "MAMCAQI" not in text
+
+
+def test_rotate_with_no_repos_says_to_run_configure_in_each(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    said: list[str] = []
+    rotate(
+        UserConfig(secrets_file=str(path)), SOURCE, sops, "pr-bot",
+        pem=pem_file(tmp_path, NEW_PEM), repos=[], changed=[], say=said.append,
+    )  # fmt: skip
+    assert any("rk configure --replace-key` in each enrolled repo" in line for line in said)

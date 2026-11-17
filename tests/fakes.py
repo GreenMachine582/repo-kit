@@ -11,9 +11,11 @@ from repo_kit import git
 from repo_kit.credentials import EMPTY_FILE, SopsError
 from repo_kit.github import BaseStatus, PullRequest, UpdateResult, pick_pr
 
-PEM = "-----BEGIN RSA PRIVATE KEY-----\nYWJj\n-----END RSA PRIVATE KEY-----\n"
-RELEASE_PEM = "-----BEGIN RSA PRIVATE KEY-----\ncmVs\n-----END RSA PRIVATE KEY-----\n"
-NEW_PEM = "-----BEGIN RSA PRIVATE KEY-----\nbmV3\n-----END RSA PRIVATE KEY-----\n"  # a rotated key
+PEM = "-----BEGIN RSA PRIVATE KEY-----\nMAMCAQA=\n-----END RSA PRIVATE KEY-----\n"
+RELEASE_PEM = "-----BEGIN RSA PRIVATE KEY-----\nMAMCAQE=\n-----END RSA PRIVATE KEY-----\n"
+NEW_PEM = (
+    "-----BEGIN RSA PRIVATE KEY-----\nMAMCAQI=\n-----END RSA PRIVATE KEY-----\n"  # a rotated key
+)
 
 
 class FakeSops:
@@ -50,6 +52,20 @@ class FakeSops:
     def add_recipient(self, path: Path, recipient: str) -> None:
         self.writes.append(f"add {recipient}")
         self.recipients.setdefault(path, []).append(recipient)
+
+    def remove_recipient(self, path: Path, recipient: str) -> None:
+        self.writes.append(f"remove {recipient}")
+        self.recipients[path].remove(recipient)
+
+    def unset_value(self, path: Path, keys: tuple[str, ...]) -> None:
+        self.writes.append(f"unset {'.'.join(keys)}")
+        node = self.files[path]
+        for key in keys[:-1]:
+            node = node[key]
+        del node[keys[-1]]
+
+    def list_recipients(self, path: Path) -> list[str]:
+        return list(self.recipients.get(path, []))
 
 
 def stored_credentials(
@@ -161,6 +177,7 @@ class FakeGitHub:
         self.added_labels: list[tuple[int, str]] = []
         self.comments: dict[int, list[str]] = {}
         self.files: dict[str, str] = {}
+        self.created: list[tuple[int, str, str]] = []
 
     def add_pr(
         self,
@@ -272,3 +289,10 @@ class FakeGitHub:
 
     def read_file(self, path: str) -> str | None:
         return self.files.get(path)
+
+    def create_pr(
+        self, head: str, base: str, title: str, body: str, *, draft: bool = False
+    ) -> PullRequest:
+        pr = self.add_pr(head, base, draft=draft)
+        self.created.append((pr.number, title, body))
+        return pr

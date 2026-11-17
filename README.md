@@ -91,7 +91,7 @@ uv pip install -e ".[dev]"
 | `rk github diff \| apply` | Compare or apply rulesets and repo settings |
 | `rk branches prune [--apply]` | List, or delete, branches whose PR is merged (or, on origin, closed) |
 | `rk check commits \| commit-msg \| pr-title` | The commit and title rules `pr-checks` runs |
-| `rk secrets init / set-app / add-recipient / show` | Keep both Apps' credentials in one sops + age encrypted file |
+| `rk secrets init / set-app / add-recipient / rotate / recipients / remove-recipient / show` | Keep both Apps' credentials in one sops + age encrypted file |
 | `rk configure` | Enrol a repo for `gth-pr-bot` and `gth-release-bot`: labels, Client ID variables, and each key in an environment only one branch may use |
 | `rk install / bootstrap` | Adopt a repo |
 | `rk upgrade [vX.Y.Z]` | Move the version pin to this rk's release and re-render |
@@ -108,6 +108,7 @@ uv pip install -e ".[dev]"
 | [docs/github-app.md](docs/github-app.md) | 🤖 `gth-pr-bot` and `gth-release-bot` |
 | [docs/shared-files.md](docs/shared-files.md) | 📄 `rk sync`, ownership modes and the lock file |
 | [docs/checks-and-release.md](docs/checks-and-release.md) | ✅ `pr-checks` and `release` reusable workflows |
+| [docs/fleet.md](docs/fleet.md) | 🚢 `rk fleet`: doctor, sync --check, configure and upgrade across every repo |
 | [docs/rulesets.md](docs/rulesets.md) | 🔒 Rulesets, repo settings and branch pruning |
 | [docs/adoption.md](docs/adoption.md) | 📦 Install, upgrade, versioning and per-repo changes |
 | [docs/testing.md](docs/testing.md) | 🧪 Unit tests, Git and file sync scenarios, pilot checks |

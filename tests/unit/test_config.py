@@ -4,6 +4,7 @@ import pytest
 
 from repo_kit.config import (
     ConfigError,
+    ExtraFile,
     RepoConfig,
     UserConfig,
     load_repo_config,
@@ -127,6 +128,62 @@ def test_env_dirs_accepts_plain_names(entry):
     assert config.worktree.env_dirs == (entry,)
 
 
+def test_extra_files_parse_into_entries():
+    config = parse_repo_config(
+        {
+            "project": {
+                "extra_files": [
+                    {"path": "src/x/version.py"},
+                    {"path": ".repo-kit.toml", "type": "toml", "jsonpath": "$.version"},
+                ]
+            }
+        },
+        SRC,
+    )
+    assert config.project.extra_files == (
+        ExtraFile("src/x/version.py"),
+        ExtraFile(".repo-kit.toml", "toml", "$.version"),
+    )
+    assert RepoConfig().project.extra_files == ()
+
+
+def test_unknown_extra_file_keys_are_errors():
+    with pytest.raises(ConfigError, match="unknown key") as exc:
+        parse_repo_config({"project": {"extra_files": [{"path": "a", "jsonpth": "$"}]}}, SRC)
+    assert "`project.extra_files[0].jsonpth`" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [{"path": ""}, {"path": "../a"}, {"path": "/a"}, {"path": "C:\\a"}, {"path": "a/*.py"}]
+    + [{"path": "a//b"}, {"path": "./a"}],
+)
+def test_extra_file_paths_must_be_plain_relative_files(entry):
+    with pytest.raises(ConfigError, match="plain relative file path"):
+        parse_repo_config({"project": {"extra_files": [entry]}}, SRC)
+
+
+@pytest.mark.parametrize(
+    ("entry", "message"),
+    [
+        ({"path": "a", "type": "xml"}, "must be one of"),
+        ({"path": "a", "type": "toml"}, "needs a `jsonpath`"),
+        ({"path": "a", "type": "json", "jsonpath": "version"}, "needs a `jsonpath`"),
+        ({"path": "a", "jsonpath": "$.v"}, "only applies to json, toml and yaml"),
+    ],
+)
+def test_extra_file_types_and_jsonpaths_are_checked(entry, message):
+    with pytest.raises(ConfigError, match=message):
+        parse_repo_config({"project": {"extra_files": [entry]}}, SRC)
+
+
+def test_extra_files_must_be_a_list_of_tables():
+    with pytest.raises(ConfigError, match="must be a list"):
+        parse_repo_config({"project": {"extra_files": "a.py"}}, SRC)
+    with pytest.raises(ConfigError, match="must be a table"):
+        parse_repo_config({"project": {"extra_files": ["a.py"]}}, SRC)
+
+
 def test_override_mode_must_be_unmanaged():
     with pytest.raises(ConfigError, match='must be "unmanaged"'):
         parse_repo_config({"overrides": {"files": {"a.yml": "managed"}}}, SRC)
@@ -167,3 +224,34 @@ def test_worktree_root_under_onedrive_env_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setenv("OneDrive", str(synced))
     with pytest.raises(ConfigError, match="synced folder"):
         parse_user_config({"worktree_root": (synced / "wt").as_posix()}, SRC)
+
+
+def test_key_max_age_days_defaults_to_a_year_and_must_be_positive():
+    assert parse_user_config({}, SRC).key_max_age_days == 365
+    assert parse_user_config({"key_max_age_days": 90}, SRC).key_max_age_days == 90
+    with pytest.raises(ConfigError, match="key_max_age_days"):
+        parse_user_config({"key_max_age_days": 0}, SRC)
+
+
+def test_fleet_repos_parse_and_expand_the_home_folder():
+    config = parse_user_config(
+        {"fleet": {"repos": {"GreenMachine582/PyFinBot": "~/dev/PyFinBot"}}}, SRC
+    )
+    assert config.fleet.repos == {"GreenMachine582/PyFinBot": Path("~/dev/PyFinBot").expanduser()}
+    assert UserConfig().fleet.repos == {}
+
+
+def test_fleet_unknown_keys_are_errors():
+    with pytest.raises(ConfigError, match="`fleet.repo`"):
+        parse_user_config({"fleet": {"repo": {}}}, SRC)
+
+
+@pytest.mark.parametrize("slug", ["PyFinBot", "a/b/c", "/b", "a/", "a b/c", "-a/b"])
+def test_fleet_keys_must_be_github_slugs(slug):
+    with pytest.raises(ConfigError, match="must be a GitHub slug"):
+        parse_user_config({"fleet": {"repos": {slug: "~/x"}}}, SRC)
+
+
+def test_fleet_paths_must_be_strings():
+    with pytest.raises(ConfigError, match="must be a path string"):
+        parse_user_config({"fleet": {"repos": {"o/r": 1}}}, SRC)

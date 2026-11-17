@@ -59,15 +59,18 @@ For every Claude session or subagent working on a branch here:
 - **Worktree:** start with `rk wt start <type/desc> --no-setup` from the main checkout, then work only in the
   printed worktree. Build its venv with `uv venv` and `uv pip install --python .venv/Scripts/python.exe -e ".[dev]"`.
   A plain `uv pip install` follows `VIRTUAL_ENV`, which may point at the main checkout, and would repoint that
-  checkout's `rk`.
+  checkout's `rk`. Run the install again after merging a `dev` that changed the `dev` extra.
 - **Scratch files:** agents running in parallel share one scratch folder, so name temporary files after the branch
   (`msg-feat-x.txt`, not `msg.txt`).
 - **Editing:** use the editor tools, not shell heredocs, for text with backslashes: the shell here turns `\n` and `\a`
   into real characters.
 - **Before each commit:** `ruff check`, `ruff format --check`, `mypy`, `pytest` and `rk sync --check` must pass.
-  Check exit codes directly: `cmd | tail && git commit` hides a failure behind the pipe.
-- **Commit and PR:** check commits with `rk check commits origin/dev..HEAD`. Open a draft PR to `dev`, and mark it
-  ready (`gh pr ready`) once CI is green. The user merges.
+  Check exit codes directly: `cmd | tail && git commit` hides a failure behind the pipe. This machine is Windows,
+  and CI only runs the Windows tests on release PRs and merges to `dev`, so this local `pytest` is the Windows check
+  for a PR into `dev`. It runs in parallel (`-n0` for one process), and test file basenames must be unique across
+  `tests/unit` and `tests/scenarios`.
+- **Commit and PR:** check commits with `rk check commits origin/dev..HEAD`. Open a draft PR to `dev`, read the check
+  results, and mark it ready (`gh pr ready`) once CI is green. The user merges.
 - **TODO.md:** agents working in parallel leave it alone. The lead updates it once, after the PRs merge.
 - **Credentials:** never read the age key, `.pem` files, the user config or decrypted credentials. Never run
   `rk github apply`, `rk configure` or `rk secrets` against real repos. Tests use `tmp_path` and a fake home folder.

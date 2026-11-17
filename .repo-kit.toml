@@ -1,12 +1,18 @@
 # repo-kit's config for this repo: the one input to everything rk generates or applies.
 # repo-kit runs on its own tooling. Every key and its default: docs/configuration.md
 
-version = "0.1.0"                 # the first release: release-please's first bump from 0.0.0
+version = "0.2.0"                 # the repo-kit release whose files this repo holds: rk upgrade moves it
 profile = "dev-main"
 
 [project]
 name = "repo-kit"
 release_type = "python"
+# repo-kit's version is the engine its own CI runs, so the release PR moves the pin and the lock's copy
+# of it along with pyproject.toml. Without these, `managed-files` fails on every release PR.
+extra_files = [
+  { type = "toml", path = ".repo-kit.toml", jsonpath = "$.version" },
+  { type = "json", path = ".repo-kit.lock", jsonpath = "$.version" },
+]
 
 [checks]
 # This repo's own CI jobs (ci.yml), required next to the pr-checks ones.

@@ -18,6 +18,7 @@ import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -37,6 +38,8 @@ _INSTALL_HINT = (
     "install sops and age, then open a new terminal (docs/github-app.md#installing-sops-and-age)"
 )
 AGE_KEY_ENV = "SOPS_AGE_KEY_FILE"
+PREVIOUS_FINGERPRINT_KEY = "previous_key_fingerprint"
+LABELS_KEY = "_recipients"  # recipient -> label, inside the encrypted data
 _AGE_RECIPIENT = re.compile(r"age1[0-9a-z]{58}")
 
 
@@ -94,6 +97,11 @@ def apps_for(config: RepoConfig) -> tuple[App, ...]:
 class AppCredentials:
     client_id: str
     private_key: str
+    # The fingerprint of the key `rk secrets rotate` replaced, so doctor can tell a repo still on
+    # the previous key from one holding something else.
+    previous_fingerprint: str | None = None
+    # ISO date (UTC) `set-app` stored the key; "" for an entry stored before dates were kept.
+    stored_at: str = ""
 
     def __repr__(self) -> str:  # never show the key, even in a traceback
         return f"AppCredentials(client_id={self.client_id!r}, private_key=<hidden>)"
@@ -128,6 +136,16 @@ class Sops(Protocol):
         ...
 
     def add_recipient(self, path: Path, recipient: str) -> None: ...
+
+    def remove_recipient(self, path: Path, recipient: str) -> None:
+        """Drop one age recipient and re-encrypt, so its key can't decrypt the file any more."""
+        ...
+
+    def unset_value(self, path: Path, keys: tuple[str, ...]) -> None: ...
+
+    def list_recipients(self, path: Path) -> list[str]:
+        """The age recipients the file is encrypted to. Needs no key: sops keeps them in clear."""
+        ...
 
 
 def parse_sops_version(text: str) -> tuple[int, int]:
@@ -203,6 +221,24 @@ class SopsCli:
         self._require_version()
         self._sops("rotate", "--input-type", "json", "-i", "--add-age", recipient, str(path))
 
+    def remove_recipient(self, path: Path, recipient: str) -> None:
+        self._require_version()
+        self._sops("rotate", "--input-type", "json", "-i", "--rm-age", recipient, str(path))
+
+    def unset_value(self, path: Path, keys: tuple[str, ...]) -> None:
+        self._require_version()
+        index = "".join(f"[{json.dumps(k)}]" for k in keys)
+        self._sops("unset", "--input-type", "json", str(path), index)
+
+    def list_recipients(self, path: Path) -> list[str]:
+        try:
+            meta = json.loads(path.read_text(encoding="utf-8")).get("sops", {})
+            entries = meta.get("age") or []
+        except (OSError, ValueError, AttributeError) as exc:
+            raise SopsError(f"can't read {path}'s sops metadata: {exc}") from None
+        found = [e.get("recipient") for e in entries if isinstance(e, dict)]
+        return [r for r in found if isinstance(r, str)]
+
 
 # --- age -----------------------------------------------------------------------------------
 
@@ -261,36 +297,80 @@ def run_age_keygen(path: Path) -> None:
 # --- credentials ---------------------------------------------------------------------------
 
 
-def _pem_der(text: str) -> bytes:
-    """The DER bytes of a PEM: the base64 lines between its BEGIN and END lines."""
+_PEM_LINE = re.compile(r"-----(BEGIN|END) ([A-Z0-9 ]+)-----")
+_PEM_PRIVATE_LABELS = ("RSA PRIVATE KEY", "PRIVATE KEY")  # PKCS#1 and PKCS#8
+_RSA_OID = bytes.fromhex("2a864886f70d010101")  # rsaEncryption, inside a PKCS#8 key
+
+
+def _pem_parts(text: str) -> tuple[str, bytes]:
+    """The label and DER bytes of the one PEM block in `text`. Raises ValueError with a message
+    that never includes key material."""
+    text = text.lstrip(chr(0xFEFF))
+    labels = [m[2] for m in _PEM_LINE.finditer(text) if m[1] == "BEGIN"]
+    if not labels:
+        raise ValueError("isn't a PEM private key (no -----BEGIN ...----- line)")
+    if len(labels) > 1:
+        raise ValueError("holds more than one PEM block: it should hold only the private key")
+    label = labels[0]
+    if label.endswith("PUBLIC KEY") or label == "CERTIFICATE":
+        raise ValueError(
+            f"is a {label.lower()}, not the private key: generate a private key on the App's "
+            "settings page and use the .pem it downloads"
+        )
+    if label == "ENCRYPTED PRIVATE KEY":
+        raise ValueError("is a passphrase-protected key: GitHub's downloaded .pem isn't")
+    if label not in _PEM_PRIVATE_LABELS:
+        raise ValueError(f"is a {label.lower()}: a GitHub App needs an RSA private key")
     body: list[str] = []
-    inside = False
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("-----BEGIN"):
-            inside, body = True, []
-        elif line.startswith("-----END"):
-            if inside:
-                return base64.b64decode("".join(body), validate=True)
+    inside = ended = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        found = _PEM_LINE.fullmatch(line)
+        if found and found[1] == "BEGIN":
+            inside = True
+        elif found and found[1] == "END":
+            if found[2] != label:
+                raise ValueError("has an END line that doesn't match its BEGIN line")
+            ended = True
             break
         elif inside and line:
             body.append(line)
-    raise ValueError("no BEGIN and END lines")
+    if not ended:
+        raise ValueError("isn't a complete PEM key (no matching -----END ...----- line)")
+    if not body:
+        raise ValueError("has an empty PEM body")
+    try:
+        der = base64.b64decode("".join(body), validate=True)
+    except ValueError:  # binascii.Error is one
+        raise ValueError("isn't a PEM private key (its body isn't valid base64)") from None
+    if not der or der[0] != 0x30:  # every PKCS#1 and PKCS#8 key is an ASN.1 SEQUENCE
+        raise ValueError("isn't a PEM private key (its body isn't a DER key)")
+    if label == "PRIVATE KEY" and _RSA_OID not in der[:64]:
+        raise ValueError("is a PKCS#8 key but not an RSA one: a GitHub App needs an RSA key")
+    return label, der
 
 
 def key_fingerprint(pem: str) -> str:
     """SHA-256 (hex) of a PEM key's DER bytes. Safe to store and show: it can't rebuild the key."""
-    return hashlib.sha256(_pem_der(pem)).hexdigest()
+    return hashlib.sha256(_pem_parts(pem)[1]).hexdigest()
 
 
 def pem_problem(text: str) -> str | None:
-    if "-----BEGIN" not in text or "PRIVATE KEY-----" not in text:
-        return "isn't a PEM private key (the App's downloaded .pem)"
+    """Why `text` isn't a usable App private key, or None. Never quotes the key."""
     try:
-        _pem_der(text)
-    except ValueError:  # binascii.Error is one
-        return "isn't a PEM private key (its body isn't valid base64)"
+        _pem_parts(text)
+    except ValueError as exc:
+        return str(exc)
     return None
+
+
+def normalise_pem(text: str) -> str:
+    """The key with LF line endings, no BOM or stray blank lines, 64-character body lines and
+    one trailing newline. Raises ValueError if it isn't a usable key."""
+    label, der = _pem_parts(text)
+    body = base64.b64encode(der).decode("ascii")
+    lines = [body[i : i + 64] for i in range(0, len(body), 64)]
+    return "\n".join([f"-----BEGIN {label}-----", *lines, f"-----END {label}-----"]) + "\n"
 
 
 def conflict_copies(path: Path) -> list[Path]:
@@ -366,7 +446,14 @@ def load_credentials(
         if problem:
             problems.append(f"{app.name}'s private_key {problem}: `{_set_app_hint(app)}`")
             continue
-        credentials[app.key] = AppCredentials(client_id, key)
+        previous = table.get(PREVIOUS_FINGERPRINT_KEY)
+        stored_at = table.get("stored_at")
+        credentials[app.key] = AppCredentials(
+            client_id,
+            key,
+            previous if isinstance(previous, str) and previous else None,
+            stored_at if isinstance(stored_at, str) else "",
+        )
     if problems:
         raise RkError("\n".join(problems))
     return credentials
@@ -472,6 +559,23 @@ def init(
     return 0
 
 
+def read_pem(pem: Path) -> str:
+    """The normalised key in a downloaded `.pem`, or an RkError saying what's wrong with the
+    file. Nothing here prints or quotes the key."""
+    if pem.is_dir():
+        raise RkError(f"{pem} is a folder: give the path of the .pem file")
+    if not pem.is_file():
+        raise RkError(f"{pem} doesn't exist")
+    try:
+        raw = pem.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        raise RkError(f"{pem} isn't a PEM private key (it isn't a text file)") from None
+    try:
+        return normalise_pem(raw)
+    except ValueError as exc:
+        raise RkError(f"{pem} {exc}") from None
+
+
 def set_app(
     user_config: UserConfig,
     source: Path,
@@ -489,15 +593,11 @@ def set_app(
     client_id = client_id.strip()
     if not client_id or any(c.isspace() for c in client_id):
         raise RkError(f"{client_id!r} isn't a Client ID (GitHub shows it as `Iv23…`)")
-    if not pem.is_file():
-        raise RkError(f"{pem} doesn't exist")
-    key = pem.read_text(encoding="utf-8")
-    problem = pem_problem(key)
-    if problem:
-        raise RkError(f"{pem} {problem}")
+    key = read_pem(pem)
 
     sops.set_value(path, (app.key, "client_id"), client_id)
     sops.set_value(path, (app.key, "private_key"), key)
+    sops.set_value(path, (app.key, "stored_at"), datetime.now(UTC).date().isoformat())
     stored = _app_table(sops.decrypt(path), app)
     if stored.get("client_id") != client_id or stored.get("private_key") != key:
         raise RkError(f"{path} doesn't read back what was stored for {app.name}: check it by hand")
@@ -508,20 +608,230 @@ def set_app(
     )
 
 
+@dataclass(frozen=True)
+class Rotation:
+    """What `rotate_key` did: enough for a caller (`rk secrets rotate`, later `rk fleet`) to go
+    on and replace the key in each repo."""
+
+    app: App
+    new_fingerprint: str
+    previous_fingerprint: str | None  # None if the file held no readable key before
+
+
+def rotate_key(
+    user_config: UserConfig,
+    source: Path,
+    sops: Sops,
+    app_arg: str,
+    *,
+    pem: Path,
+    changed: list[str],
+) -> Rotation:
+    """Store a new private key for an App that's already in the credentials file, and keep the
+    old key's fingerprint beside it. The Client ID stays. Writes nothing if the `.pem` is
+    unusable or is the key already stored. This is the part `rk fleet` calls; it prints nothing
+    and touches no repo."""
+    app = app_by_arg(app_arg)
+    path = secrets_path(user_config, source)
+    new_key = read_pem(pem)
+    table = _app_table(sops.decrypt(path), app)
+    old_key = table.get("private_key")
+    if not table.get("client_id") or not isinstance(old_key, str) or not old_key:
+        raise RkError(f"{app.name} isn't in {path}: `{_set_app_hint(app)}` stores its first key")
+    new_fingerprint = key_fingerprint(new_key)
+    previous = key_fingerprint(old_key) if pem_problem(old_key) is None else None
+    if previous == new_fingerprint:
+        raise RkError(
+            f"{pem} is the key already stored for {app.name}: generate a new private key in the "
+            "App's settings first"
+        )
+    if previous:
+        sops.set_value(path, (app.key, PREVIOUS_FINGERPRINT_KEY), previous)
+    sops.set_value(path, (app.key, "private_key"), new_key)
+    sops.set_value(path, (app.key, "stored_at"), datetime.now(UTC).date().isoformat())
+    stored = _app_table(sops.decrypt(path), app)
+    if stored.get("private_key") != new_key:
+        raise RkError(f"{path} doesn't read back the new key for {app.name}: check it by hand")
+    changed.append(f"stored a new private key for {app.name} in {path}")
+    return Rotation(app, new_fingerprint, previous)
+
+
+@dataclass(frozen=True)
+class KnownRepo:
+    checkout: Path  # the main checkout, where `rk configure` runs
+    name: str  # owner/repo
+    apps: tuple[App, ...]
+
+
+def known_repos(user_config: UserConfig, cwd: Path) -> list[KnownRepo]:
+    """Repos rk can find without a registry: the one in `cwd` and any with a worktree under
+    `worktree_root`. Each is read from its own `.repo-kit.toml`; one that can't be read is left
+    out. `rk fleet` replaces this with its own list of adopting repos."""
+    from repo_kit import git
+    from repo_kit.config import load_repo_config
+
+    candidates = [cwd]
+    root = user_config.worktree_root
+    if root.is_dir():
+        for group in sorted(p for p in root.iterdir() if p.is_dir()):
+            inside = sorted(p for p in group.iterdir() if (p / ".git").exists())
+            candidates.extend(inside[:1])  # one worktree is enough to find the repo
+    found: dict[Path, KnownRepo] = {}
+    for candidate in candidates:
+        try:
+            main = git.main_checkout(candidate)
+            owner, repo = git.parse_owner_repo(git.remote_url(main))
+            config = load_repo_config(main)
+        except (RkError, OSError):
+            continue
+        found.setdefault(main, KnownRepo(main, f"{owner}/{repo}", apps_for(config)))
+    return sorted(found.values(), key=lambda r: r.name)
+
+
+def configure_commands(app: App, repos: list[KnownRepo]) -> list[str]:
+    """The commands that put a rotated key into each repo that uses `app`."""
+    return [
+        f'cd "{repo.checkout}" && rk configure --replace-key' for repo in repos if app in repo.apps
+    ]
+
+
+def rotate(
+    user_config: UserConfig,
+    source: Path,
+    sops: Sops,
+    app_arg: str,
+    *,
+    pem: Path,
+    repos: list[KnownRepo],
+    changed: list[str],
+    say: Callable[[str], None] = print,
+) -> Rotation:
+    """`rk secrets rotate`: store the new key, then say how to replace it in each repo."""
+    rotation = rotate_key(user_config, source, sops, app_arg, pem=pem, changed=changed)
+    app = rotation.app
+    commands = configure_commands(app, repos)
+    say(f"{pem} can be deleted now.")
+    if commands:
+        say(f"Put the new key in each repo that uses {app.name}:")
+        for command in commands:
+            say(f"  {command}")
+    else:
+        say("rk found no repos to name: run `rk configure --replace-key` in each enrolled repo.")
+    say(
+        "Then run `rk doctor` in each (it flags a repo still on the previous key) and delete the "
+        f"old key in {app.name}'s settings."
+    )
+    return rotation
+
+
 def add_recipient(
     user_config: UserConfig,
     source: Path,
     sops: Sops,
     recipient: str,
     *,
+    label: str | None = None,
     changed: list[str],
 ) -> None:
     """Let another machine's age key decrypt the credentials file."""
     if not _AGE_RECIPIENT.fullmatch(recipient):
         raise RkError(f"{recipient!r} isn't an age public key (age1 followed by 58 characters)")
     path = secrets_path(user_config, source)
+    label = label.strip() if label else None
+    if label and label.startswith("age1"):
+        raise RkError("a label can't start with `age1`: it would look like a recipient")
     sops.add_recipient(path, recipient)
     changed.append(f"added recipient {recipient} to {path}")
+    if label:
+        # Labels live inside the encrypted data: the recipients list in sops' metadata has no
+        # room for them, and a sidecar file could drift from the file it describes.
+        sops.set_value(path, (LABELS_KEY, recipient), label)
+        changed.append(f"labelled {recipient} as {label!r}")
+
+
+def _labels(sops: Sops, path: Path) -> dict[str, str] | None:
+    """Recipient -> label, or None if this machine can't decrypt the file."""
+    try:
+        table = sops.decrypt(path).get(LABELS_KEY)
+    except SopsError:
+        return None
+    if not isinstance(table, dict):
+        return {}
+    return {k: v for k, v in table.items() if isinstance(v, str)}
+
+
+def _own_recipient() -> str | None:
+    try:
+        return public_key(age_key_path())
+    except (OSError, RkError):
+        return None
+
+
+def recipients(
+    user_config: UserConfig,
+    source: Path,
+    sops: Sops,
+    *,
+    own: str | None = None,
+    say: Callable[[str], None] = print,
+) -> None:
+    """List the age recipients the credentials file is encrypted to, with their labels."""
+    path = secrets_path(user_config, source)
+    found = sops.list_recipients(path)
+    labels = _labels(sops, path)
+    say(str(path))
+    if not found:
+        say("  no recipients")
+    for recipient in found:
+        notes = []
+        if labels is not None and labels.get(recipient):
+            notes.append(labels[recipient])
+        if recipient == own:
+            notes.append("this machine")
+        say(f"  {recipient}" + (f"  ({', '.join(notes)})" if notes else ""))
+    if labels is None:
+        say("  This machine can't decrypt the file, so labels aren't shown.")
+
+
+def remove_recipient(
+    user_config: UserConfig,
+    source: Path,
+    sops: Sops,
+    target: str,
+    *,
+    own: str | None = None,
+    include_self: bool = False,
+    changed: list[str],
+) -> None:
+    """Stop an age key decrypting the credentials file, by recipient or label, and re-encrypt.
+    Refuses to drop the last recipient, or this machine's own unless `include_self`."""
+    path = secrets_path(user_config, source)
+    found = sops.list_recipients(path)
+    labels = _labels(sops, path) or {}
+    if target in found:
+        recipient = target
+    else:
+        matches = [r for r in found if labels.get(r) == target]
+        if not matches:
+            raise RkError(
+                f"{target!r} isn't a recipient or label of {path}: see `rk secrets recipients`"
+            )
+        if len(matches) > 1:
+            raise RkError(
+                f"label {target!r} matches {len(matches)} recipients: use the age1... key"
+            )
+        recipient = matches[0]
+    if len(found) == 1:
+        raise RkError("that's the only recipient: removing it would lock everyone out")
+    if recipient == own and not include_self:
+        raise RkError(
+            f"{recipient} is this machine's own key: removing it stops this machine decrypting "
+            "the file. Pass --include-self if you mean that."
+        )
+    if recipient in labels:  # while this machine can still decrypt
+        sops.unset_value(path, (LABELS_KEY, recipient))
+    sops.remove_recipient(path, recipient)
+    changed.append(f"removed recipient {recipient} from {path}")
 
 
 def show(
@@ -542,7 +852,9 @@ def show(
             state, missing = "not a PEM private key", True
         else:
             state = "present"
-        say(f"  {app.name}: Client ID {client_id}, private key {state}")
+        stored_at = table.get("stored_at")
+        when = f", stored {stored_at}" if isinstance(stored_at, str) and stored_at else ""
+        say(f"  {app.name}: Client ID {client_id}, private key {state}{when}")
     warning = conflict_copy_warning(path)
     if warning:
         say(f"Warning: {warning}")
@@ -562,8 +874,26 @@ def run_set_app(app_arg: str, *, client_id: str, pem: Path, changed: list[str]) 
     set_app(*_loaded(), app_arg, client_id=client_id, pem=pem.expanduser(), changed=changed)
 
 
-def run_add_recipient(recipient: str, *, changed: list[str]) -> None:
-    add_recipient(*_loaded(), recipient, changed=changed)
+def run_rotate(app_arg: str, *, pem: Path, changed: list[str]) -> None:
+    user_config, source, sops = _loaded()
+    rotate(
+        user_config, source, sops, app_arg, pem=pem.expanduser(),
+        repos=known_repos(user_config, Path.cwd()), changed=changed,
+    )  # fmt: skip
+
+
+def run_add_recipient(recipient: str, *, label: str | None = None, changed: list[str]) -> None:
+    add_recipient(*_loaded(), recipient, label=label, changed=changed)
+
+
+def run_recipients() -> None:
+    recipients(*_loaded(), own=_own_recipient())
+
+
+def run_remove_recipient(target: str, *, include_self: bool, changed: list[str]) -> None:
+    remove_recipient(
+        *_loaded(), target, own=_own_recipient(), include_self=include_self, changed=changed
+    )
 
 
 def run_show() -> int:

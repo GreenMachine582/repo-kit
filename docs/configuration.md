@@ -18,6 +18,10 @@ profile = "dev-main"              # the only profile for now (main-only is Futur
 [project]
 name = "greentechhub-core"
 release_type = "python"           # release-please release type
+extra_files = [                   # other files release-please bumps: its `extra-files` (see below)
+  { path = "src/greentechhub_core/version.py" },
+  { type = "toml", path = ".repo-kit.toml", jsonpath = "$.version" },
+]
 
 [checks]
 required = ["test"]               # this repo's own CI jobs that rulesets must require
@@ -51,13 +55,32 @@ gth_packages = ["greentechhub-core", "greentechhub-fastapi"]
 |---|---|
 | `version` | Every generated caller (`@v<version>`), the engine version CI runs, `rk upgrade`. See [adoption.md](adoption.md#-versioning) |
 | `profile` | Templates (`templates/profiles/<profile>/`), the default base for `wt start`, rulesets and settings |
-| `[project]` | `release-please-config.json`, the manifest |
+| `[project]` | `release-please-config.json` (`release_type`, `name`, `extra_files`), the manifest |
 | `[checks]` | `pr-checks` and the required checks in the rulesets ([checks-and-release.md](checks-and-release.md)) |
 | `[release]` | `release.yml`, the tags ruleset |
 | `[update_prs]` | `update-prs` ([pr-updates.md](pr-updates.md)) |
 | `[worktree]` | `wt start` (`setup`), `wt sync` (`check`), `wt done` (`env_dirs`) ([worktrees.md](worktrees.md)) |
 | `[extras]` | Opt-in templates. `use_local_gth` is accepted, but adds nothing until the `use-local-gth` extra is built (a Future item) |
 | `[overrides]` | Per-file ownership changes. A file set to `unmanaged` is left alone; `doctor` warns about each one |
+
+### `[project].extra_files`
+
+Files release-please updates in the release PR, next to the one its release type knows (`pyproject.toml`, say). Each
+entry becomes an `extra-files` entry in the managed `release-please-config.json`; empty by default, which leaves
+the key out.
+
+| Key | |
+|---|---|
+| `path` | Required. A plain relative file path from the repo root: no `..`, absolute path or `*` pattern |
+| `type` | `generic` (the default), `json`, `toml` or `yaml` |
+| `jsonpath` | Where the version is, such as `$.version`. Required for `json`, `toml` and `yaml`; not allowed for `generic` |
+
+A `generic` file holds an `x-release-please-version` marker comment on the line that carries the version, such as
+`__version__ = "1.2.3"  # x-release-please-version`. Unknown keys in an entry are errors, like anywhere else.
+
+repo-kit lists `.repo-kit.toml` and `.repo-kit.lock` (both `$.version`) for itself, see
+[checks-and-release.md](checks-and-release.md#release-please-configjson-and-the-manifest). A consumer doesn't need
+that: its pin is repo-kit's version, not its own.
 
 ## User config: `~/.config/repo-kit/config.toml`
 
@@ -67,9 +90,13 @@ the defaults.
 ```toml
 worktree_root = "~/dev/wt"
 secrets_file = "~/OneDrive/repo-kit/secrets.sops.json"   # the Apps' credentials, sops + age encrypted
+key_max_age_days = 365           # `doctor` warns when an App key was stored longer ago than this
+
+[fleet.repos]                     # what `rk fleet` runs on: owner/name = this machine's checkout
+"GreenMachine582/PyFinBot" = "~/dev/PyFinBot"
 ```
 
-`worktree_root` must not be inside OneDrive or any other synced folder: rk refuses one under a `OneDrive*`, Dropbox
+`[fleet.repos]` keys must be `owner/name`; see [fleet.md](fleet.md). `worktree_root` must not be inside OneDrive or any other synced folder: rk refuses one under a `OneDrive*`, Dropbox
 or iCloud folder. `secrets_file` may be, since it's encrypted. The age key that decrypts it must not be; `rk secrets`
 refuses one that is. `rk secrets init` writes the `secrets_file` line, creating this file if needed. See
 [github-app.md](github-app.md#credentials-sops--age).

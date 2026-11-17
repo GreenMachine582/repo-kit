@@ -9,8 +9,9 @@
 | `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The steps are [below](#install-step-by-step) |
 | `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot` and `gth-release-bot`: create the update-prs labels, create each App's branch-locked environment, and set its Client ID variable, private key (in that environment) and key fingerprint variable from the encrypted credentials file ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
 | `rk bootstrap` | `install` + `configure` + `doctor`. It decrypts the Apps' credentials first, so a machine that can't enrol the repo stops before anything is written. The `doctor` report ends the run |
-| `rk secrets init / set-app / add-recipient / show` | Set up and maintain the sops + age encrypted credentials file `configure` reads ([github-app.md](github-app.md#credentials-sops--age)) |
+| `rk secrets init / set-app / add-recipient / rotate / recipients / remove-recipient / show` | Set up and maintain the sops + age encrypted credentials file `configure` reads ([github-app.md](github-app.md#credentials-sops--age)) |
 | `rk upgrade [vX.Y.Z]` | Move `version` to this rk's release and re-render with the `sync` planner. Templates new in the release are added. Migration notes and `github diff` arrive in Phase 1D. The steps are [below](#upgrade-step-by-step) |
+| `rk fleet doctor / sync --check / configure / upgrade` | The same across every repo in `[fleet.repos]`, one row each ([fleet.md](fleet.md)) |
 | `rk doctor` | Read-only health check. The checks are [below](#doctor) |
 
 Every write checks tool versions and the remote, backs up what it replaces, and finishes with a list of exactly what
@@ -56,8 +57,9 @@ git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z`), then run `rk upgrade`.
    re-run finishes the job. Comments, other keys and the quote style are kept. The old file is backed up to
    `.git/repo-kit/backup/<UTC>/`.
 5. **Notices.** Migration notes are not built yet: `upgrade` points to the release notes, and to `rk github diff`,
-   since a release may change the rulesets or repo settings. Templates renamed or removed in the release are reported
-   as "not a template" and left in place: move or delete them by hand.
+   since a release may change the rulesets or repo settings. Templates renamed or removed in the release are
+   deleted, stripped or dropped from the lock by the sync, and listed under `Changed:`
+   ([rules](shared-files.md#removed-and-renamed-templates)). A hand-edited managed file refuses the sync.
 
 Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 
@@ -85,6 +87,21 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 It writes nothing and doesn't fetch, so remote branches are as of the last `git fetch`. One line per check, with the
 command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` and `[SKIP]` don't fail it.
 
+`rk doctor --json` runs the same checks and prints one JSON document instead, with nothing else on stdout, for tools
+that read many repos. The exit code is the same.
+
+```json
+{"schema_version": 1, "ok": true, "checks": [{"id": "plugin", "name": "plugin: repo-kit is in .claude/settings.json", "status": "OK", "detail": ""}]}
+```
+
+`schema_version` is 1 and goes up only on a breaking change. `ok` is false only when a check is `FAIL`. `id` is a
+stable kebab-case slug (`tools`, `repo-config`, `files`, `app-gth-pr-bot`, `override-<path>`, ...), unique within a
+document: key on it, since `name` is the line's text and carries versions and counts. `status` is `OK`, `WARN`,
+`FAIL` or `SKIP`; `detail` is the lines under the name joined with newlines (empty if none). Checks keep the report's order.
+
+If doctor can't start (not a git repo, no `origin`), the document is `{"schema_version": 1, "ok": false, "error":
+"<message>", "checks": []}`, still on stdout with exit code 1.
+
 | Check | `[FAIL]` or `[WARN]` when |
 |---|---|
 | Tools | FAIL: Git, gh or Python is below its minimum. WARN: gh isn't installed (`sync` and `install` work without it), or sops is missing or too old (only `configure` and `secrets` need it) |
@@ -92,6 +109,7 @@ command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` a
 | User config | FAIL: an unknown key, a leftover `[pr_bot]` table (the error names the migration), or a synced `worktree_root` |
 | Credentials file | WARN: `secrets_file` is unset or missing, this machine can't decrypt it, or the Client ID or key of an App this repo uses is missing (`rk secrets …`; gth-pr-bot isn't needed when update-prs is disabled), and the Client ID and key comparisons below are skipped. Also WARN when a sync conflict copy such as `secrets.sops-DESKTOP-AB12.json` sits beside the file: merge the two and delete the copy ([github-app.md](github-app.md#conflict-copies)) |
 | Managed files | FAIL: a file is missing, differs from the render, was edited by hand, or the lock is stale: the same test as `rk sync --check`. WARN: a lock entry is no longer a template |
+| App key age | WARN: an App's key was stored (`rk secrets set-app`) more than `key_max_age_days` ago (365 by default; [configuration.md](configuration.md#user-config-configrepo-kitconfigtoml)): rotate it ([github-app.md](github-app.md#rotating-a-key)). SKIP, never FAIL, when no date is recorded (an entry stored by an older rk): `set-app` again starts the clock. JSON id `key-age` |
 | Overrides | WARN: each `unmanaged` file. A file that is a reusable workflow (it has a `workflow_call:` trigger) is OK instead: a caller never is one, so the override can only be repo-kit's own, where the callers' paths are the workflows themselves |
 | Plugin | WARN: `.claude/settings.json` lacks the repo-kit marketplace or plugin (`rk install`) |
 | Base branch | FAIL: origin has no profile base branch (`rk install`) |
@@ -168,5 +186,6 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
 ### Other repos
 
 PyFinBot and the rest (Phase 4): one `rk bootstrap` each. PyFinBot's `release-please-config.json` has an `extra-files`
-entry (`src/pyfinbot/version.py`) that the managed config lacks, so `rk sync` refuses it until that is settled (see
-the Future item in TODO.md).
+entry (`src/pyfinbot/version.py`) that the managed config lacks: before `rk bootstrap`, list it as
+`[project].extra_files = [{ path = "src/pyfinbot/version.py" }]` in its `.repo-kit.toml`, so the rendered file keeps it
+([configuration.md](configuration.md#projectextra_files)).

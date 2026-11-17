@@ -21,4 +21,7 @@ jobs:
     # The documented local form: it resolves to this same commit, and actionlint checks it.
     uses: ./.github/workflows/pr-checks.yml # zizmor: ignore[self-repository]
     with:
-      ref: ${{ github.event.pull_request.head.sha }}
+      # The PR merged into its base (github.sha on pull_request), which is what managed-files and pr-title check
+      # out. Running the head's rk instead breaks a branch cut before a config key landed on its base: the old
+      # engine meets the new `.repo-kit.toml` and rejects the unknown key.
+      ref: ${{ github.sha }}

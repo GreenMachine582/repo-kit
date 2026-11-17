@@ -4,6 +4,7 @@ problem is named with the command that fixes it, and nothing is ever written."""
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from fakes import NEW_PEM, PEM, RELEASE_PEM, FakeRepoSetup, stored_credentials
@@ -12,7 +13,13 @@ from harness import git
 import repo_kit
 from repo_kit import bootstrap, doctor, rulesets, settings
 from repo_kit.config import RepoConfig, UserConfig
-from repo_kit.credentials import PR_BOT, RELEASE_BOT, key_fingerprint, load_credentials
+from repo_kit.credentials import (
+    PR_BOT,
+    RELEASE_BOT,
+    key_fingerprint,
+    load_credentials,
+    rotate_key,
+)
 from repo_kit.doctor import Status
 from repo_kit.files import LOCK_NAME
 from repo_kit.worktree import start
@@ -91,6 +98,9 @@ def test_bootstrap_ends_all_ok(adopted, github, user_config, tmp_path):
 
     assert {c.status for c in checks} <= {Status.OK, Status.SKIP}, doctor.render(checks)
     assert not doctor.failed(checks)
+    ids = [c.id for c in checks]
+    assert all(re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", i) for i in ids), ids
+    assert len(ids) == len(set(ids)), ids
     assert find(checks, "managed files:")[0].label.endswith("drifted")
     assert "[OK]   managed files:" in said
     assert (
@@ -298,17 +308,16 @@ def test_missing_sops_is_a_warning(adopted, github, user_config, tmp_path):
 def test_override_and_orphan_warn(adopted, github, user_config, tmp_path):
     work, setup, _said = adopted
     config = work / ".repo-kit.toml"
-    config.write_text(
-        config.read_text(encoding="utf-8") + f'\n[overrides.files]\n"{CALLER}" = "unmanaged"\n',
-        encoding="utf-8",
-    )
+    overrides = f'\n[overrides.files]\n"{CALLER}" = "unmanaged"\n"old/gone.txt" = "unmanaged"\n'
+    config.write_text(config.read_text(encoding="utf-8") + overrides, encoding="utf-8")
+    # A stale lock entry is removed by sync; only an unmanaged one stays as a warning.
     lock = json.loads((work / LOCK_NAME).read_text(encoding="utf-8"))
     lock["files"]["old/gone.txt"] = {"layer": "common", "mode": "managed", "sha256": "x"}
     (work / LOCK_NAME).write_text(json.dumps(lock), encoding="utf-8")
 
     checks = run(work, github, setup, user_config, tmp_path)
 
-    (override,) = find(checks, "override in use")
+    (override,) = find(checks, f"override in use: {CALLER}")
     assert override.status is Status.WARN
     assert override.label == f"override in use: {CALLER} is unmanaged"
     (orphan,) = find(checks, "not a template: old/gone.txt")
@@ -430,3 +439,40 @@ def test_unreadable_rulesets_are_a_warning(adopted, github, user_config, tmp_pat
         "repo settings and rulesets: can't read them",
         "HTTP 403",
     )
+
+
+def test_an_old_stored_key_warns_and_a_missing_date_only_skips(
+    adopted, github, user_config, tmp_path
+):
+    work, setup, _said = adopted
+
+    undated = find(run(work, github, setup, user_config, tmp_path), "App key age")
+    assert [(c.status, c.id) for c in undated] == [(Status.SKIP, "key-age")]
+
+    path, sops = stored_credentials(tmp_path)
+    sops.files[path]["release_bot"]["stored_at"] = "2000-01-01"
+    checks = run(work, github, setup, user_config, tmp_path, sops=sops)
+
+    (age,) = find(checks, "App key age")
+    assert age.status is Status.WARN
+    assert "gth-release-bot's key was stored" in age.detail
+    assert not doctor.failed(checks)
+
+
+def test_a_repo_still_on_the_rotated_out_key_is_named_as_such(
+    adopted, github, user_config, tmp_path
+):
+    work, setup, _said = adopted
+    path, sops = stored_credentials(tmp_path)
+    new_pem = tmp_path / "new.pem"
+    new_pem.write_text(NEW_PEM, encoding="utf-8")
+    rotate_key(
+        UserConfig(secrets_file=str(path)), tmp_path / "config.toml", sops, "release-bot",
+        pem=new_pem, changed=[],
+    )  # fmt: skip
+
+    checks = run(work, github, setup, user_config, tmp_path, sops=sops)
+
+    (bot,) = find(checks, "gth-release-bot: older key")
+    assert "still holds the key `rk secrets rotate` replaced" in bot.detail
+    assert "run `rk configure --replace-key`" in bot.detail

@@ -4,6 +4,10 @@
 
 Tests only ever touch `tmp_path`: never a real repo, never GitHub.
 
+The suite runs in parallel across every core (pytest-xdist, `-n auto` in `pyproject.toml`), because scenario tests
+spend most of their time waiting on git, and starting git is slow on Windows. Each test process builds the bare
+origin once and copies it per test. Pass `-n0` to run in one process when debugging.
+
 ## Unit (`tests/unit/`)
 
 - Config parsing, including unknown keys
@@ -62,5 +66,7 @@ Once, against real GitHub, in Phase 2:
 ## CI
 
 ruff (lint and format), mypy (strict, on `src/`), `actionlint`, `zizmor` (a security audit of the workflows) and
-`claude plugin validate`. Worktree and sync scenarios run on Linux and Windows. Third-party actions are pinned to a
-full commit SHA, and Dependabot moves the pins.
+`claude plugin validate`. Worktree and sync scenarios run on Linux for every PR. Windows, the slow runner, runs them
+on release PRs into `main` and after each merge to `dev`: on a PR into `dev` its job is skipped, which counts as
+passing, and the full suite on a Windows machine before each commit stands in for it. Third-party actions are
+pinned to a full commit SHA, and Dependabot moves the pins.
