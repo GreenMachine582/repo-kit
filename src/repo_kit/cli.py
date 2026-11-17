@@ -210,7 +210,7 @@ def _prune(args: argparse.Namespace) -> int:
 def _doctor(args: argparse.Namespace) -> int:
     from repo_kit import doctor
 
-    return doctor.run_doctor(Path.cwd())
+    return doctor.run_doctor(Path.cwd(), as_json=args.json)
 
 
 def _add_worktree(sub: SubParsers) -> None:
@@ -375,7 +375,9 @@ def _add_setup_side(sub: SubParsers) -> None:
     )
     upgrade.set_defaults(handler=_upgrade)
 
-    sub.add_parser("doctor", help="read-only health check").set_defaults(handler=_doctor)
+    doctor = sub.add_parser("doctor", help="read-only health check")
+    doctor.add_argument("--json", action="store_true", help="print one JSON document, nothing else")
+    doctor.set_defaults(handler=_doctor)
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -94,3 +94,32 @@ def test_tools_missing_or_old_sops_warns(git_247):
     old = doctor.check_tools(Path(), lambda: (2, 63), lambda: (3, 8))
     assert old.status is Status.WARN
     assert "sops 3.10+" in old.detail
+
+
+def test_to_json_is_one_stable_document():
+    import json
+
+    checks = [Check(Status.OK, "a"), Check(Status.WARN, "b", "x\ny"), Check(Status.SKIP, "c")]
+    doc = json.loads(doctor.to_json(checks))
+    assert doc == {
+        "ok": True,
+        "checks": [
+            {"name": "a", "status": "OK", "detail": ""},
+            {"name": "b", "status": "WARN", "detail": "x\ny"},
+            {"name": "c", "status": "SKIP", "detail": ""},
+        ],
+    }
+    assert json.loads(doctor.to_json([*checks, Check(Status.FAIL, "d")]))["ok"] is False
+
+
+def test_run_doctor_json_says_only_json(monkeypatch, tmp_path):
+    import json
+
+    monkeypatch.setattr(git, "toplevel", lambda cwd: tmp_path)
+    monkeypatch.setattr(git, "remote_url", lambda root: "https://example.com/o/r.git")
+    monkeypatch.setattr(doctor, "user_config_path", lambda: tmp_path / "none.toml")
+    monkeypatch.setattr(doctor, "doctor", lambda *a, **k: [Check(Status.FAIL, "x", "d")])
+    said: list[str] = []
+    assert doctor.run_doctor(tmp_path, as_json=True, say=said.append) == 1
+    assert len(said) == 1
+    assert json.loads(said[0])["ok"] is False
