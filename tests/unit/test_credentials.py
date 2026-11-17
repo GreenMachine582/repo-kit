@@ -446,6 +446,35 @@ def test_round_trip_with_real_sops(tmp_path, monkeypatch):
     assert loaded[RELEASE_BOT.key].client_id == "Iv23r"
 
 
+@pytest.mark.skipif(
+    not (shutil.which("sops") and shutil.which("age-keygen")), reason="needs sops and age"
+)
+def test_recipients_with_real_sops(tmp_path, monkeypatch):
+    key_a, key_b = tmp_path / "a.txt", tmp_path / "b.txt"
+    creds_module.run_age_keygen(key_a)
+    creds_module.run_age_keygen(key_b)
+    pub_a, pub_b = public_key(key_a), public_key(key_b)
+    path = tmp_path / "secrets.sops.json"
+    sops = SopsCli()
+
+    monkeypatch.setenv(AGE_KEY_ENV, str(key_a))
+    sops.create(path, pub_a)
+    sops.add_recipient(path, pub_b)
+    sops.set_value(path, ("_recipients", pub_b), "laptop")
+    assert sops.list_recipients(path) == [pub_a, pub_b]
+    monkeypatch.setenv(AGE_KEY_ENV, str(key_b))
+    assert sops.decrypt(path)["_recipients"] == {pub_b: "laptop"}
+
+    monkeypatch.setenv(AGE_KEY_ENV, str(key_a))
+    sops.unset_value(path, ("_recipients", pub_b))
+    sops.remove_recipient(path, pub_b)
+    assert sops.list_recipients(path) == [pub_a]
+    assert pub_b not in sops.decrypt(path).get("_recipients", {})
+    monkeypatch.setenv(AGE_KEY_ENV, str(key_b))
+    with pytest.raises(creds_module.SopsError):
+        sops.decrypt(path)
+
+
 def test_the_suggested_secrets_file_starts_from_home(monkeypatch, tmp_path):
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: tmp_path))
     monkeypatch.setenv("OneDrive", str(tmp_path / "OneDrive"))
