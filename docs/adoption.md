@@ -74,6 +74,7 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 [OK]   managed files: 9 in sync, 0 drifted
 [WARN] override in use: CHANGELOG.md is unmanaged
 [OK]   plugin: repo-kit is in .claude/settings.json
+[OK]   commit signing: git signs commits here (ssh)
 [OK]   base branch: origin/dev exists (as of the last fetch)
 [OK]   gth-pr-bot: labels, Client ID variable present, private key in environment gth-pr-bot (branch dev only), key fingerprint matches
 [OK]   gth-release-bot: Client ID variable present, private key in environment gth-release-bot (branch main only), key fingerprint matches

@@ -6,20 +6,15 @@ Open work only: remove an item when it ships. Shipped work is in `CHANGELOG.md`.
 only the repo owner can do them (admin rights, App installs, approvals) and **(lead)** when a Claude session can.
 Future items (below) start only after Phase 4, unless pulled forward.
 
-## In review
-
-- [ ] `rk status`: one summary across worktrees, PRs and doctor (#60)
-- [ ] SHA-pinned callers: generated callers pin repo-kit by commit as well as tag (#61)
-
 ## Next: Phase 2, pilot on photo-ledger (`main` only → `dev-main`, pinned to 0.3.0)
 
 Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Done when every check below holds:
 
 - **Setup**
-  - [ ] **(you)** Install `gth-pr-bot` and `gth-release-bot` on photo-ledger
-  - [ ] **(lead)** `rk install` on a branch, then open the adoption PR
-  - [ ] **(you)** Approve the switch to `dev` (new default branch, open PRs retargeted) when `rk install` asks
-  - [ ] **(you)** `rk configure`, then `rk github apply` after reading the diff
+  - [ ] **(you)** `rk configure`, then `rk github apply` after reading the diff, then merge the adoption PR
+    (photo-ledger#36)
+  - [ ] **(you)** After the next repo-kit release: `rk upgrade` and `rk github apply` in photo-ledger, which brings
+    back signed commits (its old `main` ruleset required them; 0.3.0's rulesets don't)
 - **Branch model**
   - [ ] **(lead)** `dev` exists and is the default branch; open PRs were retargeted to `dev`
   - [ ] **(lead)** A `dev` → `main` release PR passes `pr-title`

@@ -80,25 +80,18 @@ jobs:
           client-id: ${{ inputs.client-id }}
           private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
           permission-contents: write
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.back-merge-into }}
-          fetch-depth: 0
-          persist-credentials: false
       # A merge commit only: never a rebase or a forced push. gth-release-bot bypasses the dev ruleset for this.
+      # GitHub's merges API makes the commit, so it is signed (the rulesets may require signed commits), and it
+      # merges into $INTO as it is at that moment: there's no local push to race another merge.
       - name: Merge the release branch back
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          APP_SLUG: ${{ steps.token.outputs.app-slug }}
+          REPO: ${{ github.repository }}
           FROM: ${{ inputs.target-branch }}
           INTO: ${{ inputs.back-merge-into }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
           set -euo pipefail
-          bot_id="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id)"
-          git config user.name "${APP_SLUG}[bot]"
-          git config user.email "${bot_id}+${APP_SLUG}[bot]@users.noreply.github.com"
-          gh auth setup-git
 
           recover() {
             {
@@ -111,22 +104,21 @@ jobs:
             exit 1
           }
 
-          # Someone may merge into $INTO at the same moment: fetch, merge again and retry the push.
-          for attempt in 1 2 3; do
-            git fetch --quiet origin "$FROM" "$INTO"
-            git checkout --quiet -B "$INTO" "origin/$INTO"
-            if git merge-base --is-ancestor "origin/$FROM" HEAD; then
+          # 201: merged (the new commit's SHA). 204: $INTO already contains $FROM. 409: a conflict.
+          # Anything else (such as a ruleset refusal) fails with GitHub's message.
+          if body="$(gh api --method POST "repos/$REPO/merges" \
+                -f base="$INTO" -f head="$FROM" -f commit_message="Merge $FROM ($TAG) into $INTO" \
+                2> error.txt)"; then
+            sha="$(jq -r '.sha // empty' <<< "$body")"
+            if [ -n "$sha" ]; then
+              echo "Merged $FROM ($TAG) into $INTO as $sha"
+            else
               echo "$INTO already contains $FROM: nothing to merge"
-              exit 0
             fi
-            if ! git merge --no-edit "origin/$FROM"; then
-              git merge --abort
-              recover "\`$FROM\` doesn't merge cleanly into \`$INTO\`."
-            fi
-            if git push origin "HEAD:$INTO"; then
-              echo "Merged $FROM ($TAG) into $INTO"
-              exit 0
-            fi
-            echo "Push to $INTO refused (attempt $attempt); retrying"
-          done
-          recover "The push to \`$INTO\` was refused 3 times. Check that gth-release-bot bypasses the \`$INTO\` ruleset."
+            exit 0
+          fi
+          cat error.txt >&2
+          if grep -q "HTTP 409" error.txt; then
+            recover "\`$FROM\` doesn't merge cleanly into \`$INTO\`."
+          fi
+          recover "GitHub refused the merge into \`$INTO\`: $(head -n 1 error.txt). Check that gth-release-bot bypasses the \`$INTO\` ruleset."

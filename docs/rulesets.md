@@ -13,18 +13,30 @@ Rulesets are built in `rulesets.py` and settings in `settings.py`, as Python dic
 | Item | Setting |
 |---|---|
 | Repo settings | Default branch `dev`; merge commits only (no squash, no rebase), titled "Merge pull request #N from …" with the PR title as the body; delete branch on merge; Update branch button; auto-merge allowed; immutable releases, so a published release and its tag can't be changed (consumers pin `@vX.Y.Z` and run what it points to). Immutable releases have their own API endpoint, which only an admin can read: without admin, the diff shows the setting as not visible |
-| `repo-kit: dev` ruleset | `refs/heads/dev`: no deletion, no force-push, a PR required (0 approvals, merge commit only), required checks |
+| `repo-kit: dev` ruleset | `refs/heads/dev`: no deletion, no force-push, a PR required (0 approvals, merge commit only), required checks, signed commits (unless `[rulesets].require_signatures = false`) |
 | `repo-kit: main` ruleset | The same, on `refs/heads/main` |
 | `repo-kit: tags` ruleset | `refs/tags/v*`: no deletion, update or creation, except by `[release].app` |
 
 | Bypass | `dev` | `main` | `tags` |
 |---|---|---|---|
 | Admin role | Pull requests only: the logged emergency merge | Pull requests only | None: nobody moves or deletes a `v*` tag |
-| `[release].app` (`[release].app_id`) | Always, when `[release].back_merge` is set: the back-merge push after a release ([checks-and-release.md](checks-and-release.md#releaseyml)) | None | Always: it creates the tags |
+| `[release].app` (`[release].app_id`) | Always, when `[release].back_merge` is set: the back-merge after a release ([checks-and-release.md](checks-and-release.md#releaseyml)) | None | Always: it creates the tags |
 
 Required checks are `pr-checks / commits`, `pr-checks / pr-title` and `pr-checks / managed-files`, then
 `[checks].required` ([checks-and-release.md](checks-and-release.md#check-names-and-rulesets-stay-in-step)). Each is
 pinned to the GitHub Actions App (`integration_id` 15368), so a status posted by anything else doesn't count.
+
+**Signed commits** are required on `dev` as well as `main`. Every commit on `dev` reaches `main` in a release PR, and
+rk never rebases, so an unsigned commit that got onto `dev` would block every later release. With the rule on `dev`,
+an unsigned commit is caught on its own PR, where a signed commit can still replace it. The bots' commits are all
+signed by GitHub:
+- update-prs merges through the update-branch API;
+- release-please commits through the API;
+- `release.yml` back-merges through the merges API;
+- the merge button signs its merge commits.
+
+Your own commits need `commit.gpgsign` and a key: `rk doctor` warns when git here doesn't sign. A repo with no signing
+set up sets `[rulesets].require_signatures = false`.
 
 The App is named by its numeric ID, `[release].app_id`. A private App can't be looked up by name with your `gh`
 login, so the ID lives in config, with gth-release-bot's as the default.
