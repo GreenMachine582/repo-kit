@@ -303,6 +303,48 @@ def check_files(
     return checks
 
 
+def check_ref_pin(
+    repo_root: Path,
+    config: RepoConfig,
+    release_sha: Callable[[str], str] | None,
+) -> Check | None:
+    """The callers name repo-kit by commit: is it the commit the tag points at? The lock holds the
+    commit (so `rk sync --check` already catches a caller edited away from it); only the remote
+    can say whether the tag still points there, so that part needs `release_sha`, and is a warning
+    when it can't be reached."""
+    callers = [p for p in files.CALLERS if p not in config.overrides.files]
+    if not callers:
+        return None  # repo-kit itself: its callers are the workflows, run as `uses: ./`
+    try:
+        lock = files.read_lock(repo_root)
+    except RkError as exc:
+        return _fail("ref-pin", "repo-kit pin: lock unreadable", str(exc))
+    sha = files.lock_ref_sha(lock, config.version)
+    if not sha:
+        return _warn(
+            "ref-pin",
+            f"repo-kit pin: tag v{config.version} only",
+            f"the callers don't name a commit. `rk upgrade` records one and re-renders them "
+            f"({files.LOCK_NAME} has none for {config.version})",
+        )
+    if release_sha is None:
+        return _skip("ref-pin", f"repo-kit pin: commit {sha[:12]}", "not checked against the tag")
+    try:
+        actual = release_sha(config.version)
+    except RkError as exc:
+        return _warn(
+            "ref-pin", f"repo-kit pin: commit {sha[:12]}", f"couldn't check the tag: {exc}"
+        )
+    if actual != sha:
+        return _fail(
+            "ref-pin",
+            f"repo-kit pin: commit doesn't match v{config.version}",
+            f"the callers pin {sha}, but tag v{config.version} points at {actual}. A release tag "
+            "must not move: find out why before running `rk upgrade` or `rk sync`",
+        )
+    return _ok("ref-pin", f"repo-kit pin: v{config.version} is commit {sha[:12]}")
+
+
 _WORKFLOW_CALL = re.compile(r"^\s+workflow_call:", re.MULTILINE)
 
 
@@ -515,8 +557,10 @@ def doctor(
     gh_version: Callable[[], tuple[int, int] | None] | None = None,
     sops: Sops | None = None,
     today: date | None = None,
+    release_sha: Callable[[str], str] | None = None,
 ) -> list[Check]:
-    """Every check, in report order. Reads only: nothing is written, fetched or pushed.
+    """Every check, in report order. Reads only: nothing is written, fetched or pushed. (With
+    `release_sha`, one `git ls-remote` asks repo-kit's remote where the release tag points.)
 
     `user_config` is the one already loaded from `user_source`, when the caller has it.
     """
@@ -546,6 +590,9 @@ def doctor(
             checks += check_files(repo_root, config, owner, repo, templates)
         else:
             checks.append(_skip("files", "managed files", "need the pin to match this rk"))
+        pin_check = check_ref_pin(repo_root, config, release_sha) if pin_matches else None
+        if pin_check:
+            checks.append(pin_check)
         checks += check_overrides(repo_root, config)
         checks.append(check_plugin(repo_root))
         checks.append(check_base_branch(repo_root, config))
@@ -633,7 +680,10 @@ def run_checks(cwd: Path) -> list[Check]:
         setup: RepoSetup | None = client
     else:
         github, setup = NoGitHub(), None
-    return doctor(repo_root, owner, repo, github, setup, user_source=user_config_path())
+    return doctor(
+        repo_root, owner, repo, github, setup, user_source=user_config_path(),
+        release_sha=git.resolve_release_sha,
+    )  # fmt: skip
 
 
 def run_doctor(cwd: Path, *, as_json: bool = False, say: Callable[[str], None] = print) -> int:

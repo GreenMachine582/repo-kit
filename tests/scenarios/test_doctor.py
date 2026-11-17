@@ -62,6 +62,7 @@ def adopted(clone, github, user_config, tmp_path):
         changed=[],
         confirm=lambda _question: False,
         say=said.append,
+        resolve_sha=lambda _version: "a" * 40,
     )
     return work, setup, "\n".join(said)
 

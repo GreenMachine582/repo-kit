@@ -91,6 +91,8 @@ writing a block into a CRLF file doesn't convert the rest of it.
     ".github/workflows/update-prs.yml": {"layer": "common", "mode": "managed", "sha256": "…"},
     ".gitignore": {"blocks": {"local": {"layer": "common", "sha256": "…"}}, "mode": "block"}
   },
+  "ref_sha": "<40-character commit of v1.4.0>",
+  "ref_sha_version": "1.4.0",
   "version": "1.4.0"
 }
 ```
@@ -142,11 +144,41 @@ left as it is. A lock entry with no `mode` (an older lock) is read as unchanged.
 | `rk sync --check` | No writes. Non-zero if any managed file or block differs from what the pinned version would render, a seeded file was never created, or the lock is out of date. Prints the diff of every file that differs. Run in CI by `pr-checks / managed-files` |
 | `rk sync --adopt` | For repos that already have these files (GTH). Offers each file that plain `rk sync` would refuse because it differs from the render, or has a hand-edited block: it shows the unified diff, then asks. Only a typed `y` takes the file over: the file is backed up, replaced by the render, and recorded in the lock (listed under `Changed:` as "taken over"). Anything else, and any run with no terminal to answer on, declines it: the file is left as it is and listed as "declined". Other files sync as usual, but a refusal that adoption can't settle (a directory, a non-text file, an edited file of a removed template) still stops the sync. Seeded files and `[overrides]` entries are never offered. A re-run finds nothing to adopt. A difference worth keeping becomes a config value or an `[overrides]` entry instead. Not combinable with `--check` |
 
-`version` must be set: callers pin `@v${version}`. It must also be the version of the rk that is running, because the
+`version` must be set: callers pin repo-kit by commit and tag (below). It must also be the version of the rk that is running, because the
 templates come with the engine: with another release installed, `rk sync` refuses and names both versions, rather
 than write files that CI's `--check` (which runs the pinned engine) would reject. Move the pin with `rk upgrade`, or
 install the pinned rk. An unreleased engine (version `0.0.0`: a source checkout, or CI running rk from the tag it
 checked out) has nothing to compare and is let through.
+
+## Pinning callers by commit
+
+A generated caller names repo-kit like this, so a moved or re-created tag can't change what runs:
+
+```yaml
+uses: GreenMachine582/repo-kit/.github/workflows/pr-checks.yml@<40-character commit> # v1.4.0
+with:
+  ref: <the same commit>
+```
+
+The templates use two variables, `${ref}` (the commit, else `v<version>`) and `${ref_note}` (` # v<version>` when
+there is a commit, else nothing), so they have no conditionals. The commit comes from the lock, never the network:
+
+- **`rk upgrade`** (and `rk install`, `rk fleet upgrade`) asks repo-kit's remote where `v<version>` points, with
+  `git ls-remote` (no new dependency, no token), follows an annotated tag to its commit, and records it in the lock
+  as `ref_sha`, with the release it belongs to as `ref_sha_version`. Re-running is how an older repo gets its commit.
+  If the tag now points somewhere other than the recorded commit, the upgrade refuses: tags never move. If the
+  remote can't be reached, it warns, records none, and the callers pin the tag only, as before.
+- **`rk sync`** renders from the lock alone, so it works offline. It uses the recorded commit only when
+  `ref_sha_version` equals the pinned `version`; otherwise (a hand-edited pin, or a release PR that moved
+  `version`) it pins the tag. It carries both fields through unchanged, so a lock never changes just because
+  of a sync. A caller edited away from the recorded commit is hand-edited, and `managed-files` fails.
+- **`rk doctor`** asks the remote once whether the tag still points at the recorded commit: FAIL if not, WARN if
+  the remote can't be reached or the lock has no commit for the pinned release, nothing when the callers are
+  `unmanaged`.
+
+repo-kit's own callers are `unmanaged` (its workflows run as `uses: ./`), so none of this applies to it, and its
+release PR (which moves `version` in `.repo-kit.toml` and the lock through release-please) needs no commit: the tag
+doesn't exist until that PR merges.
 
 ## Rules
 
