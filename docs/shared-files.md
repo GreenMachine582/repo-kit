@@ -99,6 +99,12 @@ writing a block into a CRLF file doesn't convert the rest of it.
 edited by hand. Each block is recorded and compared on its own, but a file is written whole: one refused block
 refuses the file. A lock entry whose template has gone is reported and left alone.
 
+The recorded `mode` is compared too. When a release changes a file's mode, `rk sync` re-records it, notes
+`mode changed from <old>` in the summary and lists it under `Changed:`, and `--check` fails until the lock is
+updated. A hash recorded under another mode isn't trusted: a file that becomes `managed` is taken over if it already
+matches the render, and refused with the diff otherwise, as if it weren't in the lock. A file that becomes `seeded` is
+left as it is. A lock entry with no `mode` (an older lock) is read as unchanged.
+
 ## Commands
 
 | Command | Does |
