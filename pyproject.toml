@@ -1,6 +1,6 @@
 [project]
 name = "repo-kit"
-version = "0.3.0"
+version = "0.4.0"
 description = "Shared repo tooling: one worktree per Claude session, PRs that stay current, and one versioned definition of how every repo is set up."
 readme = "README.md"
 license = "MIT"
