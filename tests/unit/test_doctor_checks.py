@@ -99,14 +99,19 @@ def test_tools_missing_or_old_sops_warns(git_247):
 def test_to_json_is_one_stable_document():
     import json
 
-    checks = [Check(Status.OK, "a"), Check(Status.WARN, "b", "x\ny"), Check(Status.SKIP, "c")]
+    checks = [
+        Check(Status.OK, "a", id="ia"),
+        Check(Status.WARN, "b", "x\ny", "ib"),
+        Check(Status.SKIP, "c", id="ic"),
+    ]
     doc = json.loads(doctor.to_json(checks))
     assert doc == {
+        "schema_version": 1,
         "ok": True,
         "checks": [
-            {"name": "a", "status": "OK", "detail": ""},
-            {"name": "b", "status": "WARN", "detail": "x\ny"},
-            {"name": "c", "status": "SKIP", "detail": ""},
+            {"id": "ia", "name": "a", "status": "OK", "detail": ""},
+            {"id": "ib", "name": "b", "status": "WARN", "detail": "x\ny"},
+            {"id": "ic", "name": "c", "status": "SKIP", "detail": ""},
         ],
     }
     assert json.loads(doctor.to_json([*checks, Check(Status.FAIL, "d")]))["ok"] is False
@@ -123,3 +128,29 @@ def test_run_doctor_json_says_only_json(monkeypatch, tmp_path):
     assert doctor.run_doctor(tmp_path, as_json=True, say=said.append) == 1
     assert len(said) == 1
     assert json.loads(said[0])["ok"] is False
+
+
+def test_error_json_has_no_checks():
+    import json
+
+    doc = json.loads(doctor.error_json("not a git repository"))
+    assert doc == {
+        "schema_version": 1,
+        "ok": False,
+        "error": "not a git repository",
+        "checks": [],
+    }
+
+
+def test_run_doctor_json_reports_an_early_error(monkeypatch, tmp_path):
+    import json
+
+    def boom(cwd):
+        raise RkError("not a git repository")
+
+    monkeypatch.setattr(git, "toplevel", boom)
+    said: list[str] = []
+    assert doctor.run_doctor(tmp_path, as_json=True, say=said.append) == 1
+    assert json.loads(said[0])["error"] == "not a git repository"
+    with pytest.raises(RkError):
+        doctor.run_doctor(tmp_path, say=said.append)
