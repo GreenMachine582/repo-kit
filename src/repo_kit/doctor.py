@@ -388,6 +388,23 @@ def check_plugin(repo_root: Path) -> Check:
     return _ok("plugin", f"plugin: repo-kit is in {bootstrap.SETTINGS_PATH}")
 
 
+def check_commit_signing(repo_root: Path, config: RepoConfig) -> Check:
+    """With `[rulesets].require_signatures`, the dev and main rulesets refuse unsigned commits, so
+    a PR made from this machine can't merge unless git signs what it commits here."""
+    label = "commit signing"
+    if not config.rulesets.require_signatures:
+        return _skip("commit-signing", label, "`[rulesets].require_signatures` is off")
+    if (git.config_get(repo_root, "commit.gpgsign") or "").lower() != "true":
+        return _warn(
+            "commit-signing",
+            f"{label}: git doesn't sign commits here, and dev and main require signed commits",
+            "a PR with an unsigned commit can't merge: set up a signing key, then\n"
+            "`git config --global commit.gpgsign true` (and `gpg.format ssh` for an SSH key)",
+        )
+    fmt = git.config_get(repo_root, "gpg.format") or "openpgp"
+    return _ok("commit-signing", f"{label}: git signs commits here ({fmt})")
+
+
 def check_base_branch(repo_root: Path, config: RepoConfig) -> Check:
     base = config.default_base
     if git.remote_branch_exists(repo_root, base):
@@ -595,6 +612,7 @@ def doctor(
             checks.append(pin_check)
         checks += check_overrides(repo_root, config)
         checks.append(check_plugin(repo_root))
+        checks.append(check_commit_signing(repo_root, config))
         checks.append(check_base_branch(repo_root, config))
         if setup is None:
             checks.append(_skip("app-enrolment", "App enrolment", "origin isn't on GitHub"))

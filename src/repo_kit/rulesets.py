@@ -42,27 +42,32 @@ def _branch_ruleset(
     config: RepoConfig, branch: str, bypass: list[dict[str, Any]]
 ) -> dict[str, Any]:
     required = [*REQUIRED_CHECKS, *config.checks.required]
+    rules: list[dict[str, Any]] = [
+        {"type": "deletion"},
+        {"type": "non_fast_forward"},
+        {"type": "pull_request", "parameters": dict(_PR_PARAMS)},
+        {
+            "type": "required_status_checks",
+            "parameters": {
+                "strict_required_status_checks_policy": False,
+                "do_not_enforce_on_create": False,
+                "required_status_checks": [
+                    {"context": name, "integration_id": ACTIONS_APP_ID} for name in required
+                ],
+            },
+        },
+    ]
+    if config.rulesets.require_signatures:
+        # The bots' commits are signed by GitHub: update-prs merges through update-branch,
+        # release-please commits through the API, and the back-merge uses the merges API.
+        rules.append({"type": "required_signatures"})
     return {
         "name": f"{PREFIX}{branch}",
         "target": "branch",
         "enforcement": "active",
         "conditions": {"ref_name": {"include": [f"refs/heads/{branch}"], "exclude": []}},
         "bypass_actors": bypass,
-        "rules": [
-            {"type": "deletion"},
-            {"type": "non_fast_forward"},
-            {"type": "pull_request", "parameters": dict(_PR_PARAMS)},
-            {
-                "type": "required_status_checks",
-                "parameters": {
-                    "strict_required_status_checks_policy": False,
-                    "do_not_enforce_on_create": False,
-                    "required_status_checks": [
-                        {"context": name, "integration_id": ACTIONS_APP_ID} for name in required
-                    ],
-                },
-            },
-        ],
+        "rules": rules,
     }
 
 

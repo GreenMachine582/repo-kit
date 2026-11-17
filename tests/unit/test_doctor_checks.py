@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from repo_kit import doctor, git
+from repo_kit.config import RepoConfig, RulesetsConfig
 from repo_kit.credentials import APPS, AppCredentials
 from repo_kit.doctor import Check, Status
 from repo_kit.errors import RkError
@@ -211,3 +212,27 @@ def test_fleet_reads_the_key_age_check_from_the_json():
     status, detail = fleet.summarise_doctor(doctor.to_json([old]))
     assert status.name == "WARN"
     assert "App key age" in detail
+
+
+def signing_config(monkeypatch, values: dict[str, str]) -> None:
+    monkeypatch.setattr(git, "config_get", lambda _cwd, key: values.get(key))
+
+
+def test_commit_signing_ok_when_git_signs(monkeypatch, tmp_path):
+    signing_config(monkeypatch, {"commit.gpgsign": "true", "gpg.format": "ssh"})
+    check = doctor.check_commit_signing(tmp_path, RepoConfig())
+    assert (check.id, check.status) == ("commit-signing", Status.OK)
+    assert "(ssh)" in check.label
+
+
+def test_commit_signing_warns_when_git_doesnt_sign(monkeypatch, tmp_path):
+    signing_config(monkeypatch, {})
+    check = doctor.check_commit_signing(tmp_path, RepoConfig())
+    assert check.status is Status.WARN
+    assert "commit.gpgsign true" in check.detail
+
+
+def test_commit_signing_skips_when_not_required(monkeypatch, tmp_path):
+    signing_config(monkeypatch, {})
+    config = RepoConfig(rulesets=RulesetsConfig(require_signatures=False))
+    assert doctor.check_commit_signing(tmp_path, config).status is Status.SKIP
