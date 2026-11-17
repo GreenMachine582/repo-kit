@@ -48,7 +48,7 @@
     "release-please-config.json": {
       "layer": "profiles/dev-main",
       "mode": "managed",
-      "sha256": "a18c130a76a8355bce2ee070dca4e04899669e546e38bc221640cd76331639a5"
+      "sha256": "d6bc16810bce5c11123260f04cd195bac40fb61b751d78e7eaa2e42dac2112d3"
     }
   },
   "version": "0.2.0"

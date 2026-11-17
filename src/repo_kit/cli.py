@@ -112,6 +112,9 @@ def _secrets(action: str) -> Handler:
 
         if action == "show":
             return credentials.run_show()
+        if action == "recipients":
+            credentials.run_recipients()
+            return 0
         changed: list[str] = []
         code = 0
         try:
@@ -121,8 +124,12 @@ def _secrets(action: str) -> Handler:
                 credentials.run_set_app(
                     args.app, client_id=args.client_id, pem=Path(args.pem), changed=changed
                 )
+            elif action == "remove-recipient":
+                credentials.run_remove_recipient(
+                    args.recipient, include_self=args.include_self, changed=changed
+                )
             else:
-                credentials.run_add_recipient(args.recipient, changed=changed)
+                credentials.run_add_recipient(args.recipient, label=args.label, changed=changed)
         finally:
             _print_changes(changed)
         return code
@@ -339,7 +346,19 @@ def _add_setup_side(sub: SubParsers) -> None:
         "add-recipient", help="let another machine's age key decrypt the credentials file"
     )
     add.add_argument("recipient", metavar="AGE_PUBLIC_KEY", help="age1…, from `rk secrets init`")
+    add.add_argument("--label", help="a name for the machine, shown by `rk secrets recipients`")
     add.set_defaults(handler=_secrets("add-recipient"))
+    sec_sub.add_parser(
+        "recipients", help="list the age keys (machines) that can decrypt the credentials file"
+    ).set_defaults(handler=_secrets("recipients"))
+    remove = sec_sub.add_parser(
+        "remove-recipient", help="stop an age key decrypting the file, and re-encrypt it"
+    )
+    remove.add_argument("recipient", metavar="AGE_PUBLIC_KEY_OR_LABEL")
+    remove.add_argument(
+        "--include-self", action="store_true", help="allow removing this machine's own key"
+    )
+    remove.set_defaults(handler=_secrets("remove-recipient"))
     sec_sub.add_parser(
         "show", help="list each App's Client ID and whether its key is present (never the key)"
     ).set_defaults(handler=_secrets("show"))

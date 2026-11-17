@@ -9,7 +9,7 @@ requires-python = ">=3.12"
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["mypy>=1.11", "pytest>=8", "ruff>=0.6"]
+dev = ["mypy>=1.11", "pytest>=8", "pytest-xdist>=3.6", "ruff>=0.6"]
 
 [project.scripts]
 rk = "repo_kit.cli:main"
@@ -50,3 +50,6 @@ strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Scenario tests mostly wait on git processes, so spread them over every core (pytest-xdist).
+# Pass `-n0` to run in one process when debugging.
+addopts = "-n auto"

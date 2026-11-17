@@ -9,7 +9,7 @@
 | `rk install [--profile …] [--hooks]` | Seed `.repo-kit.toml`, then `sync`. Add the plugin marketplace to `.claude/settings.json`. If the profile needs `dev` and the repo only has `main`: create `dev` from `main`, then (after showing the list and asking) retarget open PRs from `main` to `dev`. The steps are [below](#install-step-by-step) |
 | `rk configure [--dry-run] [--replace-key]` | Enrol the repo for `gth-pr-bot` and `gth-release-bot`: create the update-prs labels, create each App's branch-locked environment, and set its Client ID variable, private key (in that environment) and key fingerprint variable from the encrypted credentials file ([github-app.md](github-app.md#enrolling-a-repo)). `github apply` joins it in Phase 1D |
 | `rk bootstrap` | `install` + `configure` + `doctor`. It decrypts the Apps' credentials first, so a machine that can't enrol the repo stops before anything is written. The `doctor` report ends the run |
-| `rk secrets init / set-app / add-recipient / show` | Set up and maintain the sops + age encrypted credentials file `configure` reads ([github-app.md](github-app.md#credentials-sops--age)) |
+| `rk secrets init / set-app / add-recipient / recipients / remove-recipient / show` | Set up and maintain the sops + age encrypted credentials file `configure` reads ([github-app.md](github-app.md#credentials-sops--age)) |
 | `rk upgrade [vX.Y.Z]` | Move `version` to this rk's release and re-render with the `sync` planner. Templates new in the release are added. Migration notes and `github diff` arrive in Phase 1D. The steps are [below](#upgrade-step-by-step) |
 | `rk doctor` | Read-only health check. The checks are [below](#doctor) |
 
@@ -184,5 +184,6 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
 ### Other repos
 
 PyFinBot and the rest (Phase 4): one `rk bootstrap` each. PyFinBot's `release-please-config.json` has an `extra-files`
-entry (`src/pyfinbot/version.py`) that the managed config lacks, so `rk sync` refuses it until that is settled (see
-the Future item in TODO.md).
+entry (`src/pyfinbot/version.py`) that the managed config lacks: before `rk bootstrap`, list it as
+`[project].extra_files = [{ path = "src/pyfinbot/version.py" }]` in its `.repo-kit.toml`, so the rendered file keeps it
+([configuration.md](configuration.md#projectextra_files)).

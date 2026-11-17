@@ -11,9 +11,11 @@ from repo_kit import git
 from repo_kit.credentials import EMPTY_FILE, SopsError
 from repo_kit.github import BaseStatus, PullRequest, UpdateResult, pick_pr
 
-PEM = "-----BEGIN RSA PRIVATE KEY-----\nYWJj\n-----END RSA PRIVATE KEY-----\n"
-RELEASE_PEM = "-----BEGIN RSA PRIVATE KEY-----\ncmVs\n-----END RSA PRIVATE KEY-----\n"
-NEW_PEM = "-----BEGIN RSA PRIVATE KEY-----\nbmV3\n-----END RSA PRIVATE KEY-----\n"  # a rotated key
+PEM = "-----BEGIN RSA PRIVATE KEY-----\nMAMCAQA=\n-----END RSA PRIVATE KEY-----\n"
+RELEASE_PEM = "-----BEGIN RSA PRIVATE KEY-----\nMAMCAQE=\n-----END RSA PRIVATE KEY-----\n"
+NEW_PEM = (
+    "-----BEGIN RSA PRIVATE KEY-----\nMAMCAQI=\n-----END RSA PRIVATE KEY-----\n"  # a rotated key
+)
 
 
 class FakeSops:
@@ -50,6 +52,20 @@ class FakeSops:
     def add_recipient(self, path: Path, recipient: str) -> None:
         self.writes.append(f"add {recipient}")
         self.recipients.setdefault(path, []).append(recipient)
+
+    def remove_recipient(self, path: Path, recipient: str) -> None:
+        self.writes.append(f"remove {recipient}")
+        self.recipients[path].remove(recipient)
+
+    def unset_value(self, path: Path, keys: tuple[str, ...]) -> None:
+        self.writes.append(f"unset {'.'.join(keys)}")
+        node = self.files[path]
+        for key in keys[:-1]:
+            node = node[key]
+        del node[keys[-1]]
+
+    def list_recipients(self, path: Path) -> list[str]:
+        return list(self.recipients.get(path, []))
 
 
 def stored_credentials(

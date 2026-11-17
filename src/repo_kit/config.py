@@ -33,6 +33,10 @@ PROFILE_LONG_LIVED = {"dev-main": ("dev", "main")}
 # `[checks].pr_title`: whether a PR title must not, or must, be a conventional commit.
 PR_TITLE_RULES = ("not-conventional", "conventional")
 
+# `[project].extra_files` types. Structured ones need a `jsonpath` to the version; `generic` reads
+# `x-release-please-version` markers in the file instead.
+EXTRA_FILE_TYPES = ("generic", "json", "toml", "yaml")
+
 # Folder names of sync clients that break venvs and Git internals.
 _SYNCED_PREFIXES = ("onedrive", "dropbox", "icloud")
 
@@ -42,9 +46,20 @@ class ConfigError(RkError):
 
 
 @dataclass(frozen=True)
+class ExtraFile:
+    """One file release-please bumps next to the release type's own: its `extra-files` entry."""
+
+    path: str
+    type: str = "generic"
+    # Where the version is, for the structured types (json, toml, yaml); empty for generic.
+    jsonpath: str = ""
+
+
+@dataclass(frozen=True)
 class ProjectConfig:
     name: str = ""
     release_type: str = "python"
+    extra_files: tuple[ExtraFile, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -195,6 +210,31 @@ def _check_env_dir(entry: str, source: Path) -> None:
         )
 
 
+def _check_extra_file(entry: ExtraFile, source: Path) -> None:
+    """`[project].extra_files` ends up in `release-please-config.json`, so each must be a plain
+    relative path (release-please resolves it from the repo root) and a type it understands."""
+    where = f"{source}: `project.extra_files` entry {entry.path!r}"
+    path = entry.path.replace("\\", "/")
+    parts = path.split("/")
+    if (
+        not entry.path.strip()
+        or PureWindowsPath(entry.path).is_absolute()
+        or path.startswith("/")
+        or any(p in ("", ".", "..") for p in parts)
+        or any(c in path for c in "*?[]")
+    ):
+        raise ConfigError(
+            f"{where} must be a plain relative file path: no absolute path, `.` or `..`, or pattern"
+        )
+    if entry.type not in EXTRA_FILE_TYPES:
+        known = ", ".join(f'"{t}"' for t in EXTRA_FILE_TYPES)
+        raise ConfigError(f"{where} has type {entry.type!r}: it must be one of {known}")
+    if entry.type == "generic" and entry.jsonpath:
+        raise ConfigError(f"{where}: `jsonpath` only applies to json, toml and yaml files")
+    if entry.type != "generic" and not entry.jsonpath.startswith("$"):
+        raise ConfigError(f'{where} needs a `jsonpath` to the version, such as "$.version"')
+
+
 def parse_repo_config(data: dict[str, Any], source: Path) -> RepoConfig:
     config: RepoConfig = _build(RepoConfig, data, source)
     if config.profile not in PROFILE_DEFAULT_BASE:
@@ -203,6 +243,8 @@ def parse_repo_config(data: dict[str, Any], source: Path) -> RepoConfig:
     if config.checks.pr_title not in PR_TITLE_RULES:
         known = ", ".join(f'"{rule}"' for rule in PR_TITLE_RULES)
         raise ConfigError(f"{source}: `checks.pr_title` must be one of {known}")
+    for extra in config.project.extra_files:
+        _check_extra_file(extra, source)
     for entry in config.worktree.env_dirs:
         _check_env_dir(entry, source)
     for path, mode in config.overrides.files.items():
