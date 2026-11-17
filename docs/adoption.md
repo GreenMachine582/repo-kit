@@ -85,6 +85,16 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 It writes nothing and doesn't fetch, so remote branches are as of the last `git fetch`. One line per check, with the
 command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` and `[SKIP]` don't fail it.
 
+`rk doctor --json` runs the same checks and prints one JSON document instead, with nothing else on stdout, for tools
+that read many repos. The exit code is the same.
+
+```json
+{"ok": true, "checks": [{"name": "plugin: repo-kit is in .claude/settings.json", "status": "OK", "detail": ""}]}
+```
+
+`ok` is false only when a check is `FAIL`. `status` is `OK`, `WARN`, `FAIL` or `SKIP`; `name` is the line's text and
+`detail` the lines under it joined with newlines (empty if none). Checks keep the report's order.
+
 | Check | `[FAIL]` or `[WARN]` when |
 |---|---|
 | Tools | FAIL: Git, gh or Python is below its minimum. WARN: gh isn't installed (`sync` and `install` work without it), or sops is missing or too old (only `configure` and `secrets` need it) |
