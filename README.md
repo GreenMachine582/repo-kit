@@ -108,6 +108,7 @@ uv pip install -e ".[dev]"
 | [docs/github-app.md](docs/github-app.md) | 🤖 `gth-pr-bot` and `gth-release-bot` |
 | [docs/shared-files.md](docs/shared-files.md) | 📄 `rk sync`, ownership modes and the lock file |
 | [docs/checks-and-release.md](docs/checks-and-release.md) | ✅ `pr-checks` and `release` reusable workflows |
+| [docs/fleet.md](docs/fleet.md) | 🚢 `rk fleet`: doctor, sync --check, configure and upgrade across every repo |
 | [docs/rulesets.md](docs/rulesets.md) | 🔒 Rulesets, repo settings and branch pruning |
 | [docs/adoption.md](docs/adoption.md) | 📦 Install, upgrade, versioning and per-repo changes |
 | [docs/testing.md](docs/testing.md) | 🧪 Unit tests, Git and file sync scenarios, pilot checks |
