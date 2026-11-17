@@ -82,6 +82,13 @@ class ReleaseConfig:
 
 
 @dataclass(frozen=True)
+class RulesetsConfig:
+    # Signed commits on the base and release branches (dev and main). Both, not main alone: a commit
+    # that reaches dev unsigned would block every later release PR, and rk never rebases it away.
+    require_signatures: bool = True
+
+
+@dataclass(frozen=True)
 class UpdatePrsConfig:
     enabled: bool = True
     skip_labels: tuple[str, ...] = ("no-auto-update", "wip")
@@ -114,6 +121,7 @@ class RepoConfig:
     project: ProjectConfig = field(default_factory=ProjectConfig)
     checks: ChecksConfig = field(default_factory=ChecksConfig)
     release: ReleaseConfig = field(default_factory=ReleaseConfig)
+    rulesets: RulesetsConfig = field(default_factory=RulesetsConfig)
     update_prs: UpdatePrsConfig = field(default_factory=UpdatePrsConfig)
     worktree: WorktreeConfig = field(default_factory=WorktreeConfig)
     extras: ExtrasConfig = field(default_factory=ExtrasConfig)

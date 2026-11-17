@@ -62,6 +62,7 @@ def adopted(clone, github, user_config, tmp_path):
         changed=[],
         confirm=lambda _question: False,
         say=said.append,
+        resolve_sha=lambda _version: "a" * 40,
     )
     return work, setup, "\n".join(said)
 
@@ -93,6 +94,9 @@ def snapshot(work, origin):
 
 def test_bootstrap_ends_all_ok(adopted, github, user_config, tmp_path):
     work, setup, said = adopted
+    # A machine set up to sign, as the dev and main rulesets require. Set only now: the test's git
+    # has no signing key, so earlier commits couldn't have been signed.
+    git(work, "config", "commit.gpgsign", "true")
 
     checks = run(work, github, setup, user_config, tmp_path)
 

@@ -284,6 +284,7 @@ def _upgrade_one(
     apply: bool,
     github_for: GitHubFor,
     templates: Path | None,
+    resolve_sha: bootstrap.ShaResolver | None,
 ) -> RepoResult:
     main = locate(slug, path)
     owner, repo = git.parse_owner_repo(git.remote_url(main))
@@ -310,6 +311,7 @@ def _upgrade_one(
         try:
             return _upgrade_in(
                 slug, main, work, owner, repo, github, apply=apply, templates=templates,
+                resolve_sha=resolve_sha,
                 base=base, branch=branch,
             )  # fmt: skip
         finally:
@@ -330,6 +332,7 @@ def _upgrade_in(
     templates: Path | None,
     base: str,
     branch: str,
+    resolve_sha: bootstrap.ShaResolver | None = None,
 ) -> RepoResult:
     config = load_repo_config(work)
     if config.version == repo_kit.__version__:
@@ -337,7 +340,7 @@ def _upgrade_in(
     changed: list[str] = []
     result = bootstrap.upgrade(
         work, owner, repo, None, changed=changed, say=lambda _msg: None, templates=templates,
-        dry_run=not apply,
+        dry_run=not apply, resolve_sha=resolve_sha,
     )  # fmt: skip
     summary = f"{result.current} -> {result.target}, {len(result.files)} shared file(s)"
     if not apply:
@@ -371,6 +374,7 @@ def run_upgrade(
     apply: bool = False,
     github_for: GitHubFor = _github_for,
     templates: Path | None = None,
+    resolve_sha: bootstrap.ShaResolver | None = None,
     say: Say = print,
 ) -> int:
     """`rk fleet upgrade`: move every repo's pin to this rk's release, one PR each.
@@ -382,7 +386,10 @@ def run_upgrade(
     """
 
     def one(slug: str, path: Path) -> RepoResult:
-        return _upgrade_one(slug, path, apply=apply, github_for=github_for, templates=templates)
+        return _upgrade_one(
+            slug, path, apply=apply, github_for=github_for, templates=templates,
+            resolve_sha=resolve_sha,
+        )  # fmt: skip
 
     results = _each(select(user_config, only), one)
     code = _finish(results, say)

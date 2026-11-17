@@ -32,6 +32,9 @@ commit_header_max = 100
 app = "gth-release-bot"
 back_merge = true
 
+[rulesets]
+require_signatures = true
+
 [update_prs]
 enabled = true
 skip_labels = ["no-auto-update", "wip"]
@@ -57,6 +60,12 @@ def test_missing_repo_config_is_all_defaults(tmp_path):
     assert config.default_base == "dev"
     assert config.update_prs.conflict_label == "needs-merge"
     assert config.worktree.env_dirs == (".venv",)
+    assert config.rulesets.require_signatures is True
+
+
+def test_signed_commits_can_be_turned_off():
+    config = parse_repo_config({"rulesets": {"require_signatures": False}}, SRC)
+    assert config.rulesets.require_signatures is False
 
 
 def test_documented_example_parses(tmp_path):
@@ -77,6 +86,7 @@ def test_documented_example_parses(tmp_path):
         ({"worktree": {"setpu": []}}, "`worktree.setpu`"),
         ({"update_prs": {"enabled": True, "labels": []}}, "`update_prs.labels`"),
         ({"overrides": {"paths": {}}}, "`overrides.paths`"),
+        ({"rulesets": {"signed": True}}, "`rulesets.signed`"),
     ],
 )
 def test_unknown_keys_are_errors(data, key):
@@ -92,6 +102,7 @@ def test_unknown_keys_are_errors(data, key):
         {"checks": {"commit_header_max": "100"}},
         {"checks": {"commit_header_max": True}},
         {"update_prs": {"enabled": 1}},
+        {"rulesets": {"require_signatures": "yes"}},
         {"worktree": {"setup": "uv venv"}},
         {"worktree": {"env_dirs": [1]}},
         {"project": "x"},

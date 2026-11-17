@@ -6,7 +6,7 @@ import copy
 
 import pytest
 
-from repo_kit.config import ChecksConfig, ReleaseConfig, RepoConfig
+from repo_kit.config import ChecksConfig, ReleaseConfig, RepoConfig, RulesetsConfig
 from repo_kit.rulesets import State, build, canonical, diff, render
 
 ADMIN = {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request"}
@@ -50,6 +50,7 @@ def branch(name: str, bypass: list[dict]) -> dict:
             {"type": "non_fast_forward"},
             PR_RULE,
             checks_rule(*PR_CHECKS),
+            {"type": "required_signatures"},
         ],
     }
 
@@ -72,6 +73,22 @@ def test_the_default_rulesets_snapshot():
 def test_the_repos_own_checks_follow_the_pr_checks():
     dev = build(RepoConfig(checks=ChecksConfig(required=("test",))))[0]
     assert dev["rules"][3] == checks_rule(*PR_CHECKS, "test")
+
+
+def test_signed_commits_can_be_turned_off():
+    for ruleset in build(RepoConfig(rulesets=RulesetsConfig(require_signatures=False)))[:2]:
+        assert {"type": "required_signatures"} not in ruleset["rules"]
+
+
+def test_a_live_ruleset_without_signed_commits_drifts():
+    live = live_rulesets()
+    live[1]["rules"] = [r for r in live[1]["rules"] if r["type"] != "required_signatures"]
+    result = diff(RepoConfig(), live)
+    main = next(r for r in result.rulesets if r.name == "repo-kit: main")
+    assert main.state is State.DRIFTED
+    assert [(c.key, c.live, c.wanted) for c in main.changes] == [
+        ("rule required_signatures", None, "on")
+    ]
 
 
 def test_without_back_merge_the_app_doesnt_bypass_dev():

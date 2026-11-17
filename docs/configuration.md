@@ -7,7 +7,8 @@ Two files. Unknown keys in either are errors, and `rk doctor` validates both.
 ## Repo config: `.repo-kit.toml`
 
 Committed. The single input to everything rk generates or applies. A repo without one gets every default shown
-below (`profile = "dev-main"`, no setup or check, `env_dirs = [".venv"]`). `rk install` seeds it with `version`, `profile` and
+below (`profile = "dev-main"`, no setup or check, `env_dirs = [".venv"]`), except `rk github`, which refuses to run
+without one ([rulesets.md](rulesets.md#commands)). `rk install` seeds it with `version`, `profile` and
 `[project]` ([adoption.md](adoption.md#install-step-by-step)), and from then on it belongs to the repo (`seeded`
 mode: rk never rewrites it, except `rk upgrade` changing `version`).
 
@@ -32,6 +33,9 @@ commit_header_max = 100
 app = "gth-release-bot"           # the only actor allowed to create v* tags; bypasses dev for the back-merge
 app_id = 5058502                  # that App's numeric ID, for the rulesets' bypass lists
 back_merge = true                 # merge main back into dev after a release (dev-main only)
+
+[rulesets]
+require_signatures = true         # signed commits on dev and main; false for a repo with no signing set up
 
 [update_prs]
 enabled = true
@@ -58,6 +62,7 @@ gth_packages = ["greentechhub-core", "greentechhub-fastapi"]
 | `[project]` | `release-please-config.json` (`release_type`, `name`, `extra_files`), the manifest |
 | `[checks]` | `pr-checks` and the required checks in the rulesets ([checks-and-release.md](checks-and-release.md)) |
 | `[release]` | `release.yml`, the tags ruleset |
+| `[rulesets]` | The dev and main rulesets: `require_signatures` adds the signed-commits rule ([rulesets.md](rulesets.md)), and `doctor` checks that git here signs |
 | `[update_prs]` | `update-prs` ([pr-updates.md](pr-updates.md)) |
 | `[worktree]` | `wt start` (`setup`), `wt sync` (`check`), `wt done` (`env_dirs`) ([worktrees.md](worktrees.md)) |
 | `[extras]` | Opt-in templates. `use_local_gth` is accepted, but adds nothing until the `use-local-gth` extra is built (a Future item) |

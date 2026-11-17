@@ -103,7 +103,7 @@ These come from GTH's `CONTRIBUTING.md` and shape everything rk does:
 | Merge commits only; don't rewrite a branch others depend on | The bot and `wt sync` merge only. Rebase is a Future item |
 | Every commit conventional; PR title must **not** be conventional (merge-commit model) | `pr-checks` enforces both, with the title rule set per repo |
 | PR base is `dev`, a feature branch (chains), or `main` for release PRs | Always use the PR's live `base.ref`; the branch model is a per-repo **profile** (`dev-main` for every repo for now) |
-| `v*` tags never move; only `gth-release-bot` creates them | Exact `vX.Y.Z` pins; the tag ruleset names that App as the only creator |
+| `v*` tags never move; only `gth-release-bot` creates them | Exact pins, by commit as well as `vX.Y.Z` (recorded in the lock by `rk upgrade`, checked by `doctor`); the tag ruleset names that App as the only creator |
 | Admin can merge past failing checks (logged); nobody pushes straight to `dev`/`main` | Kept as-is in the generated rulesets |
 | CI and production never use local GTH mode | Worktree cleanup undoes links |
 | release-please owns version bumps and `CHANGELOG.md` | rk never writes either (ownership modes) |

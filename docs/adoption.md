@@ -13,6 +13,7 @@
 | `rk upgrade [vX.Y.Z]` | Move `version` to this rk's release and re-render with the `sync` planner. Templates new in the release are added. Migration notes and `github diff` arrive in Phase 1D. The steps are [below](#upgrade-step-by-step) |
 | `rk fleet doctor / sync --check / configure / upgrade` | The same across every repo in `[fleet.repos]`, one row each ([fleet.md](fleet.md)) |
 | `rk doctor` | Read-only health check. The checks are [below](#doctor) |
+| `rk status [--json]` | The repo at a glance: its worktrees and PRs, doctor's result and the pin. [Below](#status) |
 
 Every write checks tool versions and the remote, backs up what it replaces, and finishes with a list of exactly what
 changed.
@@ -73,6 +74,7 @@ Running it again at the same pin prints "already at X.Y.Z" and changes nothing.
 [OK]   managed files: 9 in sync, 0 drifted
 [WARN] override in use: CHANGELOG.md is unmanaged
 [OK]   plugin: repo-kit is in .claude/settings.json
+[OK]   commit signing: git signs commits here (ssh)
 [OK]   base branch: origin/dev exists (as of the last fetch)
 [OK]   gth-pr-bot: labels, Client ID variable present, private key in environment gth-pr-bot (branch dev only), key fingerprint matches
 [OK]   gth-release-bot: Client ID variable present, private key in environment gth-release-bot (branch main only), key fingerprint matches
@@ -123,6 +125,45 @@ the installs at https://github.com/settings/installations and run the update-prs
 Minimum versions, checked by `doctor`: Git 2.38+ (`git.MIN_GIT`; every `rk wt` command checks it too), gh 2.40+, sops 3.10+
 (`credentials.MIN_SOPS`), Python 3.12+.
 
+## `status`
+
+`rk status` is read-only, writes nothing and doesn't fetch. It runs doctor once and puts three things side by side:
+
+```
+GreenMachine582/photo-ledger
+Pin: 1.4.0 (this rk 1.4.0)
+
+Worktrees:
+  BRANCH       PR         LOCAL                      PATH
+  feat/api-v2  #12 open   clean                      ~/dev/wt/GreenMachine582-photo-ledger/feat-api-v2-1a2b3c
+  fix/typo     #9 merged  1 uncommitted, 2 unpushed  ~/dev/wt/GreenMachine582-photo-ledger/fix-typo-4d5e6f
+
+Doctor: 14 checks: 11 OK, 2 WARN, 0 FAIL, 1 SKIP
+  [WARN] override in use: CHANGELOG.md is unmanaged (override-changelog-md)
+  [WARN] 1 stale worktree (worktrees)
+```
+
+The worktree rows are [`rk wt list`](worktrees.md#-rk-wt-list), from the same code. Doctor's lines are its checks'
+labels and ids; only `WARN` and `FAIL` are named. The pin line says so when `.repo-kit.toml` names another release than
+this rk (`rk upgrade` moves it). It exits 1 only if a doctor check is `FAIL`.
+
+`rk status --json` prints one document, and nothing else, from the same data:
+
+```json
+{"schema_version": 1, "ok": true, "repo": "GreenMachine582/photo-ledger",
+ "pin": {"version": "1.4.0", "rk": "1.4.0", "matches": true},
+ "worktrees": [{"branch": "fix/typo", "path": "...", "pr": {"number": 9, "state": "merged"},
+                "pr_known": true, "uncommitted": 1, "unpushed": 2}],
+ "worktrees_note": "",
+ "doctor": {"counts": {"OK": 11, "WARN": 2, "FAIL": 0, "SKIP": 1},
+            "problems": [{"id": "worktrees", "name": "1 stale worktree", "status": "WARN", "detail": "..."}]}}
+```
+
+`pr` is `null` with no PR, or when `pr_known` is false (origin isn't on GitHub, or `gh` failed: `worktrees_note` says
+why). `uncommitted` is `null` when the folder is gone. `problems` has the same fields as a [`doctor --json`](#doctor)
+check. If status can't start (not a repo, no origin, a bad config), the document is `{"schema_version": 1, "ok":
+false, "error": "<message>"}` with exit code 1.
+
 ## 🏷️ Versioning
 
 - repo-kit itself: release-please, immutable `vX.Y.Z` tags, no floating `v1`. It manages its own repo with `rk`:
@@ -168,8 +209,9 @@ Moves from `main` only to `dev-main` (Phase 2).
 Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
 
 1. `rk sync` takes over each existing workflow once it matches the render; where one differs,
-   it refuses with the diff, and the difference is settled by hand (a config value, an `[overrides]` entry, or
-   dropping it). The existing manifest is kept (seeded). `scripts/use-local-gth.sh` stays the repo's own until the
+   it refuses with the diff. Run `rk sync --adopt` to go through those files one at a time: each is shown as a diff
+   and taken over (backed up, then replaced by the render) only after you type `y`. A difference worth keeping is
+   settled by hand instead (a config value, or an `[overrides]` entry). The existing manifest is kept (seeded). `scripts/use-local-gth.sh` stays the repo's own until the
    `use-local-gth` extra is built (a Future item).
 2. Delete `scripts/apply-rulesets.sh`, `scripts/prune-branches.sh`, `.github/rulesets/*.json`,
    `.github/repo-settings.json` and `.github/workflows/release-please.yml` (the managed `release.yml` replaces it).
@@ -177,11 +219,28 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
    ([github-app.md](github-app.md#releases-gth-release-bot)).
 3. Install `gth-release-bot` on the repo, then check that `rk github diff` shows no unexpected changes before
    `apply`. After applying, delete the old `dev`, `main`
-   and `release tags` rulesets, which the diff lists as left alone.
+   and `release tags` rulesets, which the diff lists as left alone. Before the first release, check for a release
+   that was never published ([below](#a-release-pr-merged-but-never-published)).
 4. The CONTRIBUTING sections become managed blocks. GTH's Branches, Pull requests, Chained PRs and Releasing
    sections are deleted, and `rk sync` appends the blocks that replace them. Repo-specific sections such as
    *Developing against local GTH repos* and *Rules* stay outside the markers.
 5. greentechhub-core's `local_gth.py` gets the new resolution order ([worktrees.md](worktrees.md#-local-gth-mode)).
+
+### A release PR merged but never published
+
+Check before the first release after adoption: is there a merged `chore(main): release X` PR still labelled
+`autorelease: pending`? If so, its release was never published, because the old workflow's run failed. release-please
+publishes it first, and in photo-ledger GitHub refused that with `Resource not accessible by integration` (HTTP 403).
+That refusal also stops the next release PR from being opened. The cause seems to be that the tag would point to
+`main` from before adoption, whose workflow files differ from `dev`, the new default branch. `gth-release-bot` has no
+Workflows permission, so it can't create that ref, and it shouldn't be given one. Publish it once by hand instead:
+
+1. Set the `repo-kit: tags` ruleset to Disabled. It lets only `gth-release-bot` create `v*` tags.
+2. `gh release create vX --target <the release PR's full merge-commit SHA> --title vX --notes-file notes.md`, with
+   that version's `CHANGELOG.md` section as the notes. The API refuses a short SHA.
+3. `gh pr edit <PR> --remove-label "autorelease: pending" --add-label "autorelease: tagged"`.
+4. Set the ruleset back to Active, and check that `rk github diff` matches.
+5. Re-run the failed `release` job: it skips vX and opens the next release PR.
 
 ### Other repos
 

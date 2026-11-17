@@ -119,13 +119,13 @@ may create `v*` tags. Runs in a repo queue one behind another and are never canc
    `release-please-config.json` (managed) and `.release-please-manifest.json` (seeded, never overwritten, so adoption
    keeps the current version).
 2. **`back-merge`**, only when a release was created and `back-merge-into` is set: merges `main` into `dev` with a
-   merge commit, as `gth-release-bot[bot]`, and pushes. `gth-release-bot` bypasses the `dev` ruleset for this one
-   push ([rulesets.md](rulesets.md)).
-   - If `dev` already contains `main`, nothing is pushed.
-   - If someone merges into `dev` at the same moment and the push is refused, it fetches, merges again and retries,
-     up to 3 times.
-   - On a conflict, or a push still refused, the run fails and its summary says how to recover: open a PR from `main`
-     to `dev` and merge it with a merge commit.
+   merge commit, as `gth-release-bot[bot]`, through GitHub's merges API. GitHub makes and signs the commit, so it
+   passes a ruleset that requires signed commits, and it merges into `dev` as it is at that moment, so a merge into
+   `dev` at the same time can't race it. `gth-release-bot` bypasses the `dev` ruleset for this one merge
+   ([rulesets.md](rulesets.md)).
+   - If `dev` already contains `main`, nothing is merged.
+   - On a conflict, or a refusal, the run fails and its summary says how to recover: open a PR from `main` to `dev`
+     and merge it with a merge commit.
 
 ### `release-please-config.json` and the manifest
 

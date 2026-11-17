@@ -303,6 +303,48 @@ def check_files(
     return checks
 
 
+def check_ref_pin(
+    repo_root: Path,
+    config: RepoConfig,
+    release_sha: Callable[[str], str] | None,
+) -> Check | None:
+    """The callers name repo-kit by commit: is it the commit the tag points at? The lock holds the
+    commit (so `rk sync --check` already catches a caller edited away from it); only the remote
+    can say whether the tag still points there, so that part needs `release_sha`, and is a warning
+    when it can't be reached."""
+    callers = [p for p in files.CALLERS if p not in config.overrides.files]
+    if not callers:
+        return None  # repo-kit itself: its callers are the workflows, run as `uses: ./`
+    try:
+        lock = files.read_lock(repo_root)
+    except RkError as exc:
+        return _fail("ref-pin", "repo-kit pin: lock unreadable", str(exc))
+    sha = files.lock_ref_sha(lock, config.version)
+    if not sha:
+        return _warn(
+            "ref-pin",
+            f"repo-kit pin: tag v{config.version} only",
+            f"the callers don't name a commit. `rk upgrade` records one and re-renders them "
+            f"({files.LOCK_NAME} has none for {config.version})",
+        )
+    if release_sha is None:
+        return _skip("ref-pin", f"repo-kit pin: commit {sha[:12]}", "not checked against the tag")
+    try:
+        actual = release_sha(config.version)
+    except RkError as exc:
+        return _warn(
+            "ref-pin", f"repo-kit pin: commit {sha[:12]}", f"couldn't check the tag: {exc}"
+        )
+    if actual != sha:
+        return _fail(
+            "ref-pin",
+            f"repo-kit pin: commit doesn't match v{config.version}",
+            f"the callers pin {sha}, but tag v{config.version} points at {actual}. A release tag "
+            "must not move: find out why before running `rk upgrade` or `rk sync`",
+        )
+    return _ok("ref-pin", f"repo-kit pin: v{config.version} is commit {sha[:12]}")
+
+
 _WORKFLOW_CALL = re.compile(r"^\s+workflow_call:", re.MULTILINE)
 
 
@@ -344,6 +386,23 @@ def check_plugin(repo_root: Path) -> Check:
             "run `rk install`",
         )
     return _ok("plugin", f"plugin: repo-kit is in {bootstrap.SETTINGS_PATH}")
+
+
+def check_commit_signing(repo_root: Path, config: RepoConfig) -> Check:
+    """With `[rulesets].require_signatures`, the dev and main rulesets refuse unsigned commits, so
+    a PR made from this machine can't merge unless git signs what it commits here."""
+    label = "commit signing"
+    if not config.rulesets.require_signatures:
+        return _skip("commit-signing", label, "`[rulesets].require_signatures` is off")
+    if (git.config_get(repo_root, "commit.gpgsign") or "").lower() != "true":
+        return _warn(
+            "commit-signing",
+            f"{label}: git doesn't sign commits here, and dev and main require signed commits",
+            "a PR with an unsigned commit can't merge: set up a signing key, then\n"
+            "`git config --global commit.gpgsign true` (and `gpg.format ssh` for an SSH key)",
+        )
+    fmt = git.config_get(repo_root, "gpg.format") or "openpgp"
+    return _ok("commit-signing", f"{label}: git signs commits here ({fmt})")
 
 
 def check_base_branch(repo_root: Path, config: RepoConfig) -> Check:
@@ -515,8 +574,10 @@ def doctor(
     gh_version: Callable[[], tuple[int, int] | None] | None = None,
     sops: Sops | None = None,
     today: date | None = None,
+    release_sha: Callable[[str], str] | None = None,
 ) -> list[Check]:
-    """Every check, in report order. Reads only: nothing is written, fetched or pushed.
+    """Every check, in report order. Reads only: nothing is written, fetched or pushed. (With
+    `release_sha`, one `git ls-remote` asks repo-kit's remote where the release tag points.)
 
     `user_config` is the one already loaded from `user_source`, when the caller has it.
     """
@@ -546,8 +607,12 @@ def doctor(
             checks += check_files(repo_root, config, owner, repo, templates)
         else:
             checks.append(_skip("files", "managed files", "need the pin to match this rk"))
+        pin_check = check_ref_pin(repo_root, config, release_sha) if pin_matches else None
+        if pin_check:
+            checks.append(pin_check)
         checks += check_overrides(repo_root, config)
         checks.append(check_plugin(repo_root))
+        checks.append(check_commit_signing(repo_root, config))
         checks.append(check_base_branch(repo_root, config))
         if setup is None:
             checks.append(_skip("app-enrolment", "App enrolment", "origin isn't on GitHub"))
@@ -593,6 +658,16 @@ def render(checks: list[Check]) -> str:
     return "\n".join(lines)
 
 
+def check_dict(check: Check) -> dict[str, str]:
+    """A check as the JSON documents of `doctor --json` and `status --json` show it."""
+    return {
+        "id": check.id,
+        "name": check.label,
+        "status": str(check.status),
+        "detail": check.detail,
+    }
+
+
 def to_json(checks: list[Check]) -> str:
     """One stable document for tools such as a fleet view: `ok` is False only if a check
     FAILed (the exit-code rule). `status` is OK, WARN, FAIL or SKIP; `name` is the report label
@@ -600,10 +675,7 @@ def to_json(checks: list[Check]) -> str:
     document = {
         "schema_version": SCHEMA_VERSION,
         "ok": not failed(checks),
-        "checks": [
-            {"id": c.id, "name": c.label, "status": str(c.status), "detail": c.detail}
-            for c in checks
-        ],
+        "checks": [check_dict(c) for c in checks],
     }
     return json.dumps(document, indent=2, ensure_ascii=False)
 
@@ -614,24 +686,33 @@ def error_json(message: str) -> str:
     return json.dumps(document, indent=2, ensure_ascii=False)
 
 
-def run_doctor(cwd: Path, *, as_json: bool = False, say: Callable[[str], None] = print) -> int:
-    """The command. Returns 1 if any check failed, else 0. With `as_json`, `say` gets only the
-    JSON document."""
-    try:
-        repo_root = git.toplevel(cwd)
-        url = git.remote_url(repo_root)
-        owner, repo = git.parse_owner_repo(url)
-    except RkError as exc:
-        if not as_json:
-            raise
-        say(error_json(str(exc)))
-        return 1
+def run_checks(cwd: Path) -> list[Check]:
+    """Every check for the repo at `cwd`, against the real GitHub client. Raises `RkError` if
+    there's no repo or origin to check."""
+    repo_root = git.toplevel(cwd)
+    url = git.remote_url(repo_root)
+    owner, repo = git.parse_owner_repo(url)
     if git.is_github_url(url):
         client = GhCliGitHub(owner, repo)
         github: GitHub = client
         setup: RepoSetup | None = client
     else:
         github, setup = NoGitHub(), None
-    checks = doctor(repo_root, owner, repo, github, setup, user_source=user_config_path())
+    return doctor(
+        repo_root, owner, repo, github, setup, user_source=user_config_path(),
+        release_sha=git.resolve_release_sha,
+    )  # fmt: skip
+
+
+def run_doctor(cwd: Path, *, as_json: bool = False, say: Callable[[str], None] = print) -> int:
+    """The command. Returns 1 if any check failed, else 0. With `as_json`, `say` gets only the
+    JSON document."""
+    try:
+        checks = run_checks(cwd)
+    except RkError as exc:
+        if not as_json:
+            raise
+        say(error_json(str(exc)))
+        return 1
     say(to_json(checks) if as_json else render(checks))
     return 1 if failed(checks) else 0

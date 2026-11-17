@@ -338,7 +338,20 @@ def sync(ctx: Context, branch: str | None = None) -> None:
     _merge(ctx, wt.path, branch, f"origin/{base}")
 
     if config.worktree.check:
-        _run_configured(config.worktree.check, wt.path, "check")
+        try:
+            _run_configured(config.worktree.check, wt.path, "check")
+        except RkError as exc:
+            # A worktree started with --no-setup, or before [worktree].setup existed, has no env:
+            # the check fails for that reason, not because of the merge.
+            missing = [d for d in config.worktree.env_dirs if not (wt.path / d).is_dir()]
+            if not (config.worktree.setup and missing):
+                raise
+            steps = ", ".join(f"`{step}`" for step in config.worktree.setup)
+            raise RkError(
+                f"{exc}.\n{missing[0]} is missing, so this worktree was likely started without "
+                f"its setup. Run it in {wt.path}: {steps}, then `rk wt sync` again. "
+                "Nothing was pushed."
+            ) from None
 
     head = git.out(["rev-parse", "HEAD"], wt.path)
     if head != remote_before:
@@ -382,6 +395,16 @@ def _pr_finishes(cwd: Path, branch: str, pr: PullRequest) -> bool:
         pr.finished
         and bool(pr.head_sha)
         and git.is_ancestor(cwd, f"refs/heads/{branch}", pr.head_sha)
+    )
+
+
+def _nothing_beyond_base(cwd: Path, branch: str, config: RepoConfig) -> bool:
+    """Whether `branch` has no commits of its own: its head is already in origin's copy of the
+    base it was started from (or the profile's default). Such a branch needs no PR to be
+    finished, since removing it loses no commit."""
+    base = git.config_get(cwd, f"branch.{branch}.{BASE_CONFIG_KEY}") or config.default_base
+    return git.remote_branch_exists(cwd, base) and git.is_ancestor(
+        cwd, f"refs/heads/{branch}", f"refs/remotes/origin/{base}"
     )
 
 
@@ -442,7 +465,12 @@ def done(
     git.fetch(ctx.main)
     problems: list[str] = []
     pr = ctx.github.pr_for_branch(branch)
-    if not allow_unmerged and not (pr and _pr_finishes(ctx.main, branch, pr)):
+    config = load_repo_config(wt.path)
+    if (
+        not allow_unmerged
+        and not (pr and _pr_finishes(ctx.main, branch, pr))
+        and not (pr is None and _nothing_beyond_base(ctx.main, branch, config))
+    ):
         if pr is None:
             what = "no PR was found"
         elif pr.finished:
@@ -462,7 +490,6 @@ def done(
 
     # A directory already gone means an earlier run got that far: only Git's record is left.
     present = wt.path.is_dir()
-    config = load_repo_config(wt.path)
     if present:
         for name in config.worktree.env_dirs:
             tracked = git.tracked_files(wt.path, name.replace("\\", "/").strip("/"))

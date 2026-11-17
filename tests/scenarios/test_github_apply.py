@@ -135,6 +135,20 @@ def test_declining_writes_nothing(clone, fresh):
     assert not (work / ".git" / "repo-kit").exists()  # no backup either
 
 
+@pytest.mark.parametrize("apply_changes", [False, True])
+def test_a_checkout_without_config_is_refused(clone, apply_changes):
+    """An old branch without `.repo-kit.toml` must not diff or apply the defaults."""
+    work = clone("work")
+    (work / ".repo-kit.toml").unlink(missing_ok=True)
+    with pytest.raises(RkError, match=r"no \.repo-kit\.toml in .*git switch dev"):
+        github_config.run_github(work, apply_changes=apply_changes)
+
+    # With the file, it goes on to look at origin (a local one here, so no GitHub call).
+    (work / ".repo-kit.toml").write_text('profile = "dev-main"\n', encoding="utf-8")
+    with pytest.raises(RkError, match="isn't on GitHub"):
+        github_config.run_github(work, apply_changes=apply_changes)
+
+
 def test_apply_refuses_in_ci(clone, fresh, monkeypatch):
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
     with pytest.raises(RkError, match="never runs in CI"):

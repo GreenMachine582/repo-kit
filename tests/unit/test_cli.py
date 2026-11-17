@@ -12,7 +12,7 @@ from repo_kit import (
     github_config,
     reconcile,
 )
-from repo_kit.cli import NOT_IMPLEMENTED, main
+from repo_kit.cli import main
 from repo_kit.reconcile import Action, Report, Row
 
 
@@ -54,9 +54,17 @@ def test_update_prs_exits_non_zero_only_on_a_failure(monkeypatch, capsys, rows, 
     assert "did a thing" in capsys.readouterr().out
 
 
-def test_sync_adopt_is_a_future_item(capsys):
-    assert main(["sync", "--adopt"]) == NOT_IMPLEMENTED
-    assert "Future item" in capsys.readouterr().err
+def test_sync_adopt_asks_on_the_terminal(monkeypatch):
+    seen = {}
+
+    def fake(_cwd, **kwargs):
+        seen.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("repo_kit.files.run_sync", fake)
+    assert main(["sync", "--adopt"]) == 0
+    assert seen["adopt"] is True
+    assert seen["confirm"] is bootstrap.ask
 
 
 @pytest.mark.parametrize(
@@ -241,6 +249,7 @@ def test_fleet_commands_reach_fleet(monkeypatch, argv, name, expected):
     seen: list[tuple] = []
 
     def fake(_user, *args, **kwargs):
+        kwargs.pop("resolve_sha", None)  # the real resolver: not under test here
         seen.append((*args, *kwargs.values()))
         return 0
 
