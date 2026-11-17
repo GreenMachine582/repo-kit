@@ -176,24 +176,33 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
     def set_app(app, *, client_id, pem, changed):
         seen.append(("set-app", (app, client_id, pem)))
 
-    def add(recipient, *, changed):
-        seen.append(("add", recipient))
+    def add(recipient, *, label=None, changed):
+        seen.append(("add", recipient, label))
+
+    def remove(target, *, include_self, changed):
+        seen.append(("remove", target, include_self))
 
     monkeypatch.setattr(credentials, "run_init", init)
     monkeypatch.setattr(credentials, "run_set_app", set_app)
     monkeypatch.setattr(credentials, "run_add_recipient", add)
+    monkeypatch.setattr(credentials, "run_remove_recipient", remove)
+    monkeypatch.setattr(credentials, "run_recipients", lambda: seen.append(("list",)))
     monkeypatch.setattr(credentials, "run_show", lambda: 1)
 
     assert main(["secrets", "init"]) == 1
     assert "created age key" in capsys.readouterr().out
     argv = ["secrets", "set-app", "release-bot", "--client-id", "Iv23x", "--pem", "k.pem"]
     assert main(argv) == 0
-    assert main(["secrets", "add-recipient", "age1abc"]) == 0
+    assert main(["secrets", "add-recipient", "age1abc", "--label", "pc"]) == 0
+    assert main(["secrets", "recipients"]) == 0
+    assert main(["secrets", "remove-recipient", "pc", "--include-self"]) == 0
     assert main(["secrets", "show"]) == 1
     assert seen == [
         ("init", None),
         ("set-app", ("release-bot", "Iv23x", Path("k.pem"))),
-        ("add", "age1abc"),
+        ("add", "age1abc", "pc"),
+        ("list",),
+        ("remove", "pc", True),
     ]
 
 

@@ -57,8 +57,10 @@ to sops on stdin, never as an argument, and no command prints one.
 | Command | Does |
 |---|---|
 | `rk secrets init [--file PATH]` | Creates this machine's age key if it has none (where sops looks: `SOPS_AGE_KEY_FILE`, else the default above) and prints its public key. Adds `secrets_file` to the user config if it's missing, creating the config if needed and backing up an existing one to `config.toml.bak`; `--file` picks another place than the OneDrive default. Creates the credentials file if no machine has yet. If it exists but this machine can't decrypt it, prints the `add-recipient` command to run on one that can, and exits 1 until it can, so a script can tell setup isn't finished. Safe to re-run |
-| `rk secrets set-app {pr-bot,release-bot} --client-id … --pem …` | Stores one App's Client ID and key, then reads them back to check |
-| `rk secrets add-recipient age1…` | Lets another machine's key decrypt the file (`sops rotate --add-age`) |
+| `rk secrets set-app {pr-bot,release-bot} --client-id … --pem …` | Checks the `.pem` before writing anything, then stores one App's Client ID and key and reads them back. It must be one PEM block holding an RSA private key (`BEGIN RSA PRIVATE KEY`, or an RSA `BEGIN PRIVATE KEY`) with a valid base64 body. A public key, certificate, encrypted or non-RSA key, a folder, and a missing or binary file each get their own error, and no error quotes the key. Line endings are normalised to LF, so a copy edited on Windows stores the same key |
+| `rk secrets add-recipient age1… [--label NAME]` | Lets another machine's key decrypt the file (`sops rotate --add-age`). `--label` records a name for it, kept in the encrypted data under `_recipients` |
+| `rk secrets recipients` | Lists the age keys the file is encrypted to, with their labels, and marks this machine's. A machine that can't decrypt the file still sees the keys, but no labels |
+| `rk secrets remove-recipient age1…\|LABEL [--include-self]` | Drops one key and re-encrypts (`sops rotate --rm-age`), so that machine can't decrypt later versions. It refuses to remove the last recipient, or this machine's own key unless `--include-self`. A removed machine may still hold a copy it already decrypted, so rotate the Apps' keys if it was lost |
 | `rk secrets show` | Each App's Client ID, and whether its key is present. Exits 1 if one is missing. Warns about a sync conflict copy ([below](#conflict-copies)) |
 
 ### Installing sops and age
