@@ -18,6 +18,7 @@ import sys
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -99,6 +100,8 @@ class AppCredentials:
     # The fingerprint of the key `rk secrets rotate` replaced, so doctor can tell a repo still on
     # the previous key from one holding something else.
     previous_fingerprint: str | None = None
+    # ISO date (UTC) `set-app` stored the key; "" for an entry stored before dates were kept.
+    stored_at: str = ""
 
     def __repr__(self) -> str:  # never show the key, even in a traceback
         return f"AppCredentials(client_id={self.client_id!r}, private_key=<hidden>)"
@@ -444,8 +447,12 @@ def load_credentials(
             problems.append(f"{app.name}'s private_key {problem}: `{_set_app_hint(app)}`")
             continue
         previous = table.get(PREVIOUS_FINGERPRINT_KEY)
+        stored_at = table.get("stored_at")
         credentials[app.key] = AppCredentials(
-            client_id, key, previous if isinstance(previous, str) and previous else None
+            client_id,
+            key,
+            previous if isinstance(previous, str) and previous else None,
+            stored_at if isinstance(stored_at, str) else "",
         )
     if problems:
         raise RkError("\n".join(problems))
@@ -590,6 +597,7 @@ def set_app(
 
     sops.set_value(path, (app.key, "client_id"), client_id)
     sops.set_value(path, (app.key, "private_key"), key)
+    sops.set_value(path, (app.key, "stored_at"), datetime.now(UTC).date().isoformat())
     stored = _app_table(sops.decrypt(path), app)
     if stored.get("client_id") != client_id or stored.get("private_key") != key:
         raise RkError(f"{path} doesn't read back what was stored for {app.name}: check it by hand")
@@ -640,6 +648,7 @@ def rotate_key(
     if previous:
         sops.set_value(path, (app.key, PREVIOUS_FINGERPRINT_KEY), previous)
     sops.set_value(path, (app.key, "private_key"), new_key)
+    sops.set_value(path, (app.key, "stored_at"), datetime.now(UTC).date().isoformat())
     stored = _app_table(sops.decrypt(path), app)
     if stored.get("private_key") != new_key:
         raise RkError(f"{path} doesn't read back the new key for {app.name}: check it by hand")
@@ -843,7 +852,9 @@ def show(
             state, missing = "not a PEM private key", True
         else:
             state = "present"
-        say(f"  {app.name}: Client ID {client_id}, private key {state}")
+        stored_at = table.get("stored_at")
+        when = f", stored {stored_at}" if isinstance(stored_at, str) and stored_at else ""
+        say(f"  {app.name}: Client ID {client_id}, private key {state}{when}")
     warning = conflict_copy_warning(path)
     if warning:
         say(f"Warning: {warning}")

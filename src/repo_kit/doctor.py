@@ -14,6 +14,7 @@ import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -31,6 +32,7 @@ from repo_kit.credentials import (
     APPS,
     MIN_SOPS,
     PR_BOT,
+    App,
     Credentials,
     Sops,
     SopsCli,
@@ -226,6 +228,41 @@ def check_credentials(
             "credentials", f"credentials file: {names}, with a conflict copy", conflict
         ), credentials
     return _ok("credentials", f"credentials file: {names}", str(path)), credentials
+
+
+def check_key_age(
+    credentials: Credentials | None, apps: tuple[App, ...], max_days: int, today: date
+) -> Check:
+    """WARN for an App key stored more than `max_days` ago. A key with no recorded date (stored
+    by an rk from before dates were kept) is SKIP, never FAIL: storing it again starts the clock."""
+    label = "App key age"
+    if credentials is None:
+        return _skip("key-age", label, "need the credentials file")
+    old: list[str] = []
+    undated: list[str] = []
+    ages: list[str] = []
+    for app in apps:
+        found = credentials.get(app.key)
+        if found is None:
+            continue
+        try:
+            stored = date.fromisoformat(found.stored_at)
+        except ValueError:
+            undated.append(app.name)
+            continue
+        days = (today - stored).days
+        ages.append(f"{app.name}: {days} days")
+        if days > max_days:
+            old.append(f"{app.name}'s key was stored {days} days ago ({found.stored_at})")
+    if old:
+        fix = f"older than {max_days} days: rotate it (docs/github-app.md#rotating-a-key)"
+        detail = "\n".join([*old, fix])
+        return _warn("key-age", f"{label}: {len(old)} over {max_days} days", detail)
+    if undated:
+        names = ", ".join(undated)
+        detail = f"no stored date for {names}: `rk secrets set-app` again records one"
+        return _skip("key-age", f"{label}: unknown for {names}", detail)
+    return _ok("key-age", f"{label}: {', '.join(ages)} (limit {max_days})")
 
 
 # --- files ---------------------------------------------------------------------------------
@@ -477,6 +514,7 @@ def doctor(
     templates: Path | None = None,
     gh_version: Callable[[], tuple[int, int] | None] | None = None,
     sops: Sops | None = None,
+    today: date | None = None,
 ) -> list[Check]:
     """Every check, in report order. Reads only: nothing is written, fetched or pushed.
 
@@ -491,7 +529,14 @@ def doctor(
     else:
         user_check = _ok("user-config", "user config valid", str(user_source))
     credentials_check, credentials = check_credentials(user_config, user_source, sops, config)
-    checks += [repo_check, user_check, credentials_check]
+    max_age = (user_config or UserConfig()).key_max_age_days
+    age_check = check_key_age(
+        credentials,
+        apps_for(config) if config else APPS,
+        max_age,
+        today or datetime.now(UTC).date(),
+    )
+    checks += [repo_check, user_check, credentials_check, age_check]
 
     if config is None:
         needs = "managed files, plugin, base branch, App enrolment"

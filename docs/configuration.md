@@ -90,6 +90,7 @@ the defaults.
 ```toml
 worktree_root = "~/dev/wt"
 secrets_file = "~/OneDrive/repo-kit/secrets.sops.json"   # the Apps' credentials, sops + age encrypted
+key_max_age_days = 365           # `doctor` warns when an App key was stored longer ago than this
 
 [fleet.repos]                     # what `rk fleet` runs on: owner/name = this machine's checkout
 "GreenMachine582/PyFinBot" = "~/dev/PyFinBot"

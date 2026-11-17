@@ -226,6 +226,13 @@ def test_worktree_root_under_onedrive_env_is_rejected(tmp_path, monkeypatch):
         parse_user_config({"worktree_root": (synced / "wt").as_posix()}, SRC)
 
 
+def test_key_max_age_days_defaults_to_a_year_and_must_be_positive():
+    assert parse_user_config({}, SRC).key_max_age_days == 365
+    assert parse_user_config({"key_max_age_days": 90}, SRC).key_max_age_days == 90
+    with pytest.raises(ConfigError, match="key_max_age_days"):
+        parse_user_config({"key_max_age_days": 0}, SRC)
+
+
 def test_fleet_repos_parse_and_expand_the_home_folder():
     config = parse_user_config(
         {"fleet": {"repos": {"GreenMachine582/PyFinBot": "~/dev/PyFinBot"}}}, SRC

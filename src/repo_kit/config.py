@@ -144,6 +144,8 @@ class UserConfig:
     worktree_root: Path = field(default_factory=lambda: Path("~/dev/wt").expanduser())
     # The sops-encrypted credentials file (docs/github-app.md). Encrypted, so it may be synced.
     secrets_file: str = ""
+    # `doctor` warns when an App key was stored longer ago than this (days).
+    key_max_age_days: int = 365
     fleet: FleetConfig = field(default_factory=FleetConfig)
 
     @property
@@ -326,6 +328,8 @@ def parse_user_config(data: dict[str, Any], source: Path) -> UserConfig:
     if "pr_bot" in data:
         raise ConfigError(_pr_bot_migration(data["pr_bot"], source))
     config: UserConfig = _build(UserConfig, data, source)
+    if config.key_max_age_days < 1:
+        raise ConfigError(f"{source}: `key_max_age_days` must be at least 1")
     for slug in config.fleet.repos:
         if not _SLUG.match(slug):
             raise ConfigError(
