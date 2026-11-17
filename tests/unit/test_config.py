@@ -167,3 +167,10 @@ def test_worktree_root_under_onedrive_env_is_rejected(tmp_path, monkeypatch):
     monkeypatch.setenv("OneDrive", str(synced))
     with pytest.raises(ConfigError, match="synced folder"):
         parse_user_config({"worktree_root": (synced / "wt").as_posix()}, SRC)
+
+
+def test_key_max_age_days_defaults_to_a_year_and_must_be_positive():
+    assert parse_user_config({}, SRC).key_max_age_days == 365
+    assert parse_user_config({"key_max_age_days": 90}, SRC).key_max_age_days == 90
+    with pytest.raises(ConfigError, match="key_max_age_days"):
+        parse_user_config({"key_max_age_days": 0}, SRC)

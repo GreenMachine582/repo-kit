@@ -434,3 +434,21 @@ def test_unreadable_rulesets_are_a_warning(adopted, github, user_config, tmp_pat
         "repo settings and rulesets: can't read them",
         "HTTP 403",
     )
+
+
+def test_an_old_stored_key_warns_and_a_missing_date_only_skips(
+    adopted, github, user_config, tmp_path
+):
+    work, setup, _said = adopted
+
+    undated = find(run(work, github, setup, user_config, tmp_path), "App key age")
+    assert [(c.status, c.id) for c in undated] == [(Status.SKIP, "key-age")]
+
+    path, sops = stored_credentials(tmp_path)
+    sops.files[path]["release_bot"]["stored_at"] = "2000-01-01"
+    checks = run(work, github, setup, user_config, tmp_path, sops=sops)
+
+    (age,) = find(checks, "App key age")
+    assert age.status is Status.WARN
+    assert "gth-release-bot's key was stored" in age.detail
+    assert not doctor.failed(checks)

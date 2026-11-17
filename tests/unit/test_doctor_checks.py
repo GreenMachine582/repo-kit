@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from repo_kit import doctor, git
+from repo_kit.credentials import APPS, AppCredentials
 from repo_kit.doctor import Check, Status
 from repo_kit.errors import RkError
 
@@ -154,3 +156,49 @@ def test_run_doctor_json_reports_an_early_error(monkeypatch, tmp_path):
     assert json.loads(said[0])["error"] == "not a git repository"
     with pytest.raises(RkError):
         doctor.run_doctor(tmp_path, say=said.append)
+
+
+TODAY = date(2026, 6, 1)
+
+
+def _creds(pr: str, release: str) -> dict[str, AppCredentials]:
+    return {
+        "pr_bot": AppCredentials("c1", "k", pr),
+        "release_bot": AppCredentials("c2", "k", release),
+    }
+
+
+def test_key_age_ok_when_both_are_recent():
+    check = doctor.check_key_age(_creds("2026-05-01", "2026-01-01"), APPS, 365, TODAY)
+    assert check.status is Status.OK
+    assert check.id == "key-age"
+
+
+def test_key_age_warns_past_the_limit():
+    check = doctor.check_key_age(_creds("2026-05-01", "2025-05-31"), APPS, 365, TODAY)
+    assert check.status is Status.WARN
+    assert "gth-release-bot's key was stored 366 days ago" in check.detail
+    assert "gth-pr-bot" not in check.detail
+
+
+def test_key_age_exactly_at_the_limit_is_fine():
+    assert (
+        doctor.check_key_age(_creds("2025-06-01", "2025-06-01"), APPS, 365, TODAY).status
+        is Status.OK
+    )
+
+
+def test_key_age_without_a_date_skips_never_fails():
+    check = doctor.check_key_age(_creds("", "2026-05-01"), APPS, 365, TODAY)
+    assert check.status is Status.SKIP
+    assert "gth-pr-bot" in check.label
+    assert doctor.check_key_age(_creds("not-a-date", ""), APPS, 365, TODAY).status is Status.SKIP
+
+
+def test_key_age_a_warn_beats_a_missing_date():
+    check = doctor.check_key_age(_creds("", "2020-01-01"), APPS, 365, TODAY)
+    assert check.status is Status.WARN
+
+
+def test_key_age_skips_without_credentials():
+    assert doctor.check_key_age(None, APPS, 365, TODAY).status is Status.SKIP

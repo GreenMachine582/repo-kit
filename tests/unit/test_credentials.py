@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -320,7 +321,9 @@ def test_set_app_stores_both_values(tmp_path):
         changed=changed,
         say=lambda _m: None,
     )
-    assert sops.files[path]["release_bot"] == {"client_id": "Iv23new", "private_key": new_pem}
+    stored = sops.files[path]["release_bot"]
+    assert stored.pop("stored_at") == datetime.now(UTC).date().isoformat()
+    assert stored == {"client_id": "Iv23new", "private_key": new_pem}
     assert sops.files[path]["pr_bot"]["private_key"] == PEM
     assert changed == [f"stored gth-release-bot's Client ID and private key in {path}"]
 
@@ -511,3 +514,20 @@ def test_show_warns_about_a_conflict_copy(tmp_path):
     assert "secrets.sops-LAPTOP-9Z.json" in warning
     assert "merge the two" in warning
     assert "delete the copy" in warning
+
+
+def test_load_reads_the_stored_date_and_tolerates_none(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    sops.files[path]["pr_bot"]["stored_at"] = "2025-01-31"
+    loaded = load_credentials(UserConfig(secrets_file=str(path)), SOURCE, sops)
+    assert loaded["pr_bot"].stored_at == "2025-01-31"
+    assert loaded["release_bot"].stored_at == ""
+
+
+def test_show_lists_the_stored_date(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    sops.files[path]["pr_bot"]["stored_at"] = "2025-01-31"
+    said: list[str] = []
+    show(UserConfig(secrets_file=str(path)), SOURCE, sops, say=said.append)
+    assert any("gth-pr-bot" in line and "stored 2025-01-31" in line for line in said)
+    assert not any("gth-release-bot" in line and "stored" in line for line in said)
