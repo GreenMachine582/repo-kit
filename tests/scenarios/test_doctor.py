@@ -308,17 +308,16 @@ def test_missing_sops_is_a_warning(adopted, github, user_config, tmp_path):
 def test_override_and_orphan_warn(adopted, github, user_config, tmp_path):
     work, setup, _said = adopted
     config = work / ".repo-kit.toml"
-    config.write_text(
-        config.read_text(encoding="utf-8") + f'\n[overrides.files]\n"{CALLER}" = "unmanaged"\n',
-        encoding="utf-8",
-    )
+    overrides = f'\n[overrides.files]\n"{CALLER}" = "unmanaged"\n"old/gone.txt" = "unmanaged"\n'
+    config.write_text(config.read_text(encoding="utf-8") + overrides, encoding="utf-8")
+    # A stale lock entry is removed by sync; only an unmanaged one stays as a warning.
     lock = json.loads((work / LOCK_NAME).read_text(encoding="utf-8"))
     lock["files"]["old/gone.txt"] = {"layer": "common", "mode": "managed", "sha256": "x"}
     (work / LOCK_NAME).write_text(json.dumps(lock), encoding="utf-8")
 
     checks = run(work, github, setup, user_config, tmp_path)
 
-    (override,) = find(checks, "override in use")
+    (override,) = find(checks, f"override in use: {CALLER}")
     assert override.status is Status.WARN
     assert override.label == f"override in use: {CALLER} is unmanaged"
     (orphan,) = find(checks, "not a template: old/gone.txt")

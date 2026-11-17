@@ -97,7 +97,36 @@ writing a block into a CRLF file doesn't convert the rest of it.
 
 `sha256` is the hash of what rk last rendered (for a block, of its contents). Content that no longer matches it was
 edited by hand. Each block is recorded and compared on its own, but a file is written whole: one refused block
-refuses the file. A lock entry whose template has gone is reported and left alone.
+refuses the file.
+
+## Removed and renamed templates
+
+A lock entry whose template is no longer in the layers is handled by its recorded mode, on `rk sync` and so on
+`rk upgrade`:
+
+| Mode | What happens |
+|---|---|
+| `managed` | The file is deleted (after a backup) if it still matches the lock. With local edits it is **refused** like any edited managed file, and the lock entry stays until you delete it or restore it, then re-run. A file already gone is just dropped from the lock |
+| `block` | Each recorded block is stripped (with its markers and the blank line before it) if it still matches the lock, and the rest of the file is kept. An edited block refuses the file |
+| `seeded` | Never touched. The entry is dropped from the lock and the summary says the file is yours |
+
+A removal appears in the summary and under `Changed:` (`removed <path> (...)`, or `<path>: dropped from the lock (...)`
+when only the lock changes), and a re-run finds nothing to do. `--check` fails until it has been done. An `unmanaged`
+override keeps the old behaviour: reported as "not a template" and left.
+
+A rename is never guessed from matching content: it is declared in the manifest of the layer that holds the new
+template, by old path, with no release key because the table limits itself (it only acts on a repo whose lock still
+lists the old path):
+
+```toml
+[renames]
+".github/workflows/old-name.yml" = ".github/workflows/new-name.yml"
+```
+
+The old path must not be a template and the new one must be. A declared rename is a removal of the old path, by the
+rules above, plus the new template planned like any other, so a hand-edited old file refuses the sync instead of
+being moved. For a `seeded` file, the old file is the repo's and stays; the new template is created as a fresh seed.
+Without a declaration a rename is just a removal and an addition.
 
 The recorded `mode` is compared too. When a release changes a file's mode, `rk sync` re-records it, notes
 `mode changed from <old>` in the summary and lists it under `Changed:`, and `--check` fails until the lock is
@@ -133,5 +162,5 @@ checked out) has nothing to compare and is let through.
   or to mark the file `unmanaged` in `[overrides]`, which skips it and which `doctor` flags.
 - Every file rk replaces is first copied to `.git/repo-kit/backup/<UTC time>/`, outside the working tree; the
   `Changed:` list names the folder.
-- An upgrade that adds a template adds the file and updates the lock. Renamed and removed templates are a Future
-  item: until then the migration notes say which file to move or delete by hand.
+- An upgrade that adds a template adds the file and updates the lock. Removed and renamed templates are applied by
+  the same sync ([above](#removed-and-renamed-templates)).
