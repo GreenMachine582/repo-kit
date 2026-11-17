@@ -95,7 +95,8 @@ uv pip install -e ".[dev]"
 | `rk configure` | Enrol a repo for `gth-pr-bot` and `gth-release-bot`: labels, Client ID variables, and each key in an environment only one branch may use |
 | `rk install / bootstrap` | Adopt a repo |
 | `rk upgrade [vX.Y.Z]` | Move the version pin to this rk's release and re-render |
-| `rk doctor` | Read-only health check |
+| `rk doctor [--json]` | Read-only health check |
+| `rk status [--json]` | Worktrees and their PRs, doctor's result and the pin, in one read-only summary |
 
 ## 📚 Docs
 
