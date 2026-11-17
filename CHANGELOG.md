@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.2.0](https://github.com/GreenMachine582/repo-kit/compare/v0.1.0...v0.2.0) (2026-11-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* rk needs Python 3.12 or newer.
+
+### Features
+
+* add rk wt list to show each worktree's PR and unsaved work ([dcbd6d8](https://github.com/GreenMachine582/repo-kit/commit/dcbd6d8ca1250a8d214b228ab676f8f8988aecbc))
+* record App key fingerprints and warn about conflict copies ([6e69494](https://github.com/GreenMachine582/repo-kit/commit/6e69494321fbc604f63aa5506b9edccc5c33d654))
+
+
+### Bug Fixes
+
+* keep the App keys in branch-locked environments ([12e2649](https://github.com/GreenMachine582/repo-kit/commit/12e264957443113bdcf8b0c4427ab367efef7993))
+* reconcile PRs by number, clear resolved conflicts, respect deleted seeded files ([0202314](https://github.com/GreenMachine582/repo-kit/commit/0202314fe46e6cb798b104081e58e19b981e79bb))
+* spell out the [pr_bot] migration and how to install sops and age ([fdfddc4](https://github.com/GreenMachine582/repo-kit/commit/fdfddc4a0d28c289617b7444632a318b833ce700))
+* **worktree:** stop wt done and wt sync losing or resurrecting work ([49da404](https://github.com/GreenMachine582/repo-kit/commit/49da404b308c1e330628e16aae29f287144a0404))
+
+
+### Build
+
+* require Python 3.12 ([9190e73](https://github.com/GreenMachine582/repo-kit/commit/9190e73f742290151fb19cfd519d615391a78460))
+
 ## 0.1.0 (2026-11-16)
 
 
