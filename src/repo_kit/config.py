@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 import tomllib
 import typing
 from dataclasses import dataclass, field
@@ -32,6 +33,9 @@ PROFILE_LONG_LIVED = {"dev-main": ("dev", "main")}
 
 # `[checks].pr_title`: whether a PR title must not, or must, be a conventional commit.
 PR_TITLE_RULES = ("not-conventional", "conventional")
+
+# `owner/name`, as GitHub spells them.
+_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$")
 
 # Folder names of sync clients that break venvs and Git internals.
 _SYNCED_PREFIXES = ("onedrive", "dropbox", "icloud")
@@ -114,10 +118,18 @@ class RepoConfig:
 
 
 @dataclass(frozen=True)
+class FleetConfig:
+    """The repos `rk fleet` works across: `owner/name` -> where this machine keeps its checkout."""
+
+    repos: dict[str, Path] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class UserConfig:
     worktree_root: Path = field(default_factory=lambda: Path("~/dev/wt").expanduser())
     # The sops-encrypted credentials file (docs/github-app.md). Encrypted, so it may be synced.
     secrets_file: str = ""
+    fleet: FleetConfig = field(default_factory=FleetConfig)
 
     @property
     def secrets_path(self) -> Path | None:
@@ -272,6 +284,12 @@ def parse_user_config(data: dict[str, Any], source: Path) -> UserConfig:
     if "pr_bot" in data:
         raise ConfigError(_pr_bot_migration(data["pr_bot"], source))
     config: UserConfig = _build(UserConfig, data, source)
+    for slug in config.fleet.repos:
+        if not _SLUG.match(slug):
+            raise ConfigError(
+                f'{source}: `fleet.repos` key "{slug}" must be a GitHub slug, such as '
+                f'"GreenMachine582/PyFinBot"'
+            )
     synced = synced_folder(config.worktree_root)
     if synced:
         raise ConfigError(

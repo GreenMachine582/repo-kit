@@ -161,6 +161,7 @@ class FakeGitHub:
         self.added_labels: list[tuple[int, str]] = []
         self.comments: dict[int, list[str]] = {}
         self.files: dict[str, str] = {}
+        self.created: list[tuple[int, str, str]] = []
 
     def add_pr(
         self,
@@ -272,3 +273,10 @@ class FakeGitHub:
 
     def read_file(self, path: str) -> str | None:
         return self.files.get(path)
+
+    def create_pr(
+        self, head: str, base: str, title: str, body: str, *, draft: bool = False
+    ) -> PullRequest:
+        pr = self.add_pr(head, base, draft=draft)
+        self.created.append((pr.number, title, body))
+        return pr
