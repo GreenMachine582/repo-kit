@@ -93,8 +93,15 @@ def test_upgrade_reaches_run_upgrade_and_prints_what_changed(monkeypatch, capsys
 
 @pytest.mark.parametrize("code", [0, 1])
 def test_doctor_returns_run_doctors_exit_code(monkeypatch, code):
-    monkeypatch.setattr(doctor, "run_doctor", lambda _cwd: code)
+    monkeypatch.setattr(doctor, "run_doctor", lambda _cwd, as_json=False: code)
     assert main(["doctor"]) == code
+
+
+def test_doctor_json_flag_is_passed_on(monkeypatch):
+    seen = []
+    monkeypatch.setattr(doctor, "run_doctor", lambda _cwd, as_json=False: seen.append(as_json) or 0)
+    assert main(["doctor", "--json"]) == 0
+    assert seen == [True]
 
 
 @pytest.mark.parametrize(
