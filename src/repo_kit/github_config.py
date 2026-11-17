@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from repo_kit import files, git, rulesets, settings
-from repo_kit.config import RepoConfig, load_repo_config
+from repo_kit.config import REPO_CONFIG_NAME, RepoConfig, load_repo_config
 from repo_kit.errors import RkError
 from repo_kit.github import GhCliGitHub, RepoSetup
 from repo_kit.rulesets import RulesetDiff, RulesetsDiff, State
@@ -153,6 +153,13 @@ def run_github(
 ) -> int:
     """The command: this repo's config against its settings and rulesets on GitHub."""
     repo_root = git.toplevel(cwd)
+    # Without the file every default applies, so a checkout of an old branch would diff (and
+    # apply) the wrong rulesets: refuse instead.
+    if not (repo_root / REPO_CONFIG_NAME).is_file():
+        raise RkError(
+            f"no {REPO_CONFIG_NAME} in {repo_root}: the rulesets and settings are built from it. "
+            "Switch to a branch that has it (`git switch dev`), or adopt repo-kit with `rk install`"
+        )
     url = git.remote_url(repo_root)
     if not git.is_github_url(url):
         raise RkError(f"origin ({url}) isn't on GitHub: there are no settings or rulesets")

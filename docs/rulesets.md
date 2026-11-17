@@ -49,6 +49,9 @@ login, so the ID lives in config, with gth-release-bot's as the default.
 | `rk github apply` | Shows the same diff and asks. On yes it backs up the live settings and every ruleset, writes, and reads everything back. Needs an authenticated `gh` with admin rights. Never runs in CI. Exits 1 if anything still differs, or nothing was applied |
 | `rk doctor` | Runs the same diff: WARN on drift |
 
+Both refuse in a checkout with no `.repo-kit.toml`, such as an old branch from before adoption: every default would
+apply, so the diff would be wrong, and so would what `apply` writes. Switch to `dev` first.
+
 Rulesets are matched by name (`repo-kit: dev`, `repo-kit: main`, `repo-kit: tags`). Rulesets with other names are
 left alone and listed, so a GTH repo's old `dev`, `main` and `release tags` rulesets stay until you delete them.
 
