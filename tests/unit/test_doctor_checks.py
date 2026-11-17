@@ -163,8 +163,8 @@ TODAY = date(2026, 6, 1)
 
 def _creds(pr: str, release: str) -> dict[str, AppCredentials]:
     return {
-        "pr_bot": AppCredentials("c1", "k", pr),
-        "release_bot": AppCredentials("c2", "k", release),
+        "pr_bot": AppCredentials("c1", "k", stored_at=pr),
+        "release_bot": AppCredentials("c2", "k", stored_at=release),
     }
 
 
@@ -202,3 +202,12 @@ def test_key_age_a_warn_beats_a_missing_date():
 
 def test_key_age_skips_without_credentials():
     assert doctor.check_key_age(None, APPS, 365, TODAY).status is Status.SKIP
+
+
+def test_fleet_reads_the_key_age_check_from_the_json():
+    from repo_kit import fleet
+
+    old = doctor.check_key_age(_creds("2020-01-01", "2026-05-01"), APPS, 365, TODAY)
+    status, detail = fleet.summarise_doctor(doctor.to_json([old]))
+    assert status.name == "WARN"
+    assert "App key age" in detail

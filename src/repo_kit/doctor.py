@@ -437,7 +437,10 @@ def check_enrolment(
             )
             replace_key = True
         elif found and fingerprint != key_fingerprint(found.private_key):
-            problems.append(f"secret {secret} holds an older key than your credentials file")
+            if fingerprint == found.previous_fingerprint:
+                problems.append(f"secret {secret} still holds the key `rk secrets rotate` replaced")
+            else:
+                problems.append(f"secret {secret} holds an older key than your credentials file")
             replace_key = True
         fix = "run `rk configure --replace-key`" if replace_key else "run `rk configure`"
         if problems:

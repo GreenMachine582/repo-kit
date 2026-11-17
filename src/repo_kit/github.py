@@ -110,6 +110,12 @@ class GitHub(Protocol):
         """Change PR `number`'s base branch to `base`."""
         ...
 
+    def create_pr(
+        self, head: str, base: str, title: str, body: str, *, draft: bool = False
+    ) -> PullRequest:
+        """Open a PR from branch `head` (already pushed) into `base`."""
+        ...
+
 
 def pick_pr(prs: list[PullRequest]) -> PullRequest | None:
     """Prefer an open PR; otherwise the most recent (highest number)."""
@@ -169,6 +175,11 @@ class NoGitHub:
 
     def retarget(self, number: int, base: str) -> None:
         raise GitHubError("origin isn't on GitHub, so there are no PRs to retarget")
+
+    def create_pr(
+        self, head: str, base: str, title: str, body: str, *, draft: bool = False
+    ) -> PullRequest:
+        raise GitHubError("origin isn't on GitHub, so there is nowhere to open a PR")
 
 
 class RepoSetup(Protocol):
@@ -367,6 +378,26 @@ class GhCliGitHub:
 
     def retarget(self, number: int, base: str) -> None:
         self._api("-X", "PATCH", f"{self._repo}/pulls/{number}", "-f", f"base={base}")
+
+    def create_pr(
+        self, head: str, base: str, title: str, body: str, *, draft: bool = False
+    ) -> PullRequest:
+        data = self._api(
+            "-X",
+            "POST",
+            f"{self._repo}/pulls",
+            "-f",
+            f"head={head}",
+            "-f",
+            f"base={base}",
+            "-f",
+            f"title={title}",
+            "-f",
+            f"body={body}",
+            "-F",
+            f"draft={'true' if draft else 'false'}",
+        )
+        return pr_from_api(data)
 
     # --- RepoSetup ---
 

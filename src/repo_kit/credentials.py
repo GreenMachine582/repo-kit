@@ -38,6 +38,7 @@ _INSTALL_HINT = (
     "install sops and age, then open a new terminal (docs/github-app.md#installing-sops-and-age)"
 )
 AGE_KEY_ENV = "SOPS_AGE_KEY_FILE"
+PREVIOUS_FINGERPRINT_KEY = "previous_key_fingerprint"
 LABELS_KEY = "_recipients"  # recipient -> label, inside the encrypted data
 _AGE_RECIPIENT = re.compile(r"age1[0-9a-z]{58}")
 
@@ -96,6 +97,9 @@ def apps_for(config: RepoConfig) -> tuple[App, ...]:
 class AppCredentials:
     client_id: str
     private_key: str
+    # The fingerprint of the key `rk secrets rotate` replaced, so doctor can tell a repo still on
+    # the previous key from one holding something else.
+    previous_fingerprint: str | None = None
     # ISO date (UTC) `set-app` stored the key; "" for an entry stored before dates were kept.
     stored_at: str = ""
 
@@ -442,9 +446,14 @@ def load_credentials(
         if problem:
             problems.append(f"{app.name}'s private_key {problem}: `{_set_app_hint(app)}`")
             continue
+        previous = table.get(PREVIOUS_FINGERPRINT_KEY)
         stored_at = table.get("stored_at")
-        stored = stored_at if isinstance(stored_at, str) else ""
-        credentials[app.key] = AppCredentials(client_id, key, stored)
+        credentials[app.key] = AppCredentials(
+            client_id,
+            key,
+            previous if isinstance(previous, str) and previous else None,
+            stored_at if isinstance(stored_at, str) else "",
+        )
     if problems:
         raise RkError("\n".join(problems))
     return credentials
@@ -550,6 +559,23 @@ def init(
     return 0
 
 
+def read_pem(pem: Path) -> str:
+    """The normalised key in a downloaded `.pem`, or an RkError saying what's wrong with the
+    file. Nothing here prints or quotes the key."""
+    if pem.is_dir():
+        raise RkError(f"{pem} is a folder: give the path of the .pem file")
+    if not pem.is_file():
+        raise RkError(f"{pem} doesn't exist")
+    try:
+        raw = pem.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        raise RkError(f"{pem} isn't a PEM private key (it isn't a text file)") from None
+    try:
+        return normalise_pem(raw)
+    except ValueError as exc:
+        raise RkError(f"{pem} {exc}") from None
+
+
 def set_app(
     user_config: UserConfig,
     source: Path,
@@ -567,18 +593,7 @@ def set_app(
     client_id = client_id.strip()
     if not client_id or any(c.isspace() for c in client_id):
         raise RkError(f"{client_id!r} isn't a Client ID (GitHub shows it as `Iv23…`)")
-    if pem.is_dir():
-        raise RkError(f"{pem} is a folder: give the path of the .pem file")
-    if not pem.is_file():
-        raise RkError(f"{pem} doesn't exist")
-    try:
-        raw = pem.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
-        raise RkError(f"{pem} isn't a PEM private key (it isn't a text file)") from None
-    try:
-        key = normalise_pem(raw)
-    except ValueError as exc:
-        raise RkError(f"{pem} {exc}") from None
+    key = read_pem(pem)
 
     sops.set_value(path, (app.key, "client_id"), client_id)
     sops.set_value(path, (app.key, "private_key"), key)
@@ -591,6 +606,122 @@ def set_app(
         f"{pem} can be deleted now. Then run `rk configure` in each repo "
         "(`--replace-key` if this replaced a key)."
     )
+
+
+@dataclass(frozen=True)
+class Rotation:
+    """What `rotate_key` did: enough for a caller (`rk secrets rotate`, later `rk fleet`) to go
+    on and replace the key in each repo."""
+
+    app: App
+    new_fingerprint: str
+    previous_fingerprint: str | None  # None if the file held no readable key before
+
+
+def rotate_key(
+    user_config: UserConfig,
+    source: Path,
+    sops: Sops,
+    app_arg: str,
+    *,
+    pem: Path,
+    changed: list[str],
+) -> Rotation:
+    """Store a new private key for an App that's already in the credentials file, and keep the
+    old key's fingerprint beside it. The Client ID stays. Writes nothing if the `.pem` is
+    unusable or is the key already stored. This is the part `rk fleet` calls; it prints nothing
+    and touches no repo."""
+    app = app_by_arg(app_arg)
+    path = secrets_path(user_config, source)
+    new_key = read_pem(pem)
+    table = _app_table(sops.decrypt(path), app)
+    old_key = table.get("private_key")
+    if not table.get("client_id") or not isinstance(old_key, str) or not old_key:
+        raise RkError(f"{app.name} isn't in {path}: `{_set_app_hint(app)}` stores its first key")
+    new_fingerprint = key_fingerprint(new_key)
+    previous = key_fingerprint(old_key) if pem_problem(old_key) is None else None
+    if previous == new_fingerprint:
+        raise RkError(
+            f"{pem} is the key already stored for {app.name}: generate a new private key in the "
+            "App's settings first"
+        )
+    if previous:
+        sops.set_value(path, (app.key, PREVIOUS_FINGERPRINT_KEY), previous)
+    sops.set_value(path, (app.key, "private_key"), new_key)
+    sops.set_value(path, (app.key, "stored_at"), datetime.now(UTC).date().isoformat())
+    stored = _app_table(sops.decrypt(path), app)
+    if stored.get("private_key") != new_key:
+        raise RkError(f"{path} doesn't read back the new key for {app.name}: check it by hand")
+    changed.append(f"stored a new private key for {app.name} in {path}")
+    return Rotation(app, new_fingerprint, previous)
+
+
+@dataclass(frozen=True)
+class KnownRepo:
+    checkout: Path  # the main checkout, where `rk configure` runs
+    name: str  # owner/repo
+    apps: tuple[App, ...]
+
+
+def known_repos(user_config: UserConfig, cwd: Path) -> list[KnownRepo]:
+    """Repos rk can find without a registry: the one in `cwd` and any with a worktree under
+    `worktree_root`. Each is read from its own `.repo-kit.toml`; one that can't be read is left
+    out. `rk fleet` replaces this with its own list of adopting repos."""
+    from repo_kit import git
+    from repo_kit.config import load_repo_config
+
+    candidates = [cwd]
+    root = user_config.worktree_root
+    if root.is_dir():
+        for group in sorted(p for p in root.iterdir() if p.is_dir()):
+            inside = sorted(p for p in group.iterdir() if (p / ".git").exists())
+            candidates.extend(inside[:1])  # one worktree is enough to find the repo
+    found: dict[Path, KnownRepo] = {}
+    for candidate in candidates:
+        try:
+            main = git.main_checkout(candidate)
+            owner, repo = git.parse_owner_repo(git.remote_url(main))
+            config = load_repo_config(main)
+        except (RkError, OSError):
+            continue
+        found.setdefault(main, KnownRepo(main, f"{owner}/{repo}", apps_for(config)))
+    return sorted(found.values(), key=lambda r: r.name)
+
+
+def configure_commands(app: App, repos: list[KnownRepo]) -> list[str]:
+    """The commands that put a rotated key into each repo that uses `app`."""
+    return [
+        f'cd "{repo.checkout}" && rk configure --replace-key' for repo in repos if app in repo.apps
+    ]
+
+
+def rotate(
+    user_config: UserConfig,
+    source: Path,
+    sops: Sops,
+    app_arg: str,
+    *,
+    pem: Path,
+    repos: list[KnownRepo],
+    changed: list[str],
+    say: Callable[[str], None] = print,
+) -> Rotation:
+    """`rk secrets rotate`: store the new key, then say how to replace it in each repo."""
+    rotation = rotate_key(user_config, source, sops, app_arg, pem=pem, changed=changed)
+    app = rotation.app
+    commands = configure_commands(app, repos)
+    say(f"{pem} can be deleted now.")
+    if commands:
+        say(f"Put the new key in each repo that uses {app.name}:")
+        for command in commands:
+            say(f"  {command}")
+    else:
+        say("rk found no repos to name: run `rk configure --replace-key` in each enrolled repo.")
+    say(
+        "Then run `rk doctor` in each (it flags a repo still on the previous key) and delete the "
+        f"old key in {app.name}'s settings."
+    )
+    return rotation
 
 
 def add_recipient(
@@ -741,6 +872,14 @@ def run_init(*, file: str | None, changed: list[str]) -> int:
 
 def run_set_app(app_arg: str, *, client_id: str, pem: Path, changed: list[str]) -> None:
     set_app(*_loaded(), app_arg, client_id=client_id, pem=pem.expanduser(), changed=changed)
+
+
+def run_rotate(app_arg: str, *, pem: Path, changed: list[str]) -> None:
+    user_config, source, sops = _loaded()
+    rotate(
+        user_config, source, sops, app_arg, pem=pem.expanduser(),
+        repos=known_repos(user_config, Path.cwd()), changed=changed,
+    )  # fmt: skip
 
 
 def run_add_recipient(recipient: str, *, label: str | None = None, changed: list[str]) -> None:

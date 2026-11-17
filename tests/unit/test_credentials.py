@@ -25,6 +25,7 @@ from repo_kit.credentials import (
     AGE_KEY_ENV,
     PR_BOT,
     RELEASE_BOT,
+    KnownRepo,
     SopsCli,
     add_recipient,
     age_key_path,
@@ -39,6 +40,8 @@ from repo_kit.credentials import (
     public_key,
     recipients,
     remove_recipient,
+    rotate,
+    rotate_key,
     set_app,
     show,
 )
@@ -739,3 +742,69 @@ def test_sops_cli_reads_recipients_from_the_files_metadata(tmp_path):
     meta = {"sops": {"age": [{"recipient": RECIPIENT, "enc": "x"}, {"recipient": OTHER}]}}
     path.write_text(json.dumps(meta), encoding="utf-8")
     assert SopsCli().list_recipients(path) == [RECIPIENT, OTHER]
+
+
+# --- rk secrets rotate -----------------------------------------------------------------------
+
+
+def test_rotate_key_stores_the_new_key_and_keeps_the_old_fingerprint(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    config = UserConfig(secrets_file=str(path))
+    changed: list[str] = []
+    rotation = rotate_key(
+        config, SOURCE, sops, "release-bot", pem=pem_file(tmp_path, NEW_PEM), changed=changed
+    )
+    table = sops.files[path]["release_bot"]
+    assert table["private_key"] == NEW_PEM
+    assert table["client_id"] == "Iv23rel"
+    assert table["previous_key_fingerprint"] == key_fingerprint(RELEASE_PEM)
+    assert table["stored_at"] == datetime.now(UTC).date().isoformat()
+    assert rotation.previous_fingerprint == key_fingerprint(RELEASE_PEM)
+    assert rotation.new_fingerprint == key_fingerprint(NEW_PEM)
+    assert changed == [f"stored a new private key for gth-release-bot in {path}"]
+    loaded = load_credentials(config, SOURCE, sops)
+    assert loaded[RELEASE_BOT.key].previous_fingerprint == key_fingerprint(RELEASE_PEM)
+    assert loaded[PR_BOT.key].previous_fingerprint is None
+
+
+def test_rotate_key_refuses_before_writing(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    config = UserConfig(secrets_file=str(path))
+    with pytest.raises(RkError, match="already stored"):
+        rotate_key(
+            config, SOURCE, sops, "release-bot", pem=pem_file(tmp_path, RELEASE_PEM), changed=[]
+        )
+    with pytest.raises(RkError, match="not the private key"):
+        pub = _block("PUBLIC KEY")
+        rotate_key(config, SOURCE, sops, "pr-bot", pem=pem_file(tmp_path, pub), changed=[])
+    del sops.files[path]["pr_bot"]["private_key"]
+    with pytest.raises(RkError, match="set-app pr-bot"):
+        rotate_key(config, SOURCE, sops, "pr-bot", pem=pem_file(tmp_path, NEW_PEM), changed=[])
+    assert sops.writes == []
+
+
+def test_rotate_prints_the_commands_for_each_repo_and_never_the_key(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    repos = [
+        KnownRepo(tmp_path / "a", "o/a", (PR_BOT, RELEASE_BOT)),
+        KnownRepo(tmp_path / "b", "o/b", (RELEASE_BOT,)),
+    ]
+    said: list[str] = []
+    rotate(
+        UserConfig(secrets_file=str(path)), SOURCE, sops, "pr-bot",
+        pem=pem_file(tmp_path, NEW_PEM), repos=repos, changed=[], say=said.append,
+    )  # fmt: skip
+    text = " ".join(said)
+    assert f'cd "{tmp_path / "a"}" && rk configure --replace-key' in said[1] + said[2]
+    assert str(tmp_path / "b") not in text  # doesn't use gth-pr-bot
+    assert "BEGIN" not in text and "MAMCAQI" not in text
+
+
+def test_rotate_with_no_repos_says_to_run_configure_in_each(tmp_path):
+    path, sops = stored_credentials(tmp_path)
+    said: list[str] = []
+    rotate(
+        UserConfig(secrets_file=str(path)), SOURCE, sops, "pr-bot",
+        pem=pem_file(tmp_path, NEW_PEM), repos=[], changed=[], say=said.append,
+    )  # fmt: skip
+    assert any("rk configure --replace-key` in each enrolled repo" in line for line in said)

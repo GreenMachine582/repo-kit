@@ -91,9 +91,12 @@ the defaults.
 worktree_root = "~/dev/wt"
 secrets_file = "~/OneDrive/repo-kit/secrets.sops.json"   # the Apps' credentials, sops + age encrypted
 key_max_age_days = 365           # `doctor` warns when an App key was stored longer ago than this
+
+[fleet.repos]                     # what `rk fleet` runs on: owner/name = this machine's checkout
+"GreenMachine582/PyFinBot" = "~/dev/PyFinBot"
 ```
 
-`worktree_root` must not be inside OneDrive or any other synced folder: rk refuses one under a `OneDrive*`, Dropbox
+`[fleet.repos]` keys must be `owner/name`; see [fleet.md](fleet.md). `worktree_root` must not be inside OneDrive or any other synced folder: rk refuses one under a `OneDrive*`, Dropbox
 or iCloud folder. `secrets_file` may be, since it's encrypted. The age key that decrypts it must not be; `rk secrets`
 refuses one that is. `rk secrets init` writes the `secrets_file` line, creating this file if needed. See
 [github-app.md](github-app.md#credentials-sops--age).

@@ -231,3 +231,27 @@ def test_key_max_age_days_defaults_to_a_year_and_must_be_positive():
     assert parse_user_config({"key_max_age_days": 90}, SRC).key_max_age_days == 90
     with pytest.raises(ConfigError, match="key_max_age_days"):
         parse_user_config({"key_max_age_days": 0}, SRC)
+
+
+def test_fleet_repos_parse_and_expand_the_home_folder():
+    config = parse_user_config(
+        {"fleet": {"repos": {"GreenMachine582/PyFinBot": "~/dev/PyFinBot"}}}, SRC
+    )
+    assert config.fleet.repos == {"GreenMachine582/PyFinBot": Path("~/dev/PyFinBot").expanduser()}
+    assert UserConfig().fleet.repos == {}
+
+
+def test_fleet_unknown_keys_are_errors():
+    with pytest.raises(ConfigError, match="`fleet.repo`"):
+        parse_user_config({"fleet": {"repo": {}}}, SRC)
+
+
+@pytest.mark.parametrize("slug", ["PyFinBot", "a/b/c", "/b", "a/", "a b/c", "-a/b"])
+def test_fleet_keys_must_be_github_slugs(slug):
+    with pytest.raises(ConfigError, match="must be a GitHub slug"):
+        parse_user_config({"fleet": {"repos": {slug: "~/x"}}}, SRC)
+
+
+def test_fleet_paths_must_be_strings():
+    with pytest.raises(ConfigError, match="must be a path string"):
+        parse_user_config({"fleet": {"repos": {"o/r": 1}}}, SRC)

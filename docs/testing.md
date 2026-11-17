@@ -66,5 +66,7 @@ Once, against real GitHub, in Phase 2:
 ## CI
 
 ruff (lint and format), mypy (strict, on `src/`), `actionlint`, `zizmor` (a security audit of the workflows) and
-`claude plugin validate`. Worktree and sync scenarios run on Linux and Windows. Third-party actions are pinned to a
-full commit SHA, and Dependabot moves the pins.
+`claude plugin validate`. Worktree and sync scenarios run on Linux for every PR. Windows, the slow runner, runs them
+on release PRs into `main` and after each merge to `dev`: on a PR into `dev` its job is skipped, which counts as
+passing, and the full suite on a Windows machine before each commit stands in for it. Third-party actions are
+pinned to a full commit SHA, and Dependabot moves the pins.

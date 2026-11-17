@@ -194,6 +194,9 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
     monkeypatch.setattr(credentials, "run_add_recipient", add)
     monkeypatch.setattr(credentials, "run_remove_recipient", remove)
     monkeypatch.setattr(credentials, "run_recipients", lambda: seen.append(("list",)))
+    monkeypatch.setattr(
+        credentials, "run_rotate", lambda app, *, pem, changed: seen.append(("rotate", app, pem))
+    )
     monkeypatch.setattr(credentials, "run_show", lambda: 1)
 
     assert main(["secrets", "init"]) == 1
@@ -202,6 +205,7 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
     assert main(argv) == 0
     assert main(["secrets", "add-recipient", "age1abc", "--label", "pc"]) == 0
     assert main(["secrets", "recipients"]) == 0
+    assert main(["secrets", "rotate", "pr-bot", "--pem", "n.pem"]) == 0
     assert main(["secrets", "remove-recipient", "pc", "--include-self"]) == 0
     assert main(["secrets", "show"]) == 1
     assert seen == [
@@ -209,6 +213,7 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
         ("set-app", ("release-bot", "Iv23x", Path("k.pem"))),
         ("add", "age1abc", "pc"),
         ("list",),
+        ("rotate", "pr-bot", Path("n.pem")),
         ("remove", "pc", True),
     ]
 
@@ -216,3 +221,36 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
 def test_set_app_takes_only_known_apps():
     with pytest.raises(SystemExit):
         main(["secrets", "set-app", "other-bot", "--client-id", "x", "--pem", "k"])
+
+
+@pytest.mark.parametrize(
+    ("argv", "name", "expected"),
+    [
+        (["fleet", "list"], "run_list", ()),
+        (["fleet", "doctor"], "run_doctor", ([],)),
+        (["fleet", "doctor", "--repo", "o/a", "--repo", "o/b"], "run_doctor", (["o/a", "o/b"],)),
+        (["fleet", "sync", "--check"], "run_sync_check", ([],)),
+        (["fleet", "upgrade"], "run_upgrade", ([], False)),
+        (["fleet", "upgrade", "--apply"], "run_upgrade", ([], True)),
+        (["fleet", "configure", "--dry-run"], "run_configure", ([], True, False)),
+    ],
+)
+def test_fleet_commands_reach_fleet(monkeypatch, argv, name, expected):
+    from repo_kit import fleet
+
+    seen: list[tuple] = []
+
+    def fake(_user, *args, **kwargs):
+        seen.append((*args, *kwargs.values()))
+        return 0
+
+    monkeypatch.setattr(fleet, name, fake)
+    assert main(argv) == 0
+    assert seen == [expected]
+
+
+def test_fleet_sync_has_no_writing_mode(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["fleet", "sync"])
+    assert exc.value.code == 2
+    assert "--check" in capsys.readouterr().err

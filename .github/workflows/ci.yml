@@ -18,12 +18,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  test-ubuntu:
+    name: test (ubuntu-latest)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,6 +32,25 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
+      - run: mypy
+      - run: pytest
+
+  # Windows is the slow runner, and sessions here already run the full suite on Windows before each commit
+  # (CLAUDE.md). So it runs on release PRs (into main) and after each merge to dev, not on every PR into dev. A job
+  # skipped by `if` reports success, so the check stays required on both rulesets without blocking PRs into dev.
+  test-windows:
+    name: test (windows-latest)
+    if: github.event_name == 'push' || github.base_ref == 'main'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: git --version
+      - run: pip install -e ".[dev]"
       - run: mypy
       - run: pytest
 

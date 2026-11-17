@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import re
 import tomllib
 import typing
 from dataclasses import dataclass, field
@@ -32,6 +33,9 @@ PROFILE_LONG_LIVED = {"dev-main": ("dev", "main")}
 
 # `[checks].pr_title`: whether a PR title must not, or must, be a conventional commit.
 PR_TITLE_RULES = ("not-conventional", "conventional")
+
+# `owner/name`, as GitHub spells them.
+_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9._-]+$")
 
 # `[project].extra_files` types. Structured ones need a `jsonpath` to the version; `generic` reads
 # `x-release-please-version` markers in the file instead.
@@ -129,12 +133,20 @@ class RepoConfig:
 
 
 @dataclass(frozen=True)
+class FleetConfig:
+    """The repos `rk fleet` works across: `owner/name` -> where this machine keeps its checkout."""
+
+    repos: dict[str, Path] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class UserConfig:
     worktree_root: Path = field(default_factory=lambda: Path("~/dev/wt").expanduser())
     # The sops-encrypted credentials file (docs/github-app.md). Encrypted, so it may be synced.
     secrets_file: str = ""
     # `doctor` warns when an App key was stored longer ago than this (days).
     key_max_age_days: int = 365
+    fleet: FleetConfig = field(default_factory=FleetConfig)
 
     @property
     def secrets_path(self) -> Path | None:
@@ -318,6 +330,12 @@ def parse_user_config(data: dict[str, Any], source: Path) -> UserConfig:
     config: UserConfig = _build(UserConfig, data, source)
     if config.key_max_age_days < 1:
         raise ConfigError(f"{source}: `key_max_age_days` must be at least 1")
+    for slug in config.fleet.repos:
+        if not _SLUG.match(slug):
+            raise ConfigError(
+                f'{source}: `fleet.repos` key "{slug}" must be a GitHub slug, such as '
+                f'"GreenMachine582/PyFinBot"'
+            )
     synced = synced_folder(config.worktree_root)
     if synced:
         raise ConfigError(
