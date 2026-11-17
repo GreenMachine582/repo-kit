@@ -64,7 +64,7 @@
   "packages": {
     ".": {
       "package-name": "${project_name}",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md"${extra_files}
     }
   }
 }

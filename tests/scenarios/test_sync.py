@@ -97,6 +97,30 @@ def test_a_first_sync_writes_every_file_and_the_lock(repo, templates):
     assert sync(repo, templates, check=True)[0] == 0
 
 
+def test_a_release_pr_that_moves_the_pin_and_the_lock_passes_check(repo, templates):
+    """What release-please's `extra-files` do to a repo whose own version is the engine's, as
+    repo-kit is: the pin in `.repo-kit.toml` and the lock's copy move, and `--check` must pass."""
+    # Nothing rendered depends on the version, as in repo-kit, whose callers are unmanaged.
+    (templates / "common" / "branches.md").write_text("Branch off `${default_base}`.\n")
+    set_version(repo, "1.0.0", '[overrides]\nfiles."ci/caller.yml" = "unmanaged"\n')
+    sync(repo, templates)
+    assert sync(repo, templates, check=True)[0] == 0
+
+    (repo / ".repo-kit.toml").write_text(
+        read(repo, ".repo-kit.toml").replace('"1.0.0"', '"1.1.0"'), encoding="utf-8"
+    )
+    # The pin alone leaves the lock's copy behind: that is drift.
+    code, _changed, said = sync(repo, templates, check=True)
+    assert code == 1
+    assert "lock" in said.lower() or "Out of sync" in said
+
+    # The lock bump may reformat the file (indent, no final newline); only its content counts.
+    lock = json.loads(read(repo, LOCK_NAME))
+    lock["version"] = "1.1.0"
+    (repo / LOCK_NAME).write_text(json.dumps(lock), encoding="utf-8")
+    assert sync(repo, templates, check=True)[0] == 0
+
+
 def test_scenario_14_a_second_sync_changes_nothing(repo, templates):
     sync(repo, templates)
     code, changed, said = sync(repo, templates)
@@ -407,3 +431,53 @@ def test_lf_files_stay_lf_and_new_files_are_lf(repo, templates):
     sync(repo, templates)
     assert b"\r" not in (repo / "CONTRIBUTING.md").read_bytes()
     assert b"\r" not in (repo / "ci/caller.yml").read_bytes()
+
+
+def _set_mode(templates, path, was, mode):
+    manifest = templates / "common" / MANIFEST_NAME
+    text = manifest.read_text(encoding="utf-8")
+    old = f'[files."{path}"]\nmode = "{was}"'
+    assert old in text
+    manifest.write_text(text.replace(old, old.replace(was, mode)), encoding="utf-8")
+
+
+def test_a_template_turning_seeded_is_recorded_and_the_file_left(repo, templates):
+    sync(repo, templates)
+    (repo / "ci/caller.yml").write_text("mine\n", encoding="utf-8")
+    _set_mode(templates, "ci/caller.yml", "managed", "seeded")
+
+    assert sync(repo, templates, check=True)[0] == 1
+    code, changed, said = sync(repo, templates)
+
+    assert "mode changed from managed" in said
+    assert "recorded ci/caller.yml as seeded (was managed)" in changed
+    assert read(repo, "ci/caller.yml") == "mine\n"
+    assert json.loads(read(repo, LOCK_NAME))["files"]["ci/caller.yml"]["mode"] == "seeded"
+    assert sync(repo, templates, check=True)[0] == 0
+
+
+def test_a_template_turning_managed_does_not_trust_the_seeded_hash(repo, templates):
+    # CHANGELOG.md was seeded from the stub; left untouched, its recorded hash matches it.
+    sync(repo, templates)
+    (templates / "common" / "changelog.md").write_text("# New stub\n", encoding="utf-8")
+    _set_mode(templates, "CHANGELOG.md", "seeded", "managed")
+
+    with pytest.raises(SyncError, match="CHANGELOG.md"):
+        sync(repo, templates)
+    code, _changed, said = sync(repo, templates, check=True)
+
+    # Not trusted as managed: it differs from the render and isn't recorded as managed.
+    assert code == 1
+    assert "isn't in the lock" in said
+
+
+def test_an_old_lock_entry_without_a_mode_still_loads(repo, templates):
+    sync(repo, templates)
+    lock = json.loads(read(repo, LOCK_NAME))
+    del lock["files"]["ci/caller.yml"]["mode"]
+    (repo / LOCK_NAME).write_text(json.dumps(lock), encoding="utf-8")
+
+    code, changed, said = sync(repo, templates)
+
+    assert code == 0
+    assert "mode changed" not in said
