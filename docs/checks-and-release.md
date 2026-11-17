@@ -131,12 +131,37 @@ may create `v*` tags. Runs in a repo queue one behind another and are never canc
 
 `dev-main` repos get both from `rk sync`:
 
-- **`release-please-config.json`** is managed. Only `release-type` (`[project].release_type`) and `package-name`
-  (`[project].name`) vary, so the version-bump rules are identical in every repo. The text is the config GTH repos
+- **`release-please-config.json`** is managed. Only `release-type` (`[project].release_type`), `package-name`
+  (`[project].name`) and `extra-files` (`[project].extra_files`) vary, so the version-bump rules are identical in
+  every repo. The text is the config GTH repos
   already use, so `rk sync` takes theirs over unchanged.
 - **`.release-please-manifest.json`** is seeded: created once, with the version in `pyproject.toml`
   (`[project].version`) or `package.json`, else `0.0.0`, and release-please's from then on. A repo that already has
   one keeps it.
+
+#### `extra_files`, and repo-kit's own pin
+
+`[project].extra_files` ([configuration.md](configuration.md#projectextra_files)) lists files release-please bumps
+in the release PR. It's built in code, not templated, so any path stays valid JSON. rk never writes a version
+itself (hard rule: release-please owns them), it only tells release-please where else the version lives.
+
+repo-kit needs this for itself. Its own `pr-checks-self.yml` runs the PR's own rk, whose version is the one
+release-please just bumped, and `rk sync --check` requires the pin to equal the engine's version. So a release PR
+that moves `pyproject.toml` to 0.3.0 while `.repo-kit.toml` still pins 0.2.0 fails `managed-files`. Two entries fix it:
+
+```toml
+extra_files = [
+  { type = "toml", path = ".repo-kit.toml", jsonpath = "$.version" },
+  { type = "json", path = ".repo-kit.lock", jsonpath = "$.version" },
+]
+```
+
+The lock is listed too because it records the pin it was written at: `--check` calls a lock whose `version` differs
+from the pin out of date. Nothing else in the check changes: the lock compares by content, so release-please
+re-indenting the JSON doesn't matter, and the seeded `.repo-kit.toml` is never compared beyond its pin. The other
+managed files render the same at the new version, because repo-kit's own callers are `unmanaged`
+(`pr-checks.yml`, `update-prs.yml`, `release.yml`). `tests/scenarios/test_sync.py` covers this: moving both
+versions passes, moving only the pin is drift.
 
 `CHANGELOG.md` is never written by rk: release-please creates it on the first release.
 

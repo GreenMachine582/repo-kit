@@ -7,6 +7,12 @@ profile = "dev-main"
 [project]
 name = "repo-kit"
 release_type = "python"
+# repo-kit's version is the engine its own CI runs, so the release PR moves the pin and the lock's copy
+# of it along with pyproject.toml. Without these, `managed-files` fails on every release PR.
+extra_files = [
+  { type = "toml", path = ".repo-kit.toml", jsonpath = "$.version" },
+  { type = "json", path = ".repo-kit.lock", jsonpath = "$.version" },
+]
 
 [checks]
 # This repo's own CI jobs (ci.yml), required next to the pr-checks ones.

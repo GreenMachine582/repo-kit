@@ -87,6 +87,19 @@ PR_TITLE_TEXT = {
 }
 
 
+def extra_files_json(config: RepoConfig) -> str:
+    """The `extra-files` key of the release-please package, as JSON text that continues the line
+    before it (so a comma first), or nothing. Built here because templates can't loop."""
+    if not config.project.extra_files:
+        return ""
+    entries = [
+        {"type": e.type, "path": e.path} | ({"jsonpath": e.jsonpath} if e.jsonpath else {})
+        for e in config.project.extra_files
+    ]
+    body = json.dumps(entries, indent=2).replace("\n", "\n      ")
+    return f',\n      "extra-files": {body}'
+
+
 def template_variables(config: RepoConfig, owner: str, repo: str) -> dict[str, str]:
     return {
         "commit_header_max": str(config.checks.commit_header_max),
@@ -95,6 +108,7 @@ def template_variables(config: RepoConfig, owner: str, repo: str) -> dict[str, s
         "profile": config.profile,
         "project_name": config.project.name or repo,
         "release_type": config.project.release_type,
+        "extra_files": extra_files_json(config),
         "default_base": config.default_base,
         "release_branch": config.release_branch,
         # Where `release.yml` merges a release back to; empty turns the back-merge off.
