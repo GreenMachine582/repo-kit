@@ -13,7 +13,13 @@ from harness import git
 import repo_kit
 from repo_kit import bootstrap, doctor, rulesets, settings
 from repo_kit.config import RepoConfig, UserConfig
-from repo_kit.credentials import PR_BOT, RELEASE_BOT, key_fingerprint, load_credentials
+from repo_kit.credentials import (
+    PR_BOT,
+    RELEASE_BOT,
+    key_fingerprint,
+    load_credentials,
+    rotate_key,
+)
 from repo_kit.doctor import Status
 from repo_kit.files import LOCK_NAME
 from repo_kit.worktree import start
@@ -434,3 +440,22 @@ def test_unreadable_rulesets_are_a_warning(adopted, github, user_config, tmp_pat
         "repo settings and rulesets: can't read them",
         "HTTP 403",
     )
+
+
+def test_a_repo_still_on_the_rotated_out_key_is_named_as_such(
+    adopted, github, user_config, tmp_path
+):
+    work, setup, _said = adopted
+    path, sops = stored_credentials(tmp_path)
+    new_pem = tmp_path / "new.pem"
+    new_pem.write_text(NEW_PEM, encoding="utf-8")
+    rotate_key(
+        UserConfig(secrets_file=str(path)), tmp_path / "config.toml", sops, "release-bot",
+        pem=new_pem, changed=[],
+    )  # fmt: skip
+
+    checks = run(work, github, setup, user_config, tmp_path, sops=sops)
+
+    (bot,) = find(checks, "gth-release-bot: older key")
+    assert "still holds the key `rk secrets rotate` replaced" in bot.detail
+    assert "run `rk configure --replace-key`" in bot.detail
