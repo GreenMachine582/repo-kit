@@ -4,6 +4,7 @@ problem is named with the command that fixes it, and nothing is ever written."""
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 from fakes import NEW_PEM, PEM, RELEASE_PEM, FakeRepoSetup, stored_credentials
@@ -97,6 +98,9 @@ def test_bootstrap_ends_all_ok(adopted, github, user_config, tmp_path):
 
     assert {c.status for c in checks} <= {Status.OK, Status.SKIP}, doctor.render(checks)
     assert not doctor.failed(checks)
+    ids = [c.id for c in checks]
+    assert all(re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", i) for i in ids), ids
+    assert len(ids) == len(set(ids)), ids
     assert find(checks, "managed files:")[0].label.endswith("drifted")
     assert "[OK]   managed files:" in said
     assert (

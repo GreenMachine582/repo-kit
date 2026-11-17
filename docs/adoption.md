@@ -89,11 +89,16 @@ command that fixes it underneath. It exits 1 if any line is `[FAIL]`; `[WARN]` a
 that read many repos. The exit code is the same.
 
 ```json
-{"ok": true, "checks": [{"name": "plugin: repo-kit is in .claude/settings.json", "status": "OK", "detail": ""}]}
+{"schema_version": 1, "ok": true, "checks": [{"id": "plugin", "name": "plugin: repo-kit is in .claude/settings.json", "status": "OK", "detail": ""}]}
 ```
 
-`ok` is false only when a check is `FAIL`. `status` is `OK`, `WARN`, `FAIL` or `SKIP`; `name` is the line's text and
-`detail` the lines under it joined with newlines (empty if none). Checks keep the report's order.
+`schema_version` is 1 and goes up only on a breaking change. `ok` is false only when a check is `FAIL`. `id` is a
+stable kebab-case slug (`tools`, `repo-config`, `files`, `app-gth-pr-bot`, `override-<path>`, ...), unique within a
+document: key on it, since `name` is the line's text and carries versions and counts. `status` is `OK`, `WARN`,
+`FAIL` or `SKIP`; `detail` is the lines under the name joined with newlines (empty if none). Checks keep the report's order.
+
+If doctor can't start (not a git repo, no `origin`), the document is `{"schema_version": 1, "ok": false, "error":
+"<message>", "checks": []}`, still on stdout with exit code 1.
 
 | Check | `[FAIL]` or `[WARN]` when |
 |---|---|
