@@ -213,3 +213,17 @@ def test_doctor_skips_a_repo_whose_callers_are_unmanaged(tmp_path):
         version="1.0.0", overrides=OverridesConfig(files={p: "unmanaged" for p in CALLERS})
     )
     assert doctor.check_ref_pin(tmp_path, config, lambda _v: SHA) is None
+
+
+def test_an_adopt_plan_carries_the_recorded_commit_through(repo, templates, kit_remote):
+    from repo_kit.config import load_repo_config
+    from repo_kit.files import plan_sync
+
+    bare, shas, _ = kit_remote
+    do_upgrade(repo, templates, lambda v: resolve_release_sha(v, str(bare)))
+    plan = plan_sync(
+        repo, load_repo_config(repo), "o", "origin", templates, adopt=frozenset({"ci/caller.yml"})
+    )
+    assert plan.lock["ref_sha"] == shas["1.1.0"]
+    assert plan.lock["ref_sha_version"] == "1.1.0"
+    assert not plan.lock_changed

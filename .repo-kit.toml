@@ -1,7 +1,7 @@
 # repo-kit's config for this repo: the one input to everything rk generates or applies.
 # repo-kit runs on its own tooling. Every key and its default: docs/configuration.md
 
-version = "0.2.0"                 # the repo-kit release whose files this repo holds: rk upgrade moves it
+version = "0.3.0"                 # the repo-kit release whose files this repo holds: rk upgrade moves it
 profile = "dev-main"
 
 [project]

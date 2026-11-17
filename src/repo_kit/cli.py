@@ -76,18 +76,17 @@ def _update_prs(args: argparse.Namespace) -> int:
 
 
 def _sync(args: argparse.Namespace) -> int:
-    if args.adopt:
-        print(
-            "rk sync --adopt: a Future item (see TODO.md). Plain `rk sync` takes over a file only "
-            "if it already matches, and refuses with the diff otherwise.",
-            file=sys.stderr,
-        )
-        return NOT_IMPLEMENTED
-    from repo_kit import files
+    from repo_kit import bootstrap, files
 
     changed: list[str] = []
     try:
-        return files.run_sync(Path.cwd(), check=args.check, changed=changed)
+        return files.run_sync(
+            Path.cwd(),
+            check=args.check,
+            changed=changed,
+            adopt=args.adopt,
+            confirm=bootstrap.ask,
+        )
     finally:
         if not args.check:
             _print_changes(changed)
@@ -213,6 +212,12 @@ def _doctor(args: argparse.Namespace) -> int:
     from repo_kit import doctor
 
     return doctor.run_doctor(Path.cwd(), as_json=args.json)
+
+
+def _status(args: argparse.Namespace) -> int:
+    from repo_kit import status
+
+    return status.run_status(Path.cwd(), as_json=args.json)
 
 
 def _fleet(action: str) -> Handler:
@@ -451,6 +456,12 @@ def _add_setup_side(sub: SubParsers) -> None:
     doctor = sub.add_parser("doctor", help="read-only health check")
     doctor.add_argument("--json", action="store_true", help="print one JSON document, nothing else")
     doctor.set_defaults(handler=_doctor)
+
+    status = sub.add_parser(
+        "status", help="worktrees and PRs, doctor's result and the pin, in one read-only summary"
+    )
+    status.add_argument("--json", action="store_true", help="print one JSON document, nothing else")
+    status.set_defaults(handler=_status)
 
 
 def build_parser() -> argparse.ArgumentParser:

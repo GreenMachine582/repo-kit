@@ -421,6 +421,7 @@ class FilePlan:
     diff: str = ""
     was: str = ""  # the mode the lock recorded, when the template has changed it
     delete: bool = False  # the file itself is to be deleted
+    adoptable: bool = False  # a refusal that `--adopt` may offer to settle by taking the file over
     note: str = ""  # for the change list, when the lock entry is all that changes
 
 
@@ -500,6 +501,7 @@ def _plan_blocks(
     bodies: dict[str, str],
     current: str | None,
     entry: dict[str, Any] | None,
+    force: bool = False,
 ) -> tuple[FilePlan, dict[str, Any]]:
     """One plan for a file's blocks: refused if any block is, else every block in one write."""
     old_blocks = entry.get("blocks") if entry else None
@@ -523,6 +525,8 @@ def _plan_blocks(
             continue
         old = recorded.get(block.name)
         sha = old.get("sha256") if isinstance(old, dict) else None
+        if force:
+            sha = digest(block_inner(text, span))  # adopting: what is there counts as unedited
         action, detail, diff = _plan_compare(
             template.path, "block", block_inner(text, span), wanted, sha
         )
@@ -539,7 +543,12 @@ def _plan_blocks(
     new_entry = {"mode": "block", "blocks": new_blocks}
     if refused:
         plan = FilePlan(
-            template.path, "block", Action.REFUSE, "; ".join(refused), diff="".join(refuse_diffs)
+            template.path,
+            "block",
+            Action.REFUSE,
+            "; ".join(refused),
+            diff="".join(refuse_diffs),
+            adoptable=True,
         )
     elif touched:
         action = Action.CREATE if current is None else Action.UPDATE
@@ -564,6 +573,7 @@ def _plan_one(
     template: TemplateFile,
     variables: dict[str, str],
     entry: dict[str, Any] | None,
+    force: bool = False,
 ) -> tuple[FilePlan, dict[str, Any]]:
     path, mode = template.path, template.mode
     # Render first, so a broken template is an error whatever state the repo is in.
@@ -592,7 +602,7 @@ def _plan_one(
         return FilePlan(path, mode, Action.REFUSE, problem), {}
 
     if mode == "block":
-        plan, block_entry = _plan_blocks(template, bodies, current, entry)
+        plan, block_entry = _plan_blocks(template, bodies, current, entry, force)
         plan.was = _mode_change(entry, mode)
         return plan, block_entry
 
@@ -602,9 +612,12 @@ def _plan_one(
     was = _mode_change(entry, mode)
     # A hash recorded under another mode (a seeded file's, say) says nothing about edits here.
     recorded = entry.get("sha256") if entry and not was else None
+    if force:
+        recorded = digest(current)  # adopting: what is there counts as unedited
     action, detail, diff = _plan_compare(path, "file", current, wanted, recorded)
     write = wanted if action is Action.UPDATE else None
-    return FilePlan(path, mode, action, detail, write, diff, was), new_entry
+    adoptable = action is Action.REFUSE
+    return FilePlan(path, mode, action, detail, write, diff, was, adoptable=adoptable), new_entry
 
 
 def _strip_block(text: str, path: str, name: str) -> str:
@@ -691,9 +704,12 @@ def plan_sync(
     repo: str,
     root: Path | None = None,
     ref_sha: str | _Keep = KEEP,
+    adopt: frozenset[str] = frozenset(),
 ) -> SyncPlan:
-    """What a sync would do. `ref_sha` is the commit of release `config.version` to record in the
-    lock ("" records none). Left alone, the lock's own is used, so a sync stays offline."""
+    """The plan for every template. `ref_sha` is the commit of release `config.version` to record
+    in the lock ("" records none); left alone, the lock's own is used, so a sync stays offline.
+    Paths in `adopt` are taken over as they stand, whatever the lock says about them: only
+    `--adopt`, after a yes for that file, passes any."""
     root = root or templates_root()
     templates = collect_templates(root, config)
     old_lock = read_lock(repo_root)
@@ -713,7 +729,12 @@ def plan_sync(
                 new_files[template.path] = old_files[template.path]
             continue
         file_plan, entry = _plan_one(
-            repo_root, root, template, variables, old_files.get(template.path)
+            repo_root,
+            root,
+            template,
+            variables,
+            old_files.get(template.path),
+            template.path in adopt,
         )
         plan.files.append(file_plan)
         if file_plan.action is Action.REFUSE:
@@ -820,6 +841,34 @@ def summary(plan: SyncPlan, *, update_diffs: bool = False) -> str:
     return "\n".join(lines)
 
 
+def _adopt(
+    plan: SyncPlan,
+    replan: Callable[[frozenset[str]], SyncPlan],
+    confirm: Callable[[str], bool],
+    say: Callable[[str], None],
+) -> tuple[SyncPlan, list[str]]:
+    """Offer each refused file that adoption can settle: its diff, then a question. A yes takes
+    the file over (the render replaces it, and the lock records the render); a no leaves it. Only
+    refusals of that kind are offered: a directory, a binary file or a removed template's edited
+    file stays refused, and so aborts the sync."""
+    accepted: set[str] = set()
+    declined: list[str] = []
+    for offer in (f for f in plan.refused if f.adoptable):
+        say(f"\n{offer.detail}\n{offer.diff.rstrip(chr(10))}")
+        if confirm(f"Take over {offer.path} and replace it with repo-kit's render?"):
+            accepted.add(offer.path)
+        else:
+            declined.append(offer.path)
+    if accepted:
+        plan = replan(frozenset(accepted))
+    for f in plan.files:
+        if f.path in accepted and f.action is Action.UPDATE:
+            f.action, f.detail = Action.ADOPT, "replaced with the render"
+        elif f.path in declined and f.action is Action.REFUSE:
+            f.action, f.detail, f.diff = Action.SKIP, "declined; left as it is", ""
+    return plan, declined
+
+
 def require_pin(config: RepoConfig) -> None:
     """The pin must be set, and be the running engine's version if that is a release."""
     if not config.version:
@@ -844,6 +893,8 @@ def run_sync(
     changed: list[str],
     say: Callable[[str], None] = print,
     root: Path | None = None,
+    adopt: bool = False,
+    confirm: Callable[[str], bool] | None = None,
 ) -> int:
     """The command. Returns the exit code: 1 when `--check` finds drift."""
     git.require_version(cwd)
@@ -852,6 +903,14 @@ def run_sync(
     require_pin(config)
     owner, repo = git.parse_owner_repo(git.remote_url(repo_root))
     plan = plan_sync(repo_root, config, owner, repo, root)
+    declined: list[str] = []
+    if adopt and not check:
+        plan, declined = _adopt(
+            plan,
+            lambda accepted: plan_sync(repo_root, config, owner, repo, root, adopt=accepted),
+            confirm or (lambda _question: False),
+            say,
+        )
     say(summary(plan, update_diffs=check))
     if check:
         if plan.drifted:
@@ -859,4 +918,5 @@ def run_sync(
             return 1
         return 0
     apply_plan(repo_root, plan, changed)
+    changed.extend(f"declined {path} (left as it is)" for path in declined)
     return 0

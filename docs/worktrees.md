@@ -101,7 +101,8 @@ fix/typo     #9 merged  1 uncommitted, 2 unpushed  ~/dev/wt/GreenMachine582-phot
   remote branch), the same tests `wt done` applies. `clean` means neither; `directory missing` means Git still lists
   the worktree but its folder is gone.
 
-A worktree whose PR is merged or closed is ready for `rk wt done`; `rk doctor` reports those as stale.
+A worktree whose PR is merged or closed is ready for `rk wt done`; `rk doctor` reports those as stale. `rk status`
+shows these rows next to doctor's result ([adoption.md](adoption.md#status)).
 
 ## 🔗 Local GTH mode
 
