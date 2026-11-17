@@ -33,8 +33,6 @@ Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Done when every 
   - [ ] A release cut through `release.yml` behaves exactly as before
 - **Live checks** ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot))
   - [ ] All six pass
-- **From the code review of `worktree.py`, `files.py` and `reconcile.py`**
-  - [ ] Compare the recorded mode as well as the hash when a template changes mode between releases
 
 ## Phase 3: GTH repos (`dev-main`, migrating)
 
@@ -45,15 +43,6 @@ worktree links a Core worktree.
 - [ ] `rk sync` in core, then fastapi, then ui, settling each refused file by hand (each keeps its own
   `use-local-gth.sh`)
 - [ ] Delete the old scripts and ruleset JSON in each ([docs/adoption.md](docs/adoption.md#gth-repos))
-- [ ] `rk fleet`: `doctor`, `configure`, `sync --check` and `upgrade` across every adopting repo, which also makes key
-  rotation and upgrade fan-out simpler
-- [ ] `rk doctor --json`
-- [ ] `rk secrets recipients` and `remove-recipient`, to list and drop machines
-- [ ] Better `.pem` handling in `rk secrets set-app` (from the review)
-- [ ] `[project].extra_files`, before the next repo-kit release: release-please `extra-files` in the managed
-  `release-please-config.json`. repo-kit uses it to bump its own `.repo-kit.toml` pin in its release PR: without it,
-  each repo-kit release PR fails `managed-files` (the pin trails the engine) and needs an admin bypass, as v0.2.0
-  did. PyFinBot needs the same key for `src/pyfinbot/version.py`
 
 ## Phase 4: remaining repos
 
@@ -61,8 +50,6 @@ Done when each has had one `bootstrap`.
 
 - [ ] PyFinBot
 - [ ] Any other repo still carrying its own copies
-- [ ] `rk secrets rotate`: store a new App key, then `configure --replace-key` across the fleet
-- [ ] A key-age warning in `doctor`
 
 ## 🙋 User-only steps
 
@@ -78,14 +65,13 @@ Registered, not planned. Each is picked up on its own, after Phase 4.
   `[extras].use_local_gth`. Until then each GTH repo keeps its own copy.
 - **Interactive `rk sync --adopt`:** show each difference and take ownership after confirming, if settling refused
   files by hand proves slow.
-- **Renamed and removed templates in `rk upgrade`:** move or delete the file and update the lock.
 - **Key validation in `rk configure`:** confirm the key and installation before storing, if a stdlib-only way to sign
   the App's JWT turns up.
 - **`main-only` profile**, if a repo ever needs a trunk-only flow: ruleset builder and templates without `dev` or
   back-merge.
 - **Daily safety-net run** of `update-prs`, if missed events ever show up in practice.
-- **Upgrade fan-out:** on a repo-kit release, `gth-pr-bot` opens an `rk upgrade` PR in every adopting repo. `rk fleet`
-  (Phase 3) covers most of this by hand.
+- **Upgrade fan-out:** on a repo-kit release, `gth-pr-bot` opens an `rk upgrade` PR in every adopting repo. Until
+  then, `rk fleet upgrade --apply` does it by hand.
 - **`rk status`:** one summary across worktrees, PRs and doctor.
 - **zizmor in consumers:** run it on each consumer's workflows, as repo-kit's own CI does.
 - **SHA-pinned callers:** generated callers pin repo-kit by commit SHA as well as tag.
