@@ -50,6 +50,10 @@ worktree links a Core worktree.
 - [ ] `rk doctor --json`
 - [ ] `rk secrets recipients` and `remove-recipient`, to list and drop machines
 - [ ] Better `.pem` handling in `rk secrets set-app` (from the review)
+- [ ] `[project].extra_files`, before the next repo-kit release: release-please `extra-files` in the managed
+  `release-please-config.json`. repo-kit uses it to bump its own `.repo-kit.toml` pin in its release PR: without it,
+  each repo-kit release PR fails `managed-files` (the pin trails the engine) and needs an admin bypass, as v0.2.0
+  did. PyFinBot needs the same key for `src/pyfinbot/version.py`
 
 ## Phase 4: remaining repos
 
@@ -63,9 +67,6 @@ Done when each has had one `bootstrap`.
 ## 🙋 User-only steps
 
 - [ ] Install `gth-pr-bot` and `gth-release-bot` on each adopting repo, then run `rk configure` there
-- [ ] Re-run `rk configure` in repo-kit once the environments PR merges: it moves both keys out of repo-level
-  secrets into the `gth-pr-bot` and `gth-release-bot` environments. Until then runs still work (the repo-level
-  secret is passed by name) but the keys stay readable from any pushed branch
 - [ ] Run `rk github apply` yourself (needs admin), after reading the diff
 - [ ] Approve photo-ledger's switch to `dev` (new default branch, open PRs retargeted) when `rk install` asks
 
@@ -78,8 +79,6 @@ Registered, not planned. Each is picked up on its own, after Phase 4.
 - **Interactive `rk sync --adopt`:** show each difference and take ownership after confirming, if settling refused
   files by hand proves slow.
 - **Renamed and removed templates in `rk upgrade`:** move or delete the file and update the lock.
-- **`[project].extra_files`:** release-please `extra-files` in the managed config, for version files such as
-  PyFinBot's `src/pyfinbot/version.py`.
 - **Key validation in `rk configure`:** confirm the key and installation before storing, if a stdlib-only way to sign
   the App's JWT turns up.
 - **`main-only` profile**, if a repo ever needs a trunk-only flow: ruleset builder and templates without `dev` or
