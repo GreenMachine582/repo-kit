@@ -323,3 +323,32 @@ def test_pr_reads_one_pr_by_number(client, monkeypatch):
 def test_pr_that_is_not_there_is_none(client, monkeypatch):
     FakeGh(monkeypatch, failure("gh: Not Found (HTTP 404)"))
     assert client.pr(7) is None
+
+
+def test_create_pr_posts_the_branch_and_reads_the_pr_back(client, monkeypatch):
+    gh = FakeGh(monkeypatch, api_pr(9))
+    pr = client.create_pr("chore/upgrade-1.1.0", "dev", "Move repo-kit to 1.1.0", "body text")
+    assert gh.calls == [
+        [
+            "-X",
+            "POST",
+            "repos/o/r/pulls",
+            "-f",
+            "head=chore/upgrade-1.1.0",
+            "-f",
+            "base=dev",
+            "-f",
+            "title=Move repo-kit to 1.1.0",
+            "-f",
+            "body=body text",
+            "-F",
+            "draft=false",
+        ]
+    ]
+    assert pr.number == 9
+
+
+def test_create_pr_can_open_a_draft(client, monkeypatch):
+    gh = FakeGh(monkeypatch, api_pr(9))
+    client.create_pr("a", "dev", "t", "b", draft=True)
+    assert gh.calls[0][-2:] == ["-F", "draft=true"]

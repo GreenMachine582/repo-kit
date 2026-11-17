@@ -213,6 +213,69 @@ def _doctor(args: argparse.Namespace) -> int:
     return doctor.run_doctor(Path.cwd(), as_json=args.json)
 
 
+def _fleet(action: str) -> Handler:
+    def handler(args: argparse.Namespace) -> int:
+        from repo_kit import fleet
+        from repo_kit.config import load_user_config
+
+        user = load_user_config()
+        if action == "list":
+            return fleet.run_list(user)
+        if action == "doctor":
+            return fleet.run_doctor(user, args.repo)
+        if action == "sync":
+            return fleet.run_sync_check(user, args.repo)
+        if action == "configure":
+            return fleet.run_configure(
+                user, args.repo, dry_run=args.dry_run, replace_key=args.replace_key
+            )
+        return fleet.run_upgrade(user, args.repo, apply=args.apply)
+
+    return handler
+
+
+def _add_fleet(sub: SubParsers) -> None:
+    fleet = sub.add_parser(
+        "fleet", help="doctor, sync --check, configure and upgrade across every adopting repo"
+    )
+    fleet_sub = fleet.add_subparsers(dest="fleet_command", required=True, metavar="<command>")
+    only = argparse.ArgumentParser(add_help=False)
+    only.add_argument(
+        "--repo",
+        action="append",
+        default=[],
+        metavar="OWNER/NAME",
+        help="only this repo from [fleet.repos] (repeatable)",
+    )
+
+    fleet_sub.add_parser(
+        "list", help="the repos in [fleet.repos] and whether each path is its checkout"
+    ).set_defaults(handler=_fleet("list"))
+    fleet_sub.add_parser(
+        "doctor", parents=[only], help="rk doctor in each repo (read-only)"
+    ).set_defaults(handler=_fleet("doctor"))
+    sync = fleet_sub.add_parser(
+        "sync", parents=[only], help="rk sync --check in each repo (read-only)"
+    )
+    sync.add_argument(
+        "--check", action="store_true", required=True, help="the only mode: write nothing"
+    )
+    sync.set_defaults(handler=_fleet("sync"))
+    configure = fleet_sub.add_parser(
+        "configure", parents=[only], help="rk configure in each repo, asking before each one"
+    )
+    configure.add_argument("--dry-run", action="store_true", help="report what would change")
+    configure.add_argument(
+        "--replace-key", action="store_true", help="overwrite the private key secrets if set"
+    )
+    configure.set_defaults(handler=_fleet("configure"))
+    upgrade = fleet_sub.add_parser(
+        "upgrade", parents=[only], help="one rk upgrade PR per repo (a dry run without --apply)"
+    )
+    upgrade.add_argument("--apply", action="store_true", help="push the branches and open the PRs")
+    upgrade.set_defaults(handler=_fleet("upgrade"))
+
+
 def _add_worktree(sub: SubParsers) -> None:
     wt = sub.add_parser("wt", help="one branch = one worktree = one Claude session")
     wt_sub = wt.add_subparsers(dest="wt_command", required=True, metavar="<command>")
@@ -390,6 +453,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_worktree(sub)
     _add_pr_side(sub)
     _add_setup_side(sub)
+    _add_fleet(sub)
     return parser
 
 
