@@ -25,7 +25,7 @@ CALLER = "uses: repo-kit@${ref}${ref_note}\nwith: ref=${ref}\n"
 
 
 @pytest.fixture
-def kit_remote(tmp_path):
+def kit_remote(tmp_path, git_env):
     """A stand-in for repo-kit's remote: v1.0.0 lightweight, v1.1.0 annotated."""
     bare = tmp_path / "kit.git"
     git(tmp_path, "init", "-q", "--bare", str(bare))
