@@ -124,6 +124,8 @@ def _secrets(action: str) -> Handler:
                 credentials.run_set_app(
                     args.app, client_id=args.client_id, pem=Path(args.pem), changed=changed
                 )
+            elif action == "rotate":
+                credentials.run_rotate(args.app, pem=Path(args.pem), changed=changed)
             elif action == "remove-recipient":
                 credentials.run_remove_recipient(
                     args.recipient, include_self=args.include_self, changed=changed
@@ -342,6 +344,12 @@ def _add_setup_side(sub: SubParsers) -> None:
     set_app.add_argument("--client-id", required=True, help="the App's Client ID (Iv23…)")
     set_app.add_argument("--pem", required=True, metavar="PATH", help="the App's downloaded .pem")
     set_app.set_defaults(handler=_secrets("set-app"))
+    rotate = sec_sub.add_parser(
+        "rotate", help="store a new private key for an App and list the repos to update"
+    )
+    rotate.add_argument("app", choices=["pr-bot", "release-bot"])
+    rotate.add_argument("--pem", required=True, metavar="PATH", help="the new downloaded .pem")
+    rotate.set_defaults(handler=_secrets("rotate"))
     add = sec_sub.add_parser(
         "add-recipient", help="let another machine's age key decrypt the credentials file"
     )

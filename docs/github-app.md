@@ -58,6 +58,7 @@ to sops on stdin, never as an argument, and no command prints one.
 |---|---|
 | `rk secrets init [--file PATH]` | Creates this machine's age key if it has none (where sops looks: `SOPS_AGE_KEY_FILE`, else the default above) and prints its public key. Adds `secrets_file` to the user config if it's missing, creating the config if needed and backing up an existing one to `config.toml.bak`; `--file` picks another place than the OneDrive default. Creates the credentials file if no machine has yet. If it exists but this machine can't decrypt it, prints the `add-recipient` command to run on one that can, and exits 1 until it can, so a script can tell setup isn't finished. Safe to re-run |
 | `rk secrets set-app {pr-bot,release-bot} --client-id … --pem …` | Checks the `.pem` before writing anything, then stores one App's Client ID and key and reads them back. It must be one PEM block holding an RSA private key (`BEGIN RSA PRIVATE KEY`, or an RSA `BEGIN PRIVATE KEY`) with a valid base64 body. A public key, certificate, encrypted or non-RSA key, a folder, and a missing or binary file each get their own error, and no error quotes the key. Line endings are normalised to LF, so a copy edited on Windows stores the same key |
+| `rk secrets rotate {pr-bot,release-bot} --pem PATH` | For an App already in the file: checks the new `.pem` as `set-app` does, stores it, keeps the Client ID, and records the replaced key's fingerprint as `previous_key_fingerprint` so `rk doctor` can say a repo "still holds the key `rk secrets rotate` replaced". Refuses the key that's already stored. Then prints a `cd <repo> && rk configure --replace-key` line for each repo it can find that uses the App: the one you're in, and any with a worktree under `worktree_root`. It doesn't run them |
 | `rk secrets add-recipient age1… [--label NAME]` | Lets another machine's key decrypt the file (`sops rotate --add-age`). `--label` records a name for it, kept in the encrypted data under `_recipients` |
 | `rk secrets recipients` | Lists the age keys the file is encrypted to, with their labels, and marks this machine's. A machine that can't decrypt the file still sees the keys, but no labels |
 | `rk secrets remove-recipient age1…\|LABEL [--include-self]` | Drops one key and re-encrypts (`sops rotate --rm-age`), so that machine can't decrypt later versions. It refuses to remove the last recipient, or this machine's own key unless `--include-self`. A removed machine may still hold a copy it already decrypted, so rotate the Apps' keys if it was lost |
@@ -182,14 +183,14 @@ release run with a pointer here, rather than skipping it quietly.
 
 Personal accounts can't share Actions secrets, so every enrolled repo holds a copy of the same key. Anyone who can read
 one of those secrets can mint a token for every repo the App is installed on. So install the App only on repos that use
-it, and rotate the key if a repo's secrets might have leaked: generate a new one, `rk secrets set-app` it,
+it, and rotate the key if a repo's secrets might have leaked: generate a new one, `rk secrets rotate` it,
 `rk configure --replace-key` in each repo, then delete the old key in the App settings.
 
 ### Rotating a key
 
 1. In the App's settings, generate a new private key.
-2. `rk secrets set-app <app> --client-id … --pem <new .pem>`, then delete the download.
-3. In each enrolled repo, `rk configure --replace-key`. It writes the new key and its fingerprint variable.
+2. `rk secrets rotate <app> --pem <new .pem>`, then delete the download. It lists the repos it knows of.
+3. In each enrolled repo, `rk configure --replace-key` (the commands step 2 printed). It writes the new key and its fingerprint variable.
 4. Delete the old key in the App's settings.
 
 A repo missed in step 3 still holds the old key, which stops working at step 4. `rk doctor` catches it first: the

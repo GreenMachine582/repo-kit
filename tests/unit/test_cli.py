@@ -194,6 +194,9 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
     monkeypatch.setattr(credentials, "run_add_recipient", add)
     monkeypatch.setattr(credentials, "run_remove_recipient", remove)
     monkeypatch.setattr(credentials, "run_recipients", lambda: seen.append(("list",)))
+    monkeypatch.setattr(
+        credentials, "run_rotate", lambda app, *, pem, changed: seen.append(("rotate", app, pem))
+    )
     monkeypatch.setattr(credentials, "run_show", lambda: 1)
 
     assert main(["secrets", "init"]) == 1
@@ -202,6 +205,7 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
     assert main(argv) == 0
     assert main(["secrets", "add-recipient", "age1abc", "--label", "pc"]) == 0
     assert main(["secrets", "recipients"]) == 0
+    assert main(["secrets", "rotate", "pr-bot", "--pem", "n.pem"]) == 0
     assert main(["secrets", "remove-recipient", "pc", "--include-self"]) == 0
     assert main(["secrets", "show"]) == 1
     assert seen == [
@@ -209,6 +213,7 @@ def test_secrets_commands_reach_credentials(monkeypatch, capsys):
         ("set-app", ("release-bot", "Iv23x", Path("k.pem"))),
         ("add", "age1abc", "pc"),
         ("list",),
+        ("rotate", "pr-bot", Path("n.pem")),
         ("remove", "pc", True),
     ]
 
