@@ -97,6 +97,30 @@ def test_a_first_sync_writes_every_file_and_the_lock(repo, templates):
     assert sync(repo, templates, check=True)[0] == 0
 
 
+def test_a_release_pr_that_moves_the_pin_and_the_lock_passes_check(repo, templates):
+    """What release-please's `extra-files` do to a repo whose own version is the engine's, as
+    repo-kit is: the pin in `.repo-kit.toml` and the lock's copy move, and `--check` must pass."""
+    # Nothing rendered depends on the version, as in repo-kit, whose callers are unmanaged.
+    (templates / "common" / "branches.md").write_text("Branch off `${default_base}`.\n")
+    set_version(repo, "1.0.0", '[overrides]\nfiles."ci/caller.yml" = "unmanaged"\n')
+    sync(repo, templates)
+    assert sync(repo, templates, check=True)[0] == 0
+
+    (repo / ".repo-kit.toml").write_text(
+        read(repo, ".repo-kit.toml").replace('"1.0.0"', '"1.1.0"'), encoding="utf-8"
+    )
+    # The pin alone leaves the lock's copy behind: that is drift.
+    code, _changed, said = sync(repo, templates, check=True)
+    assert code == 1
+    assert "lock" in said.lower() or "Out of sync" in said
+
+    # The lock bump may reformat the file (indent, no final newline); only its content counts.
+    lock = json.loads(read(repo, LOCK_NAME))
+    lock["version"] = "1.1.0"
+    (repo / LOCK_NAME).write_text(json.dumps(lock), encoding="utf-8")
+    assert sync(repo, templates, check=True)[0] == 0
+
+
 def test_scenario_14_a_second_sync_changes_nothing(repo, templates):
     sync(repo, templates)
     code, changed, said = sync(repo, templates)
