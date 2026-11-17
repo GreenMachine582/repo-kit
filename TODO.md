@@ -8,18 +8,20 @@ Future items (below) start only after Phase 4, unless pulled forward.
 
 ## Next: Phase 2, pilot on photo-ledger (`main` only → `dev-main`, pinned to 0.3.0)
 
-Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Adoption, the branch model, worktrees, PR updates,
-`wt done`, the managed-files and title checks, and live checks 1, 5 and 6 passed on 2026-11-17 (pilot PRs
-photo-ledger#38–#46). What's left needs a release. Done when every check below holds:
+Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). On 2026-11-17 these passed:
+- adoption, the branch model and worktrees;
+- PR updates and `wt done`;
+- the managed-files and title checks (pilot PRs photo-ledger#38–#46);
+- the first release, v0.9.1 (photo-ledger#47, #48): `pr-title` passed on the release PR, it was tagged by
+  gth-release-bot, and the back-merge reached `dev`, verified;
+- live checks 1, 4, 5 and 6.
 
-- **Release** (photo-ledger's first on `dev-main`)
-  - [ ] **(you)** Merge the release PR with the admin bypass: `pr-checks / commits` fails on #36's squash commit
-    (`ed6c402`), which nothing can rewrite. Once it's on `main`, no later release checks it
-  - [ ] **(lead)** The `dev` → `main` release PR passes `pr-title`
-  - [ ] **(you)** A release cut through `release.yml` behaves exactly as before
-  - [ ] **(lead)** Live checks 2–4 ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot)): a bot merge adds
-    no changelog line, a merged chain gives no duplicates, and the release back-merges, signed. Use real PRs, not
-    pilot ones
+v0.9.0 had to be published by hand first
+([docs/adoption.md](docs/adoption.md#a-release-pr-merged-but-never-published)). Done when every check below holds:
+
+- **Changelog** ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot))
+  - [ ] **(lead)** Live checks 2 and 3, at the next photo-ledger release, from real PRs: a merged PR that update-prs
+    updated adds no changelog line for the bot's merge, and a merged chain gives no duplicates
 - **Upgrade** (after the next repo-kit release)
   - [ ] **(lead)** `rk upgrade` produces one clean PR
   - [ ] **(you)** `rk github apply`, which brings back signed commits on `dev` and `main`

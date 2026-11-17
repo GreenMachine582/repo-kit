@@ -219,11 +219,28 @@ Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
    ([github-app.md](github-app.md#releases-gth-release-bot)).
 3. Install `gth-release-bot` on the repo, then check that `rk github diff` shows no unexpected changes before
    `apply`. After applying, delete the old `dev`, `main`
-   and `release tags` rulesets, which the diff lists as left alone.
+   and `release tags` rulesets, which the diff lists as left alone. Before the first release, check for a release
+   that was never published ([below](#a-release-pr-merged-but-never-published)).
 4. The CONTRIBUTING sections become managed blocks. GTH's Branches, Pull requests, Chained PRs and Releasing
    sections are deleted, and `rk sync` appends the blocks that replace them. Repo-specific sections such as
    *Developing against local GTH repos* and *Rules* stay outside the markers.
 5. greentechhub-core's `local_gth.py` gets the new resolution order ([worktrees.md](worktrees.md#-local-gth-mode)).
+
+### A release PR merged but never published
+
+Check before the first release after adoption: is there a merged `chore(main): release X` PR still labelled
+`autorelease: pending`? If so, its release was never published, because the old workflow's run failed. release-please
+publishes it first, and in photo-ledger GitHub refused that with `Resource not accessible by integration` (HTTP 403).
+That refusal also stops the next release PR from being opened. The cause seems to be that the tag would point to
+`main` from before adoption, whose workflow files differ from `dev`, the new default branch. `gth-release-bot` has no
+Workflows permission, so it can't create that ref, and it shouldn't be given one. Publish it once by hand instead:
+
+1. Set the `repo-kit: tags` ruleset to Disabled. It lets only `gth-release-bot` create `v*` tags.
+2. `gh release create vX --target <the release PR's full merge-commit SHA> --title vX --notes-file notes.md`, with
+   that version's `CHANGELOG.md` section as the notes. The API refuses a short SHA.
+3. `gh pr edit <PR> --remove-label "autorelease: pending" --add-label "autorelease: tagged"`.
+4. Set the ruleset back to Active, and check that `rk github diff` matches.
+5. Re-run the failed `release` job: it skips vX and opens the next release PR.
 
 ### Other repos
 
