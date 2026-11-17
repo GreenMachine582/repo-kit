@@ -21,16 +21,16 @@ It fixes three problems:
   hand, and the copies drift.
 
 > [!NOTE]
-> **Status: pre-alpha.** The worktree commands (`rk wt start / sync / done`), `rk update-prs`, `rk configure`,
-> `rk sync [--check]`, `rk install`, `rk bootstrap` and the plugin's skills work, and the `update-prs` reusable
-> workflow keeps PRs current. Every other command says which phase delivers it. Phase 1C (adoption) is in
+> **Status: pre-alpha.** The worktree commands (`rk wt start / sync / done / list`), `rk update-prs`,
+> `rk configure`, `rk sync [--check]`, `rk install`, `rk bootstrap` and the plugin's skills work, and the
+> `update-prs` reusable workflow keeps PRs current. Every other command says which phase delivers it. Phase 1C (adoption) is in
 > progress. See [TODO.md](TODO.md).
 
 ## 🧩 Scope
 
 | Side | What it gives you | Commands |
 |---|---|---|
-| Worktrees (local) | **One branch = one worktree = one Claude session**, each with its own environment, outside OneDrive | `rk wt start / sync / done`, plugin skills |
+| Worktrees (local) | **One branch = one worktree = one Claude session**, each with its own environment, outside OneDrive | `rk wt start / sync / done / list`, plugin skills |
 | PRs (Actions) | **PRs that stay current on their own.** Ready PRs get their base merged in; real conflicts are flagged once | `update-prs` reusable workflow |
 | Repo setup | **One source of truth** for CI checks, the release flow, rulesets, settings and common files. Adopt with one command, upgrade by changing one version, drift detected | `rk sync`, `rk github`, `rk install / upgrade / doctor` |
 
@@ -85,13 +85,14 @@ uv pip install -e ".[dev]"
 | `rk wt start <type/desc>` | Branch off the base (or `--from`), add the worktree, run setup, apply `--link`s |
 | `rk wt sync [branch]` | Merge `origin/<branch>`, then the PR base; check; push without force |
 | `rk wt done [branch]` | Remove a finished worktree, refusing every unsafe state |
+| `rk wt list` | List this repo's worktrees: branch, PR state, uncommitted and unpushed work (read-only) |
 | `rk update-prs` | Reconcile every open PR against its base (run by the reusable workflow) |
 | `rk sync [--check]` | Render managed files and blocks; check drift. An existing file is taken over only if it matches |
 | `rk github diff \| apply` | Compare or apply rulesets and repo settings |
 | `rk branches prune [--apply]` | List, or delete, branches whose PR is merged (or, on origin, closed) |
 | `rk check commits \| commit-msg \| pr-title` | The commit and title rules `pr-checks` runs |
 | `rk secrets init / set-app / add-recipient / show` | Keep both Apps' credentials in one sops + age encrypted file |
-| `rk configure` | Enrol a repo for `gth-pr-bot` and `gth-release-bot`: labels, Client ID variables and key secrets |
+| `rk configure` | Enrol a repo for `gth-pr-bot` and `gth-release-bot`: labels, Client ID variables, and each key in an environment only one branch may use |
 | `rk install / bootstrap` | Adopt a repo |
 | `rk upgrade [vX.Y.Z]` | Move the version pin to this rk's release and re-render |
 | `rk doctor` | Read-only health check |
@@ -102,7 +103,7 @@ uv pip install -e ".[dev]"
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | 🏗️ Components, "call, don't copy", layout, constraints, decisions and risks |
 | [docs/configuration.md](docs/configuration.md) | ⚙️ `.repo-kit.toml` and the per-machine user config |
-| [docs/worktrees.md](docs/worktrees.md) | 🌳 `rk wt start / sync / done` and local GTH mode |
+| [docs/worktrees.md](docs/worktrees.md) | 🌳 `rk wt start / sync / done / list` and local GTH mode |
 | [docs/pr-updates.md](docs/pr-updates.md) | 🔄 The `update-prs` workflow that keeps PRs current |
 | [docs/github-app.md](docs/github-app.md) | 🤖 `gth-pr-bot` and `gth-release-bot` |
 | [docs/shared-files.md](docs/shared-files.md) | 📄 `rk sync`, ownership modes and the lock file |

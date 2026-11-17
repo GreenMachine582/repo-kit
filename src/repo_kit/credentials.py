@@ -8,6 +8,8 @@ docs/github-app.md.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import re
@@ -29,6 +31,11 @@ from repo_kit.config import (
 from repo_kit.errors import RkError
 
 MIN_SOPS = (3, 10)  # `sops set --value-stdin`
+
+# Where a missing binary is explained: what to install, and the new terminal winget needs.
+_INSTALL_HINT = (
+    "install sops and age, then open a new terminal (docs/github-app.md#installing-sops-and-age)"
+)
 AGE_KEY_ENV = "SOPS_AGE_KEY_FILE"
 _AGE_RECIPIENT = re.compile(r"age1[0-9a-z]{58}")
 
@@ -42,17 +49,39 @@ class App:
     name: str
     client_id_variable: str
     private_key_secret: str
+    # The secret's key fingerprint (`key_fingerprint`): a secret can't be read back, so this is
+    # how `rk doctor` and `rk configure` tell which key it holds.
+    key_fingerprint_variable: str
+    # The GitHub environment holding the private key. Only one branch may use it, so a workflow
+    # on any other pushed branch can't read the key (docs/github-app.md#where-the-keys-live).
+    environment: str
 
 
-PR_BOT = App("pr_bot", "pr-bot", "gth-pr-bot", "GTH_PR_BOT_CLIENT_ID", "GTH_PR_BOT_PRIVATE_KEY")
+PR_BOT = App(
+    "pr_bot",
+    "pr-bot",
+    "gth-pr-bot",
+    "GTH_PR_BOT_CLIENT_ID",
+    "GTH_PR_BOT_PRIVATE_KEY",
+    "GTH_PR_BOT_KEY_SHA256",
+    "gth-pr-bot",
+)
 RELEASE_BOT = App(
     "release_bot",
     "release-bot",
     "gth-release-bot",
     "GTH_RELEASE_BOT_CLIENT_ID",
     "GTH_RELEASE_BOT_PRIVATE_KEY",
+    "GTH_RELEASE_BOT_KEY_SHA256",
+    "gth-release-bot",
 )
 APPS = (PR_BOT, RELEASE_BOT)
+
+
+def environment_branch(app: App, config: RepoConfig) -> str:
+    """The one branch allowed to use the App's environment. update-prs runs as `workflow_run`,
+    which is always on the default branch; releases run on pushes to the release branch."""
+    return config.default_base if app is PR_BOT else config.release_branch
 
 
 def apps_for(config: RepoConfig) -> tuple[App, ...]:
@@ -127,9 +156,7 @@ class SopsCli:
                 errors="replace",
             )
         except FileNotFoundError as exc:
-            raise SopsError(
-                "sops is not on PATH: install sops and age (docs/github-app.md)"
-            ) from exc
+            raise SopsError(f"sops is not on PATH: {_INSTALL_HINT}") from exc
         if proc.returncode != 0:
             raise SopsError(f"`sops {' '.join(args)}` failed:\n{proc.stderr.strip()}")
         return proc.stdout
@@ -143,7 +170,7 @@ class SopsCli:
     def _require_version(self) -> None:
         have = self.version()
         if have is None:
-            raise SopsError("sops is not on PATH: install sops and age (docs/github-app.md)")
+            raise SopsError(f"sops is not on PATH: {_INSTALL_HINT}")
         if have < MIN_SOPS:
             raise SopsError(f"rk needs sops {'.'.join(map(str, MIN_SOPS))} or newer")
 
@@ -226,7 +253,7 @@ def run_age_keygen(path: Path) -> None:
             errors="replace",
         )
     except FileNotFoundError as exc:
-        raise RkError("age-keygen is not on PATH: install age (docs/github-app.md)") from exc
+        raise RkError(f"age-keygen is not on PATH: {_INSTALL_HINT}") from exc
     if proc.returncode != 0:
         raise RkError(f"`age-keygen -o {path}` failed:\n{proc.stderr.strip()}")
 
@@ -234,10 +261,65 @@ def run_age_keygen(path: Path) -> None:
 # --- credentials ---------------------------------------------------------------------------
 
 
+def _pem_der(text: str) -> bytes:
+    """The DER bytes of a PEM: the base64 lines between its BEGIN and END lines."""
+    body: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("-----BEGIN"):
+            inside, body = True, []
+        elif line.startswith("-----END"):
+            if inside:
+                return base64.b64decode("".join(body), validate=True)
+            break
+        elif inside and line:
+            body.append(line)
+    raise ValueError("no BEGIN and END lines")
+
+
+def key_fingerprint(pem: str) -> str:
+    """SHA-256 (hex) of a PEM key's DER bytes. Safe to store and show: it can't rebuild the key."""
+    return hashlib.sha256(_pem_der(pem)).hexdigest()
+
+
 def pem_problem(text: str) -> str | None:
     if "-----BEGIN" not in text or "PRIVATE KEY-----" not in text:
         return "isn't a PEM private key (the App's downloaded .pem)"
+    try:
+        _pem_der(text)
+    except ValueError:  # binascii.Error is one
+        return "isn't a PEM private key (its body isn't valid base64)"
     return None
+
+
+def conflict_copies(path: Path) -> list[Path]:
+    """Copies a sync client made of `path` in a conflict, such as OneDrive's
+    `secrets.sops-DESKTOP-AB12.json` beside `secrets.sops.json`. One directory listing, no
+    writes; an unreadable directory has none."""
+    stem, suffix = path.stem, path.suffix
+    try:
+        return sorted(
+            sibling
+            for sibling in path.parent.iterdir()
+            if sibling.name != path.name
+            and sibling.name.startswith(f"{stem}-")
+            and sibling.name.endswith(suffix)
+            and sibling.is_file()
+        )
+    except OSError:
+        return []
+
+
+def conflict_copy_warning(path: Path) -> str | None:
+    copies = conflict_copies(path)
+    if not copies:
+        return None
+    names = ", ".join(copy.name for copy in copies)
+    return (
+        f"{path.parent} also holds {names}, a sync conflict copy of {path.name}: merge the two "
+        "(`rk secrets set-app` for any App the copy changed), then delete the copy"
+    )
 
 
 def _set_app_hint(app: App) -> str:
@@ -461,6 +543,9 @@ def show(
         else:
             state = "present"
         say(f"  {app.name}: Client ID {client_id}, private key {state}")
+    warning = conflict_copy_warning(path)
+    if warning:
+        say(f"Warning: {warning}")
     return 1 if missing else 0
 
 

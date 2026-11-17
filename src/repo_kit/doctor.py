@@ -34,14 +34,17 @@ from repo_kit.credentials import (
     Sops,
     SopsCli,
     apps_for,
+    conflict_copy_warning,
+    environment_branch,
+    key_fingerprint,
     load_credentials,
 )
 from repo_kit.errors import RkError
 from repo_kit.github import GhCliGitHub, GitHub, NoGitHub, RepoSetup
-from repo_kit.worktree import repo_dir
+from repo_kit.worktree import pr_state, prs_for, repo_dir, rk_worktrees
 
 MIN_GH = (2, 40)
-MIN_PYTHON = (3, 11)
+MIN_PYTHON = (3, 12)
 
 
 class Status(StrEnum):
@@ -203,12 +206,17 @@ def check_credentials(
     if user_config is None:
         return _skip("credentials file", "need a valid user config"), None
     apps = apps_for(config) if config else APPS
+    path = user_config.secrets_path
+    conflict = conflict_copy_warning(path) if path else None
     try:
         credentials = load_credentials(user_config, source, sops, apps)
     except RkError as exc:
-        return _warn("credentials file can't be read", str(exc)), None
+        detail = f"{exc}\n{conflict}" if conflict else str(exc)
+        return _warn("credentials file can't be read", detail), None
     names = ", ".join(app.name for app in apps)
-    return _ok(f"credentials file: {names}", str(user_config.secrets_path)), credentials
+    if conflict:
+        return _warn(f"credentials file: {names}, with a conflict copy", conflict), credentials
+    return _ok(f"credentials file: {names}", str(path)), credentials
 
 
 # --- files ---------------------------------------------------------------------------------
@@ -308,8 +316,17 @@ def check_enrolment(
         labels = set(setup.labels())
         variables = setup.variables()
         secrets = set(setup.secret_names())
+        allowed = {app.environment: setup.environment_branches(app.environment) for app in APPS}
+        env_secrets = {
+            env: set(setup.environment_secret_names(env)) if branches is not None else set()
+            for env, branches in allowed.items()
+        }
     except RkError as exc:
-        return [_warn("Apps: can't read the repo's labels, variables and secrets", str(exc))]
+        return [
+            _warn(
+                "Apps: can't read the repo's labels, variables, secrets and environments", str(exc)
+            )
+        ]
     checks: list[Check] = []
     for app in APPS:
         problems: list[str] = []
@@ -331,15 +348,54 @@ def check_enrolment(
             problems.append(
                 f"variable {app.client_id_variable} isn't the Client ID in your credentials file"
             )
-        if app.private_key_secret not in secrets:
-            problems.append(f"secret {app.private_key_secret} is missing")
-        if problems:
-            checks.append(
-                _fail(f"{app.name} not enrolled", "\n".join([*problems, "run `rk configure`"]))
+        # The key lives in an environment only one branch may use: as a repo-level secret, a
+        # workflow on any pushed branch could read it.
+        environment, branch = app.environment, environment_branch(app, config)
+        branches = allowed[environment]
+        if branches is None:
+            problems.append(f"environment {environment} is missing")
+        elif branches != [branch]:
+            problems.append(
+                f"environment {environment} allows {', '.join(branches)}, not only branch {branch}"
             )
+        if app.private_key_secret in secrets:
+            problems.append(
+                f"secret {app.private_key_secret} is a repo-level secret, which a workflow on any "
+                "pushed branch can read"
+            )
+        enrolled = not problems
+        # A secret can't be read back: its fingerprint variable says which key it holds.
+        secret, fingerprint_variable = app.private_key_secret, app.key_fingerprint_variable
+        fingerprint = variables.get(fingerprint_variable)
+        replace_key = False
+        unknown_key = ""
+        if secret not in env_secrets[environment]:
+            problems.append(f"secret {secret} is missing from environment {environment}")
+            enrolled = False
+        elif not fingerprint:
+            unknown_key = (
+                f"variable {fingerprint_variable} is missing, so rk can't tell which key "
+                f"secret {secret} holds"
+            )
+            replace_key = True
+        elif found and fingerprint != key_fingerprint(found.private_key):
+            problems.append(f"secret {secret} holds an older key than your credentials file")
+            replace_key = True
+        fix = "run `rk configure --replace-key`" if replace_key else "run `rk configure`"
+        if problems:
+            label = f"{app.name} not enrolled" if not enrolled else f"{app.name}: older key"
+            lines = [*problems, unknown_key] if unknown_key else problems
+            checks.append(_fail(label, "\n".join([*lines, fix])))
+        elif unknown_key:
+            checks.append(_warn(f"{app.name}: key unknown", f"{unknown_key}: {fix}"))
         else:
             what = "labels, " if app is PR_BOT else ""
-            label = f"{app.name}: {what}Client ID variable and private key secret present"
+            label = (
+                f"{app.name}: {what}Client ID variable present, private key in environment "
+                f"{environment} (branch {branch} only)"
+            )
+            if found:
+                label += ", key fingerprint matches"
             checks.append(_ok(label))
     return checks
 
@@ -359,21 +415,16 @@ def check_github(setup: RepoSetup, config: RepoConfig) -> Check:
 def check_worktrees(
     repo_root: Path, owner: str, repo: str, github: GitHub, user_config: UserConfig
 ) -> list[Check]:
-    root = repo_dir(user_config.worktree_root, owner, repo).resolve()
-    ours = [
-        (wt.path, wt.branch)
-        for wt in git.worktree_list(repo_root)
-        if wt.branch and wt.path.resolve().is_relative_to(root)
-    ]
-    stale: list[str] = []
+    ours = rk_worktrees(repo_root, repo_dir(user_config.worktree_root, owner, repo))
     try:
-        for path, branch in ours:
-            pr = github.pr_for_branch(branch)
-            if pr and pr.finished:
-                state = "merged" if pr.merged else "closed"
-                stale.append(f"{path} ({branch}: PR #{pr.number} {state})")
+        prs = prs_for([branch for _, branch in ours], github)
     except RkError as exc:
         return [_warn(f"worktrees: {len(ours)}; can't look up their PRs", str(exc))]
+    stale = [
+        f"{path} ({branch}: PR #{pr.number} {pr_state(pr)})"
+        for (path, branch), pr in zip(ours, prs, strict=True)
+        if pr and pr.finished
+    ]
     if not stale:
         return [_ok(f"worktrees: {len(ours)}, none stale")]
     label = f"{len(stale)} stale worktree{'s' if len(stale) > 1 else ''}"

@@ -56,6 +56,8 @@ Once, against real GitHub, in Phase 2:
 3. A merged chain gives no duplicate changelog lines.
 4. `dev` → `main` produces the intended release and back-merge.
 5. `github diff` is empty right after `github apply`.
+6. A workflow pushed on a feature branch that names `gth-pr-bot` or `gth-release-bot` is refused by the environment,
+   and one that reads either key without naming it gets an empty string.
 
 ## CI
 

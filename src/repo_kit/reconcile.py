@@ -24,6 +24,7 @@ from repo_kit.errors import RkError
 from repo_kit.github import BaseStatus, GhCliGitHub, GitHub, GitHubError, PullRequest
 
 COMMENT_MARKER = "<!-- repo-kit:update-prs -->"
+RESOLVED_TEXT = "The conflict with the base is resolved, so this PR no longer needs a manual merge."
 RELEASE_PLEASE_PREFIX = "release-please--"
 
 # GitHub works out `mergeable` in the background, and a run triggered by a base push often asks
@@ -81,7 +82,9 @@ def skip_reason(pr: PullRequest, config: RepoConfig) -> str | None:
 
 def parents_first(prs: list[PullRequest]) -> list[PullRequest]:
     """Order `prs` so a PR comes after the PR whose head is its base. Stable by number."""
-    by_head = {pr.head_ref: pr for pr in prs}
+    by_head: dict[str, list[PullRequest]] = {}
+    for pr in prs:
+        by_head.setdefault(pr.head_ref, []).append(pr)
     ordered: list[PullRequest] = []
     seen: set[int] = set()
 
@@ -89,8 +92,8 @@ def parents_first(prs: list[PullRequest]) -> list[PullRequest]:
         if pr.number in seen:  # marked before recursing, so a cycle ends here
             return
         seen.add(pr.number)
-        parent = by_head.get(pr.base_ref)
-        if parent is not None:
+        # Several PRs can share a head (feat/x into dev and into main): all are parents.
+        for parent in by_head.get(pr.base_ref, []):  # in number order: `prs` is walked sorted
             visit(parent)
         ordered.append(pr)
 
@@ -115,6 +118,9 @@ def _clear_conflict_label(
     if label in pr.labels and not dry_run:
         github.remove_label(pr.number, label)
         report.changed.append(f"removed {label} from PR #{pr.number}")
+        # The comment says the PR conflicts, so it's rewritten rather than left to mislead.
+        if github.upsert_comment(pr.number, COMMENT_MARKER, RESOLVED_TEXT):
+            report.changed.append(f"marked the conflict comment on PR #{pr.number} resolved")
 
 
 def _flag_conflict(
@@ -125,13 +131,12 @@ def _flag_conflict(
     if label not in pr.labels:
         github.add_label(pr.number, label)
         report.changed.append(f"added {label} to PR #{pr.number}")
-    github.upsert_comment(
-        pr.number,
-        COMMENT_MARKER,
+    body = (
         f"This PR conflicts with `{pr.base_ref}`, so it can't be updated automatically. "
-        f"Run `rk wt sync {pr.head_ref}`, resolve the conflicts and commit the merge.",
+        f"Run `rk wt sync {pr.head_ref}`, resolve the conflicts and commit the merge."
     )
-    report.changed.append(f"flagged the conflict on PR #{pr.number}")
+    if github.upsert_comment(pr.number, COMMENT_MARKER, body):
+        report.changed.append(f"commented on the conflict in PR #{pr.number}")
 
 
 def _reconcile_one(
@@ -143,7 +148,8 @@ def _reconcile_one(
     sleep: Callable[[float], None],
 ) -> Row:
     # Read it again: labels, draft state and base may have changed since the list.
-    fresh = github.pr_for_branch(listed.head_ref)
+    # By number: two open PRs can share a head, so the branch name doesn't say which this is.
+    fresh = github.pr(listed.number)
     if fresh is None:
         return Row(listed.number, listed.head_ref, listed.base_ref, Action.SKIPPED, "not found")
     reason = skip_reason(fresh, config)

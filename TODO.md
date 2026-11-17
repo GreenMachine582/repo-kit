@@ -5,13 +5,6 @@
 Open work only: remove an item when it ships. Shipped work is in `CHANGELOG.md`. Future items (below) start only
 after Phase 4, to keep scope in check.
 
-## Phase 1D: `pr-checks`, `release`, `rk github`, `branches prune`, the `dev-main` profile
-
-Done when unit snapshots of generated rulesets and files pass, and repo-kit runs on its own tooling (dogfood).
-
-- [ ] First release of repo-kit (User approves): a `release: …` PR from `dev` to `main`. `release-self.yml` runs
-  release-please. If it picks a version other than `0.1.0`, move the pin with `rk upgrade`
-
 ## Phase 2: pilot on photo-ledger, moving from `main` only to `dev-main`
 
 Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Done when every check below holds:
@@ -39,15 +32,9 @@ Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). Done when every 
   - [ ] A conventional PR title fails `pr-title`, and a release PR passes it
   - [ ] A release cut through `release.yml` behaves exactly as before
 - **Live checks** ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot))
-  - [ ] All five pass
-- **From the pre-release review**
-  - [ ] A closer review of `worktree.py`, `files.py` and `reconcile.py` before the pilot (the review only skimmed
-    them through their tests)
-  - [ ] Key fingerprints: `configure` stores each App key's fingerprint in a repo variable, so `doctor` catches a
-    repo still holding a key that was rotated out, before revoking it breaks CI everywhere
-  - [ ] Warn about OneDrive conflict copies of the credentials file (`secrets-<machine>.sops.json`)
-  - [ ] Less `update-prs` push noise
-  - [ ] `rk wt list`: this repo's worktrees with their branch, PR and state
+  - [ ] All six pass
+- **From the code review of `worktree.py`, `files.py` and `reconcile.py`**
+  - [ ] Compare the recorded mode as well as the hash when a template changes mode between releases
 
 ## Phase 3: GTH repos (`dev-main`, migrating)
 
@@ -75,8 +62,10 @@ Done when each has had one `bootstrap`.
 
 ## 🙋 User-only steps
 
-- [ ] Approve creating the public repo and its first release
 - [ ] Install `gth-pr-bot` and `gth-release-bot` on each adopting repo, then run `rk configure` there
+- [ ] Re-run `rk configure` in repo-kit once the environments PR merges: it moves both keys out of repo-level
+  secrets into the `gth-pr-bot` and `gth-release-bot` environments. Until then runs still work (the repo-level
+  secret is passed by name) but the keys stay readable from any pushed branch
 - [ ] Run `rk github apply` yourself (needs admin), after reading the diff
 - [ ] Approve photo-ledger's switch to `dev` (new default branch, open PRs retargeted) when `rk install` asks
 

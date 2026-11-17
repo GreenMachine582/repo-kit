@@ -215,6 +215,18 @@ def status_porcelain(cwd: Path, exclude: tuple[str, ...] = ()) -> list[str]:
     return [line for line in proc.stdout.splitlines() if line]
 
 
+def tracked_files(cwd: Path, path: str) -> list[str]:
+    """Files Git tracks under `path` (a literal path, not a pattern)."""
+    proc = run(["ls-files", "-z", "--", f":(literal){path}"], cwd)
+    return [name for name in proc.stdout.split("\0") if name]
+
+
+def ignored_paths(cwd: Path) -> list[str]:
+    """Ignored files and folders (a whole ignored folder is one `dir/`), relative to `cwd`."""
+    proc = run(["status", "--porcelain", "--ignored", "-z"], cwd)
+    return [e[3:] for e in proc.stdout.split("\0") if e.startswith("!! ")]
+
+
 def merge_in_progress(cwd: Path) -> bool:
     return ref_exists(cwd, "MERGE_HEAD")
 
@@ -236,7 +248,8 @@ def git_path(cwd: Path, name: str) -> Path:
 
 def unpushed_commits(cwd: Path, branch: str) -> list[str]:
     """Commits on `branch` that no remote-tracking ref contains, as `<sha> <subject>`."""
-    proc = run(["log", "--format=%h %s", branch, "--not", "--remotes"], cwd)
+    # refs/heads/ and `--`: a branch named like a path or a tag can't be read as either.
+    proc = run(["log", "--format=%h %s", f"refs/heads/{branch}", "--not", "--remotes", "--"], cwd)
     return [line for line in proc.stdout.splitlines() if line]
 
 

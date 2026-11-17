@@ -71,6 +71,10 @@ class GitHub(Protocol):
         """Every PR whose head is `branch` in this repo, in any state, with its head SHA."""
         ...
 
+    def pr(self, number: int) -> PullRequest | None:
+        """PR `number` as it is now, or None if there is no such PR."""
+        ...
+
     def remove_label(self, number: int, label: str) -> None:
         """Remove `label` from PR `number`; a label that isn't there is not an error."""
         ...
@@ -91,8 +95,11 @@ class GitHub(Protocol):
         """Add `label` to PR `number`."""
         ...
 
-    def upsert_comment(self, number: int, marker: str, body: str) -> None:
-        """Keep one comment on PR `number`, found again by the hidden `marker`."""
+    def upsert_comment(self, number: int, marker: str, body: str) -> bool:
+        """Keep one comment on PR `number`, found again by the hidden `marker`.
+
+        True if it created or edited the comment, False if it was already as wanted.
+        """
         ...
 
     def read_file(self, path: str) -> str | None:
@@ -136,6 +143,9 @@ class NoGitHub:
     def prs_for_branch(self, branch: str) -> list[PullRequest]:
         return []
 
+    def pr(self, number: int) -> PullRequest | None:
+        return None
+
     def remove_label(self, number: int, label: str) -> None:
         return None
 
@@ -151,8 +161,8 @@ class NoGitHub:
     def add_label(self, number: int, label: str) -> None:
         return None
 
-    def upsert_comment(self, number: int, marker: str, body: str) -> None:
-        return None
+    def upsert_comment(self, number: int, marker: str, body: str) -> bool:
+        return False
 
     def read_file(self, path: str) -> str | None:
         return None
@@ -197,6 +207,32 @@ class RepoSetup(Protocol):
     def set_secret(self, name: str, value: str) -> None:
         """Store an Actions secret. The value goes to `gh` on stdin, never as an argument."""
         ...
+
+    def delete_secret(self, name: str) -> None:
+        """Delete a repo-level Actions secret."""
+        ...
+
+    def environment_branches(self, environment: str) -> list[str] | None:
+        """The branches allowed to use an environment: None if it doesn't exist, `["*"]` if any
+        branch may, `["<protected>"]` if any protected branch may, else each allowed name pattern
+        (a tag pattern as `tag:<pattern>`)."""
+        ...
+
+    def ensure_environment(self, environment: str, branch: str) -> None:
+        """Create the environment if needed, and let exactly `branch` use it."""
+        ...
+
+    def environment_secret_names(self, environment: str) -> list[str]:
+        """The names of an existing environment's secrets."""
+        ...
+
+    def set_environment_secret(self, environment: str, name: str, value: str) -> None:
+        """Store an environment secret. The value goes to `gh` on stdin, never as an argument."""
+        ...
+
+
+ANY_BRANCH = "*"
+PROTECTED_BRANCHES = "<protected>"
 
 
 class GhCliGitHub:
@@ -264,6 +300,10 @@ class GhCliGitHub:
         data = self._api(f"repos/{self.owner}/{self.repo}/pulls?head={head}&state=all&per_page=100")
         return [pr_from_api(item) for item in data or []]
 
+    def pr(self, number: int) -> PullRequest | None:
+        data = self._api(f"{self._repo}/pulls/{number}", allow_404=True)
+        return None if data is None else pr_from_api(data)
+
     def remove_label(self, number: int, label: str) -> None:
         self._api(
             "-X",
@@ -306,15 +346,18 @@ class GhCliGitHub:
     def add_label(self, number: int, label: str) -> None:
         self._api("-X", "POST", f"{self._repo}/issues/{number}/labels", "-f", f"labels[]={label}")
 
-    def upsert_comment(self, number: int, marker: str, body: str) -> None:
+    def upsert_comment(self, number: int, marker: str, body: str) -> bool:
         text = f"{marker}\n{body}"
         path = f"{self._repo}/issues/{number}/comments"
         existing = next((c for c in self._paged(path) if marker in c["body"]), None)
         if existing is None:
             self._api("-X", "POST", path, "-f", f"body={text}")
-        elif existing["body"] != text:
-            comment = f"{self._repo}/issues/comments/{existing['id']}"
-            self._api("-X", "PATCH", comment, "-f", f"body={text}")
+            return True
+        if existing["body"] == text:
+            return False
+        comment = f"{self._repo}/issues/comments/{existing['id']}"
+        self._api("-X", "PATCH", comment, "-f", f"body={text}")
+        return True
 
     def read_file(self, path: str) -> str | None:
         data = self._api(f"{self._repo}/contents/{quote(path)}", allow_404=True)
@@ -397,3 +440,52 @@ class GhCliGitHub:
     def set_secret(self, name: str, value: str) -> None:
         # Without --body, gh reads the value from stdin: it never appears in a process listing.
         self._gh_ok("secret", "set", name, "--repo", self._full_name, stdin=value)
+
+    def delete_secret(self, name: str) -> None:
+        self._gh_ok("secret", "delete", name, "--repo", self._full_name)
+
+    def _environment(self, environment: str) -> str:
+        return f"{self._repo}/environments/{quote(environment, safe='')}"
+
+    def _branch_policies(self, environment: str) -> list[dict[str, Any]]:
+        data = self._api(f"{self._environment(environment)}/deployment-branch-policies")
+        return list((data or {}).get("branch_policies", []))
+
+    def environment_branches(self, environment: str) -> list[str] | None:
+        data = self._api(self._environment(environment), allow_404=True)
+        if data is None:
+            return None
+        policy = data.get("deployment_branch_policy")
+        if not policy:
+            return [ANY_BRANCH]
+        if policy.get("protected_branches"):
+            return [PROTECTED_BRANCHES]
+        return [
+            p["name"] if p.get("type", "branch") == "branch" else f"tag:{p['name']}"
+            for p in self._branch_policies(environment)
+        ]
+
+    def ensure_environment(self, environment: str, branch: str) -> None:
+        policy = {"protected_branches": False, "custom_branch_policies": True}
+        self._send("PUT", self._environment(environment), {"deployment_branch_policy": policy})
+        path = f"{self._environment(environment)}/deployment-branch-policies"
+        found = False
+        for existing in self._branch_policies(environment):
+            if existing["name"] == branch and existing.get("type", "branch") == "branch":
+                found = True
+            else:
+                self._api("-X", "DELETE", f"{path}/{existing['id']}")
+        if not found:
+            self._send("POST", path, {"name": branch, "type": "branch"})
+
+    def environment_secret_names(self, environment: str) -> list[str]:
+        out = self._gh_ok(
+            "secret", "list", "--env", environment, "--repo", self._full_name, "--json", "name"
+        )
+        return [item["name"] for item in json.loads(out or "[]")]
+
+    def set_environment_secret(self, environment: str, name: str, value: str) -> None:
+        # As set_secret: the value goes on stdin only.
+        self._gh_ok(
+            "secret", "set", name, "--env", environment, "--repo", self._full_name, stdin=value
+        )

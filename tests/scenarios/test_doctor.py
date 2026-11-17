@@ -6,13 +6,13 @@ from __future__ import annotations
 import json
 
 import pytest
-from fakes import FakeRepoSetup, stored_credentials
+from fakes import NEW_PEM, PEM, RELEASE_PEM, FakeRepoSetup, stored_credentials
 from harness import git
 
 import repo_kit
 from repo_kit import bootstrap, doctor, rulesets, settings
 from repo_kit.config import RepoConfig, UserConfig
-from repo_kit.credentials import PR_BOT, RELEASE_BOT
+from repo_kit.credentials import PR_BOT, RELEASE_BOT, key_fingerprint, load_credentials
 from repo_kit.doctor import Status
 from repo_kit.files import LOCK_NAME
 from repo_kit.worktree import start
@@ -148,8 +148,22 @@ def test_missing_file_fails(adopted, github, user_config, tmp_path):
             "isn't the Client ID in your credentials file",
         ),
         (
-            lambda s: s.secrets.pop(PR_BOT.private_key_secret),
-            f"secret {PR_BOT.private_key_secret} is missing",
+            lambda s: s.env_secrets[PR_BOT.environment].pop(PR_BOT.private_key_secret),
+            f"secret {PR_BOT.private_key_secret} is missing from environment {PR_BOT.environment}",
+        ),
+        (
+            lambda s: s.environments.pop(PR_BOT.environment),
+            f"environment {PR_BOT.environment} is missing",
+        ),
+        (
+            lambda s: s.environments.update({PR_BOT.environment: ["*"]}),
+            f"environment {PR_BOT.environment} allows *, not only branch dev",
+        ),
+        (
+            # An rk before environments: the key is readable from any pushed branch.
+            lambda s: s.secrets.update({PR_BOT.private_key_secret: PEM}),
+            f"secret {PR_BOT.private_key_secret} is a repo-level secret, which a workflow on any "
+            "pushed branch can read",
         ),
     ],
 )
@@ -168,7 +182,7 @@ def test_enrolment_gap_fails_and_names_configure(
 
 def test_release_bot_gap_fails_on_its_own(adopted, github, user_config, tmp_path):
     work, setup, _said = adopted
-    setup.secrets.pop(RELEASE_BOT.private_key_secret)
+    setup.env_secrets[RELEASE_BOT.environment].pop(RELEASE_BOT.private_key_secret)
 
     checks = run(work, github, setup, user_config, tmp_path)
 
@@ -201,6 +215,7 @@ def test_an_unreadable_credentials_file_warns_and_skips_only_the_comparison(
     _path, sops = stored_credentials(tmp_path)
     sops.readable = False
     setup.vars[PR_BOT.client_id_variable] = "Iv23other"  # can't be compared, so not a FAIL
+    setup.vars[PR_BOT.key_fingerprint_variable] = "0" * 64  # nor can the key
 
     checks = run(work, github, setup, user_config, tmp_path, sops=sops)
 
@@ -208,6 +223,65 @@ def test_an_unreadable_credentials_file_warns_and_skips_only_the_comparison(
     assert creds.status is Status.WARN
     assert "no matching age key" in creds.detail
     assert not doctor.failed(checks), doctor.render(checks)
+
+
+def test_bootstrap_records_each_keys_fingerprint(adopted, github, user_config, tmp_path):
+    work, setup, _said = adopted
+    assert setup.vars[PR_BOT.key_fingerprint_variable] == key_fingerprint(PEM)
+    assert setup.vars[RELEASE_BOT.key_fingerprint_variable] == key_fingerprint(RELEASE_PEM)
+
+    checks = run(work, github, setup, user_config, tmp_path)
+
+    assert find(checks, "gth-pr-bot:")[0].label.endswith("key fingerprint matches")
+
+
+def test_a_rotated_key_fails_until_configure_replaces_it(adopted, github, user_config, tmp_path):
+    work, setup, _said = adopted
+    path, sops = stored_credentials(tmp_path)
+    sops.files[path]["release_bot"]["private_key"] = NEW_PEM  # rotated in the credentials file
+
+    checks = run(work, github, setup, user_config, tmp_path, sops=sops)
+
+    (bot,) = find(checks, "gth-release-bot: older key")
+    assert bot.status is Status.FAIL
+    assert f"secret {RELEASE_BOT.private_key_secret} holds an older key" in bot.detail
+    assert "run `rk configure --replace-key`" in bot.detail
+    assert find(checks, "gth-pr-bot:")[0].status is Status.OK
+
+    credentials = load_credentials(user_config, tmp_path / "config.toml", sops)
+    bootstrap.configure(
+        setup, RepoConfig(), credentials, changed=[], replace_key=True, say=lambda _m: None
+    )
+    checks = run(work, github, setup, user_config, tmp_path, sops=sops)
+    assert find(checks, "gth-release-bot:")[0].status is Status.OK
+
+
+def test_a_secret_without_a_fingerprint_warns(adopted, github, user_config, tmp_path):
+    work, setup, _said = adopted
+    setup.vars.pop(PR_BOT.key_fingerprint_variable)  # set by an rk before fingerprints
+
+    checks = run(work, github, setup, user_config, tmp_path)
+
+    (bot,) = find(checks, "gth-pr-bot: key unknown")
+    assert bot.status is Status.WARN
+    assert f"variable {PR_BOT.key_fingerprint_variable} is missing" in bot.detail
+    assert "rk configure --replace-key" in bot.detail
+    assert not doctor.failed(checks), doctor.render(checks)
+
+
+def test_a_onedrive_conflict_copy_warns(adopted, github, user_config, tmp_path):
+    work, setup, _said = adopted
+    copy = tmp_path / "secrets.sops-DESKTOP-AB12.json"
+    copy.write_text("{}", encoding="utf-8")
+
+    checks = run(work, github, setup, user_config, tmp_path)
+
+    (creds,) = find(checks, "credentials file")
+    assert creds.status is Status.WARN
+    assert copy.name in creds.detail
+    assert "merge the two" in creds.detail
+    assert find(checks, "gth-pr-bot:")[0].status is Status.OK  # the file still decrypted
+    assert copy.is_file()  # only named, never touched
 
 
 def test_missing_sops_is_a_warning(adopted, github, user_config, tmp_path):

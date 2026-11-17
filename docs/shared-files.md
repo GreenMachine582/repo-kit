@@ -52,6 +52,7 @@ in a template must therefore be upper case, or written `$name`.
 | `${default_base}` | The profile's default branch (`dev`) |
 | `${release_branch}` | The profile's release branch (`main`) |
 | `${back_merge_into}` | `${default_base}` when `[release].back_merge` is true, else empty |
+| `${conflict_label}` | `[update_prs].conflict_label`, as a quoted JSON string so any label is valid YAML (`"needs-merge"`) |
 | `${commit_header_max}` | `[checks].commit_header_max` |
 | `${pr_title_rule}` | The PR-title paragraph for `[checks].pr_title`, one of two fixed texts built in code (`files.PR_TITLE_TEXT`) |
 | `${owner}`, `${repo}` | From `origin` |
@@ -64,7 +65,7 @@ Anything conditional is a profile directory or built in code.
 |---|---|---|
 | `managed` | Fully owned by repo-kit; rewritten on every sync. Edited by hand → sync refuses and shows the diff, and the drift check fails | Caller workflows, `release-please-config.json` (and `use-local-gth.sh`, a Future item) |
 | `block` | Only the text between `# >>> repo-kit: <name>` and `# <<< repo-kit: <name>` markers is owned; the rest of the file is the consumer's. A file without the markers gets the block appended | `.gitignore` lines, `CONTRIBUTING.md` sections (Branches, Pull requests, Several PRs at once, Releasing) |
-| `seeded` | Created once if missing, never touched again | `.release-please-manifest.json`, `.repo-kit.toml` itself. Never `CHANGELOG.md`: release-please creates it |
+| `seeded` | Created once, never touched again: a seeded file the repo later deletes stays deleted (the lock records that it was created), and `--check` doesn't mind | `.release-please-manifest.json`, `.repo-kit.toml` itself. Never `CHANGELOG.md`: release-please creates it |
 
 In Markdown files the markers sit inside HTML comments, so they don't render.
 
@@ -77,8 +78,8 @@ without them gets all four appended in that order; after that they can be moved 
 the markers (an intro, local setup, repo-specific rules) is the repo's own.
 
 A file (or block) that isn't in the lock yet is taken over if it already matches the render, and refused with the diff
-otherwise. Content is compared with LF line endings, so CRLF from `core.autocrlf` is never mistaken for an edit; rk
-writes LF.
+otherwise. Content is compared with LF line endings, so CRLF from `core.autocrlf` is never mistaken for an edit. A new file is written with LF; an existing file keeps its own line endings, so rk
+writing a block into a CRLF file doesn't convert the rest of it.
 
 ## The lock
 
@@ -103,7 +104,7 @@ refuses the file. A lock entry whose template has gone is reported and left alon
 | Command | Does |
 |---|---|
 | `rk sync` | Render and write. Prints a per-file summary (created, updated, taken over, unchanged, refused, skipped), then the `Changed:` list |
-| `rk sync --check` | No writes. Non-zero if any managed file or block differs from what the pinned version would render, a seeded file is missing, or the lock is out of date. Prints the diff of every file that differs. Run in CI by `pr-checks / managed-files` |
+| `rk sync --check` | No writes. Non-zero if any managed file or block differs from what the pinned version would render, a seeded file was never created, or the lock is out of date. Prints the diff of every file that differs. Run in CI by `pr-checks / managed-files` |
 | `rk sync --adopt` | **Future item.** For repos that already have these files (GTH). Compares each existing file to the rendered one, shows the differences, and takes ownership only after you confirm. Until then, plain `rk sync` takes over an existing file only if it already matches the render, and refuses with the diff otherwise. A difference worth keeping becomes either a config value or an `[overrides]` entry |
 
 `version` must be set: callers pin `@v${version}`. It must also be the version of the rk that is running, because the

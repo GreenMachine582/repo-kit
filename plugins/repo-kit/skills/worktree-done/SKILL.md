@@ -29,3 +29,6 @@ work. **Never pass any of them unless the user asked for that exact override in 
 refuses, report the refusal and what it found, and ask.
 
 Run it from outside the worktree being removed (for example from the main checkout).
+
+To see which worktrees are finished, `rk wt list` shows each one's PR state and any uncommitted or unpushed
+work. It changes nothing.

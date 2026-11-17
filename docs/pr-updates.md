@@ -14,17 +14,24 @@ Every run looks at everything, so a dropped or cancelled run is harmless:
    long-lived branch (the `dev` → `main` release PR).
 3. Order parents before children, so a chain `dev ← A ← B ← C` converges. GitHub does each update asynchronously, so a
    chain can take one run per link; each update's push starts the next run.
-4. For each PR: read it again for its current labels, draft state and base, and ask GitHub how it stands against that
+4. For each PR: read it again, by number (two PRs can share a head branch, such as `feat/x` into `dev` and into
+   `main`), for its current labels, draft state and base, and ask GitHub how it stands against that
    base. While GitHub is still working out mergeability, wait and ask again, up to 4 times.
 
    | State | What happens |
    |---|---|
-   | Up to date | Nothing, apart from removing a leftover conflict label |
+   | Up to date | Nothing, apart from clearing a leftover conflict label (see below) |
    | Behind | GitHub's update-branch API merges the base into the head, guarded by the head SHA from step 1. No force, no clone, and no PR code on the runner |
-   | Update accepted | CI re-runs (the update is made with an App token); the conflict label is removed |
+   | Update accepted | CI re-runs (the update is made with an App token); the conflict label is cleared (see below) |
    | Update refused (such as the head having moved) | Recorded; the next run reconciles it |
-   | Conflict | The conflict label is added; **one** comment, found again by a hidden marker, names the base and `rk wt sync <branch>`. GitHub doesn't report which files conflict; `rk wt sync` lists them |
+   | Conflict | The conflict label is added (if it isn't there); **one** comment, found again by a hidden marker, names the base and `rk wt sync <branch>`. GitHub doesn't report which files conflict; `rk wt sync` lists them |
    | Still unknown | Recorded; nothing changes |
+
+   **Clearing a conflict:** when a PR with the conflict label is current again (or its update was accepted), the
+   label is removed and the marked comment is **edited to say the conflict is resolved**, not deleted: the history
+   stays, and a later conflict edits the same comment back. A PR whose label was removed by hand keeps its old
+   comment; there is no label to tell the bot it ever flagged it. The run's `Changed:` list names only what it
+   really changed, so a re-run over an already flagged PR reports nothing.
 
    A failed API call for one PR is recorded, the other PRs still run, and the command exits non-zero.
 
@@ -34,43 +41,97 @@ Every run looks at everything, so a dropped or cancelled run is harmless:
 
 ## Workflow
 
-`.github/workflows/update-prs.yml` is a reusable workflow. A consumer holds only a caller:
+`.github/workflows/update-prs.yml` is a reusable workflow. A consumer holds two thin files, both managed by `rk sync`:
+
+- `.github/workflows/update-prs-trigger.yml` (`name: update-prs trigger`) runs on the [events](#triggers) and does
+  nothing. It has no permissions and no secrets.
+- `.github/workflows/update-prs.yml`, the caller, runs on `workflow_run` of the trigger, and on `workflow_dispatch`.
+
+The split is what keeps `gth-pr-bot`'s key safe. A `push` or `pull_request` run uses the workflow file from the
+pushed branch, so a branch could rewrite its own caller. A `workflow_run` run always uses the default branch's copy,
+and the key lives in the `gth-pr-bot` environment, which only the default branch may use
+([github-app.md](github-app.md#where-the-keys-live)). update-prs reconciles every open PR each run, so it needs
+nothing from the trigger but the event and branch, which the pre-check uses.
 
 ```yaml
+on:
+  workflow_run:
+    workflows: [update-prs trigger]
+    types: [completed]
+  workflow_dispatch:                   # from the default branch only: the environment refuses others
 jobs:
   update-prs:
     if: vars.GTH_PR_BOT_CLIENT_ID != ''
     permissions:
       contents: read
+      pull-requests: read              # for the pre-check
     uses: GreenMachine582/repo-kit/.github/workflows/update-prs.yml@v1.4.0
     with:
       ref: v1.4.0                      # the same version: the rk code to run
       client-id: ${{ vars.GTH_PR_BOT_CLIENT_ID }}
       dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
-    secrets:
+      trigger-event: ${{ github.event.workflow_run.event || github.event_name }}
+      trigger-branch: ${{ github.event.workflow_run.head_branch }}
+      conflict-label: "needs-merge"    # [update_prs].conflict_label, written by rk sync
+    secrets:                           # resolves only in the reusable job's gth-pr-bot environment
       PR_BOT_PRIVATE_KEY: ${{ secrets.GTH_PR_BOT_PRIVATE_KEY }}
 ```
 
 - **What's checked out:** only repo-kit, at `ref`. No code from the consumer repo or its PRs reaches the runner.
 - **How rk runs:** from source (`python -m repo_kit` with `PYTHONPATH`). It's standard library only, so nothing is
   installed next to the token.
-- **The token:** minted for this repo only, with contents, pull requests and issues write. `GITHUB_TOKEN` gets only
-  `contents: read`.
-- **Fork PRs:** their `pull_request` runs get no secrets, so the job skips them.
+- **The token:** minted for this repo only, with contents, pull requests and issues write, and only once the
+  pre-check (see [Triggers](#triggers)) says the run is needed. `GITHUB_TOKEN` gets only `contents: read`, plus
+  `pull-requests: read` in the pre-check.
+- **Fork PRs:** they start the trigger too, and `workflow_run` would run with the key, so the job skips a run whose
+  trigger came from a fork. Nothing from the trigger run (no artifact, no code) is ever used.
 - **Before enrolment:** the `if:` keeps the caller idle until `rk configure` has enrolled the repo.
-- **repo-kit's own caller:** `.github/workflows/keep-prs-current.yml` passes the default branch as `ref`, so only merged
-  rk code runs with the token.
+- **repo-kit's own caller:** `.github/workflows/keep-prs-current.yml` has the same `workflow_run` shape and passes the
+  default branch as `ref`, so only merged rk code runs with the token.
 
 ## Triggers
 
+The trigger workflow listens for these, and each of its runs starts update-prs.
+
 | Event | Types |
 |---|---|
-| `push` | All branches |
-| `pull_request` | `edited`, `ready_for_review`, `reopened`, `closed` |
-| `workflow_dispatch` | With a `dry-run` input, ticked by default |
+| `push` | All branches (no tags), so a chain's child hears about a push to its parent. The [pre-check](#push-pre-check) skips most |
+| `pull_request` | `edited`, `ready_for_review`, `reopened`, `closed`, `labeled`, `unlabeled`: so removing `wip` or `no-auto-update`, or a hand-removed conflict label, starts a run |
+| `workflow_dispatch` | On the caller itself, from the default branch, with a `dry-run` input ticked by default |
+
+### Push pre-check
+
+Most pushes are to a feature branch nothing depends on, and reconciling for them would change nothing. So a first job,
+`pre-check`, runs with `GITHUB_TOKEN` only (`contents: read`, `pull-requests: read`, no App token and no checkout) and
+decides whether the `update-prs` job runs at all. `pull_request` and `workflow_dispatch` events always run. A push
+runs it only when the pushed branch is:
+
+- the **base** of a ready, non-fork open PR: that PR may now be behind; or
+- the **head** of a ready, non-fork open PR that carries the conflict label: the author may have resolved it with
+  `rk wt sync`, and the run clears the label; or
+- the **head** of a ready, non-fork open PR that is **behind its base**. A head push can't make a PR fall behind, but
+  it may already be: an earlier update was refused because the head moved (often this very push racing a base push),
+  GitHub never worked out mergeability, or the call failed. Without this case such a PR would wait for the next push
+  to its base.
+
+Any other push or a branch deletion skips `update-prs`, so no token is minted (tag pushes don't start the
+trigger). The decision and its
+reason are shown as a notice on the run. If the pre-check itself fails, the run fails and `update-prs` is skipped;
+the next run reconciles everything anyway.
+
+Why only these: for a PR whose head was pushed, reconcile can only clear a leftover label (needs the label), merge
+the base in (needs the PR to be behind) or flag a conflict (also needs it to be behind: a head that already has every
+base commit can't conflict with its base). Every other PR is unaffected by a push to a branch that isn't its base.
+The rule leaves out some of reconcile's skip reasons (skip labels, release-please and long-lived heads); those
+pushes still run, and reconcile skips them as before.
+
+The pre-check is shell and `gh api`, not rk, so it works with whichever rk `ref` names (repo-kit's own caller runs
+the default branch's rk). The conflict label it looks for comes from the `conflict-label` input: `rk sync` writes
+`[update_prs].conflict_label` into the consumer's caller, and its default is `needs-merge`.
 
 No schedule for now; a daily safety net is a Future item. Concurrency is one group per repo, without cancelling runs
-in progress. A dropped pending run is harmless, because any run covers everything.
+in progress. A dropped pending run is harmless, because any run covers everything. Dry runs have their own group, so
+a manual dry run never replaces a pending real run (and isn't replaced by one).
 
 ## Work in progress = draft
 

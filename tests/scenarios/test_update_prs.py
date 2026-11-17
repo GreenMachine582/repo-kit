@@ -196,3 +196,21 @@ def test_scenario_10_a_failed_run_is_followed_by_a_clean_one(work, github, monke
     assert not second.failed
     assert actions(second) == {"feat/a": Action.UPDATED, "feat/b": Action.UP_TO_DATE}
     assert has_base(work, base, "feat/a")
+
+
+def test_two_prs_sharing_a_head_are_each_reconciled_against_their_own_base(work, github):
+    push_branch(work, "feat/x", filename="x.txt", content="ours\n")
+    advance(work)
+    advance(work, branch="main", filename="x.txt", content="theirs\n")
+    into_dev = github.add_pr("feat/x", base="dev")
+    into_main = github.add_pr("feat/x", base="main")
+
+    report = run(github)
+
+    by_number = {row.number: (row.base, row.action) for row in report.rows}
+    assert by_number == {
+        into_dev.number: ("dev", Action.UPDATED),
+        into_main.number: ("main", Action.CONFLICT),
+    }
+    assert github.get(into_dev.number).labels == ()
+    assert github.get(into_main.number).labels == ("needs-merge",)

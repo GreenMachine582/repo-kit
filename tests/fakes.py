@@ -11,8 +11,9 @@ from repo_kit import git
 from repo_kit.credentials import EMPTY_FILE, SopsError
 from repo_kit.github import BaseStatus, PullRequest, UpdateResult, pick_pr
 
-PEM = "-----BEGIN RSA PRIVATE KEY-----\nabc\n-----END RSA PRIVATE KEY-----\n"
-RELEASE_PEM = "-----BEGIN RSA PRIVATE KEY-----\nrel\n-----END RSA PRIVATE KEY-----\n"
+PEM = "-----BEGIN RSA PRIVATE KEY-----\nYWJj\n-----END RSA PRIVATE KEY-----\n"
+RELEASE_PEM = "-----BEGIN RSA PRIVATE KEY-----\ncmVs\n-----END RSA PRIVATE KEY-----\n"
+NEW_PEM = "-----BEGIN RSA PRIVATE KEY-----\nbmV3\n-----END RSA PRIVATE KEY-----\n"  # a rotated key
 
 
 class FakeSops:
@@ -71,7 +72,9 @@ class FakeRepoSetup:
     def __init__(self) -> None:
         self.label_set: dict[str, tuple[str, str]] = {}
         self.vars: dict[str, str] = {}
-        self.secrets: dict[str, str] = {}
+        self.secrets: dict[str, str] = {}  # repo-level: readable from any pushed branch
+        self.environments: dict[str, list[str]] = {}  # name -> the branches allowed to use it
+        self.env_secrets: dict[str, dict[str, str]] = {}
         self.ruleset_list: list[dict[str, Any]] = []
         self.settings: dict[str, Any] = {}
         self.writes: list[str] = []
@@ -96,6 +99,32 @@ class FakeRepoSetup:
     def set_secret(self, name: str, value: str) -> None:
         self.writes.append(f"secret {name}")
         self.secrets[name] = value
+
+    def delete_secret(self, name: str) -> None:
+        self.writes.append(f"delete secret {name}")
+        del self.secrets[name]
+
+    def environment_branches(self, environment: str) -> list[str] | None:
+        allowed = self.environments.get(environment)
+        return None if allowed is None else list(allowed)
+
+    def ensure_environment(self, environment: str, branch: str) -> None:
+        self.writes.append(f"environment {environment}")
+        self.environments[environment] = [branch]
+        self.env_secrets.setdefault(environment, {})
+
+    def environment_secret_names(self, environment: str) -> list[str]:
+        assert environment in self.environments, "gh fails on a missing environment"
+        return list(self.env_secrets.get(environment, {}))
+
+    def set_environment_secret(self, environment: str, name: str, value: str) -> None:
+        assert environment in self.environments, "gh fails on a missing environment"
+        self.writes.append(f"secret {name} in {environment}")
+        self.env_secrets.setdefault(environment, {})[name] = value
+
+    def key(self, app: Any) -> str | None:
+        """The private key stored for an App in its environment, if any."""
+        return self.env_secrets.get(app.environment, {}).get(app.private_key_secret)
 
     def rulesets(self) -> list[dict[str, Any]]:
         return copy.deepcopy(self.ruleset_list)
@@ -191,6 +220,9 @@ class FakeGitHub:
     def prs_for_branch(self, branch: str) -> list[PullRequest]:
         return [pr for pr in self.prs if pr.head_ref == branch]
 
+    def pr(self, number: int) -> PullRequest | None:
+        return next((pr for pr in self.prs if pr.number == number), None)
+
     def remove_label(self, number: int, label: str) -> None:
         self.removed_labels.append((number, label))
         self._set_labels(number, tuple(lb for lb in self.get(number).labels if lb != label))
@@ -228,14 +260,15 @@ class FakeGitHub:
         if label not in labels:
             self._set_labels(number, (*labels, label))
 
-    def upsert_comment(self, number: int, marker: str, body: str) -> None:
+    def upsert_comment(self, number: int, marker: str, body: str) -> bool:
         text = f"{marker}\n{body}"
         comments = self.comments.setdefault(number, [])
         for index, existing in enumerate(comments):
             if marker in existing:
                 comments[index] = text
-                return
+                return existing != text
         comments.append(text)
+        return True
 
     def read_file(self, path: str) -> str | None:
         return self.files.get(path)
