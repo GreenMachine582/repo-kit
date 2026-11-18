@@ -6,15 +6,17 @@ Open work only: remove an item when it ships. Shipped work is in `CHANGELOG.md`.
 only the repo owner can do them (admin rights, App installs, approvals) and **(lead)** when a Claude session can.
 Future items (below) start only after Phase 4, unless pulled forward.
 
-## Next: Phase 2, pilot on photo-ledger (`main` only → `dev-main`, pinned to 0.3.0)
+## Next: Phase 2, pilot on photo-ledger (`main` only → `dev-main`, pinned to 0.4.0)
 
-Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). On 2026-11-17 these passed:
+Steps are in [docs/adoption.md](docs/adoption.md#photo-ledger). On 2026-11-17 and 2026-11-18 these passed:
 - adoption, the branch model and worktrees;
 - PR updates and `wt done`;
 - the managed-files and title checks (pilot PRs photo-ledger#38–#46);
 - the first release, v0.9.1 (photo-ledger#47, #48): `pr-title` passed on the release PR, it was tagged by
   gth-release-bot, and the back-merge reached `dev`, verified;
-- live checks 1, 4, 5 and 6.
+- live checks 1, 4, 5 and 6;
+- the upgrade to 0.4.0: `rk upgrade` gave one clean PR (photo-ledger#49) that pinned the callers by commit, and
+  `rk github apply` brought back signed commits on `dev` and `main`.
 
 v0.9.0 had to be published by hand first
 ([docs/adoption.md](docs/adoption.md#a-release-pr-merged-but-never-published)). Done when every check below holds:
@@ -22,9 +24,10 @@ v0.9.0 had to be published by hand first
 - **Changelog** ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot))
   - [ ] **(lead)** Live checks 2 and 3, at the next photo-ledger release, from real PRs: a merged PR that update-prs
     updated adds no changelog line for the bot's merge, and a merged chain gives no duplicates
-- **Upgrade** (after the next repo-kit release)
-  - [ ] **(lead)** `rk upgrade` produces one clean PR
-  - [ ] **(you)** `rk github apply`, which brings back signed commits on `dev` and `main`
+- **Fixes found in the upgrade**
+  - [ ] **(lead)** An rk older than the repo's pin refuses `github diff`/`apply` (and `sync`) instead of reporting
+    "matches": a 0.3.0 `rk` on PATH passed a 0.4.0 repo that still lacked `required_signatures`
+  - [ ] **(lead)** `rk upgrade`'s file table lists `.repo-kit.toml` as `unchanged` although the pin moved
 - **Worktrees**
   - [ ] **(you)** Claude starts directly in one
 
