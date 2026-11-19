@@ -24,10 +24,6 @@ v0.9.0 had to be published by hand first
 - **Changelog** ([docs/testing.md](docs/testing.md#-live-checks-in-the-pilot))
   - [ ] **(lead)** Live checks 2 and 3, at the next photo-ledger release, from real PRs: a merged PR that update-prs
     updated adds no changelog line for the bot's merge, and a merged chain gives no duplicates
-- **Fixes found in the upgrade**
-  - [ ] **(lead)** An rk older than the repo's pin refuses `github diff`/`apply` (and `sync`) instead of reporting
-    "matches": a 0.3.0 `rk` on PATH passed a 0.4.0 repo that still lacked `required_signatures`
-  - [ ] **(lead)** `rk upgrade`'s file table lists `.repo-kit.toml` as `unchanged` although the pin moved
 - **Worktrees**
   - [ ] **(you)** Claude starts directly in one
 
@@ -36,11 +32,11 @@ v0.9.0 had to be published by hand first
 Done when `doctor` is all-OK in each, one release is cut per repo through the new `release.yml`, and a FastAPI
 worktree links a Core worktree.
 
-- [ ] **(lead)** `local_gth.py` resolution order change in greentechhub-core
-  ([docs/worktrees.md](docs/worktrees.md#-local-gth-mode))
-- [ ] **(you)** Install both Apps, `rk configure` and `rk github apply` in core, fastapi and ui
+- [ ] **(you)** Install both Apps on core, fastapi and ui
 - [ ] **(lead)** `rk sync --adopt` in core, then fastapi, then ui, settling each refused file (each keeps its own
   `use-local-gth.sh`)
+- [ ] **(you)** In each, after its adoption PR merges: `rk configure`, then `rk github diff` and `apply`. `rk github`
+  refuses a checkout without `.repo-kit.toml`, so this comes after the adoption
 - [ ] **(lead)** Delete the old scripts and ruleset JSON in each ([docs/adoption.md](docs/adoption.md#gth-repos))
 - [ ] **(lead)** Add each to `[fleet.repos]`; `rk fleet doctor` is all-OK
 
