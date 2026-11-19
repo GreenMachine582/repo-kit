@@ -107,7 +107,7 @@ If doctor can't start (not a git repo, no `origin`), the document is `{"schema_v
 | Check | `[FAIL]` or `[WARN]` when |
 |---|---|
 | Tools | FAIL: Git, gh or Python is below its minimum. WARN: gh isn't installed (`sync` and `install` work without it), or sops is missing or too old (only `configure` and `secrets` need it) |
-| `.repo-kit.toml` | FAIL: missing, an unknown key or a bad value, or `version` empty or not `X.Y.Z`. WARN: the pin isn't this rk's release, and the files check is skipped until `rk upgrade` |
+| `.repo-kit.toml` | FAIL: missing, an unknown key or a bad value, or `version` empty or not `X.Y.Z`. WARN: the pin isn't this rk's release, and the files check is skipped until `rk upgrade`. When this rk is older than the pin, the detail says to install the pinned rk |
 | User config | FAIL: an unknown key, a leftover `[pr_bot]` table (the error names the migration), or a synced `worktree_root` |
 | Credentials file | WARN: `secrets_file` is unset or missing, this machine can't decrypt it, or the Client ID or key of an App this repo uses is missing (`rk secrets …`; gth-pr-bot isn't needed when update-prs is disabled), and the Client ID and key comparisons below are skipped. Also WARN when a sync conflict copy such as `secrets.sops-DESKTOP-AB12.json` sits beside the file: merge the two and delete the copy ([github-app.md](github-app.md#conflict-copies)) |
 | Managed files | FAIL: a file is missing, differs from the render, was edited by hand, or the lock is stale: the same test as `rk sync --check`. WARN: a lock entry is no longer a template |
@@ -175,6 +175,12 @@ false, "error": "<message>"}` with exit code 1.
 - **One pin per consumer:** `version` in `.repo-kit.toml`. Every generated caller uses `@v<version>` and passes that
   same version to the engine. Bumping the pin is always `rk upgrade`, so callers, managed files and rulesets move
   together.
+- **An older rk refuses.** An rk older than the pin can't know what that release expects (a newer release may add
+  ruleset rules, say), so `rk github diff`, `rk github apply`, `rk sync` (with or without `--check`), `rk install` and
+  `rk fleet sync --check` stop with "this repo is pinned to X but this rk is Y: install rk X"
+  (`uv tool install --force git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z`) instead of reporting a false
+  all-clear. A newer rk keeps working with the commands that don't write the pin (`github`), and `sync` asks for
+  `rk upgrade`. An unreleased rk (`0.0.0`) warns and goes on. `rk doctor` stays read-only and only WARNs.
 - **Dependabot is not used for repo-kit refs.** It would bump `uses:` lines without re-rendering the other files, and
   the drift check would fail. If Dependabot is enabled for other actions, rk adds an `ignore` entry for
   `GreenMachine582/repo-kit`.

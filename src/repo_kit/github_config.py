@@ -160,11 +160,12 @@ def run_github(
             f"no {REPO_CONFIG_NAME} in {repo_root}: the rulesets and settings are built from it. "
             "Switch to a branch that has it (`git switch dev`), or adopt repo-kit with `rk install`"
         )
+    config = load_repo_config(repo_root)
+    files.require_engine_not_behind(config, say)
     url = git.remote_url(repo_root)
     if not git.is_github_url(url):
         raise RkError(f"origin ({url}) isn't on GitHub: there are no settings or rulesets")
     owner, repo = git.parse_owner_repo(url)
-    config = load_repo_config(repo_root)
     setup = GhCliGitHub(owner, repo)
     if not apply_changes:
         return run_diff(config, setup, say=say)

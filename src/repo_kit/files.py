@@ -869,6 +869,46 @@ def _adopt(
     return plan, declined
 
 
+_RELEASE_RE = re.compile(r"v?(\d+)\.(\d+)\.(\d+)")
+INSTALL_RK = "uv tool install --force git+https://github.com/GreenMachine582/repo-kit@v{version}"
+
+
+def engine_behind_pin(engine: str, pin: str) -> bool:
+    """Whether the rk release `engine` is older than the repo's `pin`. An unreleased build, or a
+    value that isn't X.Y.Z, can't be compared, so it is never behind."""
+    if engine == UNRELEASED:
+        return False
+    have, want = _RELEASE_RE.fullmatch(engine.strip()), _RELEASE_RE.fullmatch(pin.strip())
+    if not have or not want:
+        return False
+    return tuple(map(int, have.groups())) < tuple(map(int, want.groups()))
+
+
+def behind_pin_message(engine: str, pin: str) -> str:
+    return (
+        f"this repo is pinned to {pin} but this rk is {engine}: an older rk can't know what "
+        f"release {pin} expects, so it would give a false all-clear: install rk {pin} "
+        f"({INSTALL_RK.format(version=pin)})"
+    )
+
+
+def require_engine_not_behind(config: RepoConfig, say: Callable[[str], None] = print) -> None:
+    """Refuse when this rk is older than the pin; warn when it is an unreleased build.
+
+    For commands that compare against the pin without needing the engine to equal it, such as
+    `rk github diff`: a newer rk is fine, an older one is not."""
+    engine = repo_kit.__version__
+    if not config.version:
+        return
+    if engine == UNRELEASED:
+        say(
+            f"warning: this rk is an unreleased build, so it can't tell whether it is older than "
+            f"the pin ({config.version}). Prefer installing rk {config.version}."
+        )
+    elif engine_behind_pin(engine, config.version):
+        raise RkError(behind_pin_message(engine, config.version))
+
+
 def require_pin(config: RepoConfig) -> None:
     """The pin must be set, and be the running engine's version if that is a release."""
     if not config.version:
@@ -879,6 +919,8 @@ def require_pin(config: RepoConfig) -> None:
     # Another release's templates would be written under this pin, and CI's `--check`, which runs
     # the pinned engine, would then fail. An unreleased engine can't be compared, so it's let be.
     engine = repo_kit.__version__
+    if engine_behind_pin(engine, config.version):
+        raise SyncError(behind_pin_message(engine, config.version))
     if engine not in (UNRELEASED, config.version):
         raise SyncError(
             f".repo-kit.toml pins repo-kit {config.version}, but this rk is {engine}: move the "
