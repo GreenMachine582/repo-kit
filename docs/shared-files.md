@@ -161,17 +161,23 @@ with:
 ```
 
 The templates use two variables, `${ref}` (the commit, else `v<version>`) and `${ref_note}` (` # v<version>` when
-there is a commit, else nothing), so they have no conditionals. The commit comes from the lock, never the network:
+there is a commit, else nothing), so they have no conditionals. The commit comes from the lock; only a writing
+command with no commit in the lock asks the network:
 
 - **`rk upgrade`** (and `rk install`, `rk fleet upgrade`) asks repo-kit's remote where `v<version>` points, with
   `git ls-remote` (no new dependency, no token), follows an annotated tag to its commit, and records it in the lock
   as `ref_sha`, with the release it belongs to as `ref_sha_version`. Re-running is how an older repo gets its commit.
   If the tag now points somewhere other than the recorded commit, the upgrade refuses: tags never move. If the
   remote can't be reached, it warns, records none, and the callers pin the tag only, as before.
-- **`rk sync`** renders from the lock alone, so it works offline. It uses the recorded commit only when
-  `ref_sha_version` equals the pinned `version`; otherwise (a hand-edited pin, or a release PR that moved
-  `version`) it pins the tag. It carries both fields through unchanged, so a lock never changes just because
-  of a sync. A caller edited away from the recorded commit is hand-edited, and `managed-files` fails.
+- **`rk sync`** uses the recorded commit when `ref_sha_version` equals the pinned `version`, and then works
+  offline and carries both fields through unchanged, so a lock never changes just because of a sync. With no usable
+  commit (a fresh adoption, a hand-edited pin, or a release PR that moved `version`) it resolves the release's
+  commit as `install` does and records it, so the callers are pinned by commit from the first sync. If the remote
+  can't be reached it warns and pins the tag only. A caller edited away from the recorded commit is hand-edited, and
+  `managed-files` fails.
+- **`rk sync --check`** (and `rk fleet sync --check`) never uses the network. With no usable commit in the lock it
+  fails with "the callers aren't pinned by commit: run `rk sync`", rather than passing on a tag-only render. It
+  needs no commit when the callers are `unmanaged`.
 - **`rk doctor`** asks the remote once whether the tag still points at the recorded commit: FAIL if not, WARN if
   the remote can't be reached or the lock has no commit for the pinned release, nothing when the callers are
   `unmanaged`.

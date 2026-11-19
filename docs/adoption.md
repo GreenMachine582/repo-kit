@@ -230,8 +230,9 @@ Two PRs per repo, with the owner's steps between them. greentechhub-core went th
      keeping is settled by hand instead (a config value, or an `[overrides]` entry). The existing manifest is kept
      (seeded). `scripts/use-local-gth.sh` stays the repo's own until the `use-local-gth` extra is built (a Future
      item). Move the blocks above the repo's own sections if they were appended after them.
-   - Run `rk install` last. It adds the plugin and resolves the release's commit, so the callers are pinned
-     `@<sha> # vX.Y.Z`. A plain `sync` with no recorded commit writes `@vX.Y.Z` only.
+   - `rk sync` resolves the release's commit and records it in the lock, so the callers are pinned
+     `@<sha> # vX.Y.Z`; `rk install` does the same and also adds the plugin. `rk sync --check` fails until the lock
+     has that commit.
    - **Keep `commits.yml`.** The old rulesets still require its `commits` check, so the PR couldn't merge without it.
 3. **Owner, after it merges:**
    - `rk configure` sets the Apps' labels, environments, variables and secrets.

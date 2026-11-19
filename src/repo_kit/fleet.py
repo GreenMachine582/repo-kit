@@ -203,6 +203,8 @@ def run_sync_check(
         owner, repo = git.parse_owner_repo(git.remote_url(root))
         plan = files.plan_sync(root, config, owner, repo, templates)
         if not plan.drifted:
+            if files.lacks_ref_pin(plan, root, config):
+                return RepoResult(slug, Status.FAIL, "callers not pinned by commit: run `rk sync`")
             return RepoResult(slug, Status.OK, "in sync")
         writes = (files.Action.CREATE, files.Action.UPDATE, files.Action.REFUSE)
         paths = [f"{f.path} ({f.action})" for f in plan.files if f.action in writes]
