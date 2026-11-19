@@ -183,7 +183,7 @@ SHA = "a" * 40
 def test_doctor_warns_when_the_callers_pin_only_a_tag(tmp_path):
     check = doctor.check_ref_pin(tmp_path, recorded_lock(tmp_path, None), None)
     assert check is not None and check.status is Status.WARN
-    assert "rk upgrade" in check.detail
+    assert "rk sync" in check.detail
 
 
 def test_doctor_checks_the_commit_against_the_tag(tmp_path):

@@ -236,3 +236,24 @@ def test_commit_signing_skips_when_not_required(monkeypatch, tmp_path):
     signing_config(monkeypatch, {})
     config = RepoConfig(rulesets=RulesetsConfig(require_signatures=False))
     assert doctor.check_commit_signing(tmp_path, config).status is Status.SKIP
+
+
+def test_commit_signing_warns_when_the_ssh_key_file_is_missing(monkeypatch, tmp_path):
+    missing = str(tmp_path / "other-machine" / "signing.pub")
+    signing_config(
+        monkeypatch, {"commit.gpgsign": "true", "gpg.format": "ssh", "user.signingkey": missing}
+    )
+    check = doctor.check_commit_signing(tmp_path, RepoConfig())
+    assert check.status is Status.WARN
+    assert "git config --unset user.signingkey" in check.detail
+
+
+@pytest.mark.parametrize("key", ["present", "key::ssh-ed25519 AAAA", "ssh-ed25519 AAAA"])
+def test_commit_signing_ok_with_a_key_file_or_literal_key(monkeypatch, tmp_path, key):
+    if key == "present":
+        (tmp_path / "signing.pub").write_text("ssh-ed25519 AAAA\n", encoding="utf-8")
+        key = str(tmp_path / "signing.pub")
+    signing_config(
+        monkeypatch, {"commit.gpgsign": "true", "gpg.format": "ssh", "user.signingkey": key}
+    )
+    assert doctor.check_commit_signing(tmp_path, RepoConfig()).status is Status.OK

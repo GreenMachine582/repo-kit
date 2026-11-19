@@ -32,19 +32,13 @@ v0.9.0 had to be published by hand first
 Done when `doctor` is all-OK in each, one release is cut per repo through the new `release.yml`, and a FastAPI
 worktree links a Core worktree.
 
-The steps are in [docs/adoption.md](docs/adoption.md#gth-repos). On 2026-11-19 greentechhub-core was adopted
-(core#98), with `configure` and `github apply` run and the old files deleted (core#99). `doctor` is all-OK there.
+The steps are in [docs/adoption.md](docs/adoption.md#gth-repos). By 2026-11-19 all three were adopted, with
+`configure` and `github apply` run and the old files deleted: core (core#98, #99), fastapi (#114, #115) and ui
+(#153, #154).
 
-- [ ] **(lead)** `doctor`'s `ref-pin` WARN ("tag vX.Y.Z only") says "`rk upgrade` records one", but at the same pin
-  `upgrade` only prints "already at X.Y.Z". Since #75, the fix is `rk sync`, so point the WARN at it
-  (`src/repo_kit/doctor.py`, the `ref-pin` check, and its test)
-- [ ] **(lead)** One release of core through the new `release.yml`, after checking for an unpublished release PR
-- [ ] **(you)** Install both Apps on fastapi and ui
-- [ ] **(lead)** Adoption PR in fastapi, then ui, settling each refused file (each keeps its own `use-local-gth.sh`)
-- [ ] **(you)** In each, after its adoption PR merges: `rk configure`, `rk github diff` and `apply`, then delete the
-  old rulesets
-- [ ] **(lead)** Cleanup PR in each: the old workflows, scripts and ruleset JSON
+- [ ] **(lead)** One release of each through the new `release.yml`, after checking for an unpublished release PR
 - [ ] **(lead)** Add each to `[fleet.repos]`; `rk fleet doctor` is all-OK
+- [ ] **(lead)** A FastAPI worktree links a Core worktree (`GTH_CORE_PATH`)
 
 ## Phase 4: remaining repos
 

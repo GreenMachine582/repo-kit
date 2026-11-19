@@ -332,7 +332,7 @@ def check_ref_pin(
         return _warn(
             "ref-pin",
             f"repo-kit pin: tag v{config.version} only",
-            f"the callers don't name a commit. `rk upgrade` records one and re-renders them "
+            f"the callers don't name a commit. `rk sync` records one and re-renders them "
             f"({files.LOCK_NAME} has none for {config.version})",
         )
     if release_sha is None:
@@ -410,6 +410,16 @@ def check_commit_signing(repo_root: Path, config: RepoConfig) -> Check:
             "`git config --global commit.gpgsign true` (and `gpg.format ssh` for an SSH key)",
         )
     fmt = git.config_get(repo_root, "gpg.format") or "openpgp"
+    key = git.config_get(repo_root, "user.signingkey")
+    if fmt == "ssh" and key and not key.startswith(("key::", "ssh-")):
+        path = (repo_root / Path(key).expanduser()).resolve()
+        if not path.is_file():
+            return _warn(
+                "commit-signing",
+                f"{label}: the SSH signing key file is missing, so commits here fail to sign",
+                f"user.signingkey is {key}, which isn't a file on this machine. Fix the path, or\n"
+                "drop a stale per-repo one with `git config --unset user.signingkey`",
+            )
     return _ok("commit-signing", f"{label}: git signs commits here ({fmt})")
 
 
