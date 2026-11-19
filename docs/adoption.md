@@ -213,15 +213,16 @@ Moves from `main` only to `dev-main` (Phase 2).
 
 ### GTH repos
 
-Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
+Already `dev-main`. All three are adopted (Phase 3), in the order core → fastapi → ui.
 
-Two PRs per repo, with the owner's steps between them. greentechhub-core went this way (core#98, #99).
+Two PRs per repo, with the owner's steps between them: core#98 and #99, fastapi#114 and #115, ui#153 and #154.
 
 1. **Before:** install `gth-pr-bot` and `gth-release-bot` on the repo.
 2. **Adoption PR**, from `rk wt start chore/adopt-repo-kit`:
    - Write `.repo-kit.toml` by hand (profile, pin, `[project]`, `[checks].required` with the repo's own CI jobs,
      `[worktree]`). `rk install` plans the sync before it writes anything, so if a file would be refused it stops
-     before seeding the config.
+     before seeding the config. `[worktree].setup` installs the same extras the repo's CI does (ui's tests need
+     `.[dev,playground]`), or `check` fails in a fresh worktree.
    - Delete GTH's Branches, Pull requests, Chained PRs and Releasing sections from `CONTRIBUTING.md`.
      Repo-specific sections such as *Developing against local GTH repos* and *Rules* stay, outside the markers.
    - `rk sync` takes over each existing file that matches the render and appends the CONTRIBUTING blocks. Where a
@@ -231,8 +232,8 @@ Two PRs per repo, with the owner's steps between them. greentechhub-core went th
      (seeded). `scripts/use-local-gth.sh` stays the repo's own until the `use-local-gth` extra is built (a Future
      item). Move the blocks above the repo's own sections if they were appended after them.
    - `rk sync` resolves the release's commit and records it in the lock, so the callers are pinned
-     `@<sha> # vX.Y.Z`; `rk install` does the same and also adds the plugin. `rk sync --check` fails until the lock
-     has that commit.
+     `@<sha> # vX.Y.Z`. `rk sync --check` fails until the lock has that commit. Then run `rk install` only to add
+     the plugin to `.claude/settings.json`.
    - **Keep `commits.yml`.** The old rulesets still require its `commits` check, so the PR couldn't merge without it.
 3. **Owner, after it merges:**
    - `rk configure` sets the Apps' labels, environments, variables and secrets.
