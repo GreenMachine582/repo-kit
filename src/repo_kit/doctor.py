@@ -189,6 +189,14 @@ def check_repo_config(repo_root: Path) -> tuple[Check, RepoConfig | None, bool]:
     if engine == files.UNRELEASED:
         detail = "this rk is an unreleased build: files are compared with its own templates"
         return _ok("repo-config", label, detail), config, True
+    if files.engine_behind_pin(engine, config.version):
+        detail = (
+            f"this rk ({engine}) is older than the pin: it can't know what {config.version} "
+            f"expects, so install rk {config.version} "
+            f"({files.INSTALL_RK.format(version=config.version)}). The files can't be checked "
+            f"until then."
+        )
+        return _warn("repo-config", label, detail), config, False
     if engine != config.version:
         detail = (
             f"this rk is {engine}: run `rk upgrade` to move the pin, or install rk "
