@@ -553,6 +553,18 @@ class UpgradeResult:
     files: tuple[str, ...]  # the shared files it creates or updates
 
 
+def _with_pin_row(plan: files.SyncPlan, version: str) -> files.SyncPlan:
+    """A copy of `plan` for display, with `.repo-kit.toml` shown as updated: the sync never
+    touches that seeded file, but the upgrade is about to move its pin line."""
+    row = files.FilePlan(
+        REPO_CONFIG_NAME, "seeded", files.Action.UPDATE, detail=f"version pin moves to {version}"
+    )
+    rows = [f for f in plan.files if f.path != REPO_CONFIG_NAME]
+    rows.append(row)
+    rows.sort(key=lambda f: f.path)
+    return replace(plan, files=rows)
+
+
 def upgrade(
     repo_root: Path,
     owner: str,
@@ -617,7 +629,7 @@ def upgrade(
     plan = files.plan_sync(
         repo_root, replace(config, version=version), owner, repo, templates, ref_sha
     )
-    say(files.summary(plan))
+    say(files.summary(_with_pin_row(plan, version) if new_text != old_text else plan))
     files.raise_if_refused(plan)
     result = UpgradeResult(
         config.version,
