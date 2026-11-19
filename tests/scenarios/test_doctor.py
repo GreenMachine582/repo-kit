@@ -378,6 +378,20 @@ def test_pin_from_another_release_warns_and_skips_files(
     assert files.status is Status.SKIP
 
 
+def test_pin_ahead_of_this_rk_says_to_install_the_newer_rk(
+    adopted, github, user_config, tmp_path, monkeypatch
+):
+    work, setup, _said = adopted
+    monkeypatch.setattr(repo_kit, "__version__", "1.3.0")
+
+    checks = run(work, github, setup, user_config, tmp_path)
+
+    (pin,) = find(checks, ".repo-kit.toml valid")
+    assert pin.status is Status.WARN  # doctor stays non-fatal
+    assert "older than the pin" in pin.detail
+    assert "uv tool install --force" in pin.detail
+
+
 def test_invalid_config_fails_and_skips_what_needs_it(adopted, github, user_config, tmp_path):
     work, setup, _said = adopted
     config = work / ".repo-kit.toml"

@@ -10,7 +10,8 @@ Committed. The single input to everything rk generates or applies. A repo withou
 below (`profile = "dev-main"`, no setup or check, `env_dirs = [".venv"]`), except `rk github`, which refuses to run
 without one ([rulesets.md](rulesets.md#commands)). `rk install` seeds it with `version`, `profile` and
 `[project]` ([adoption.md](adoption.md#install-step-by-step)), and from then on it belongs to the repo (`seeded`
-mode: rk never rewrites it, except `rk upgrade` changing `version`).
+mode: rk never rewrites it, except `rk upgrade` changing `version`). An rk older than `version` refuses the commands
+that compare against it ([adoption.md](adoption.md#versioning)).
 
 ```toml
 version = "1.4.0"                 # the ONE pin; every generated caller uses it
