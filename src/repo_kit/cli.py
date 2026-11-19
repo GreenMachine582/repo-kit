@@ -76,7 +76,7 @@ def _update_prs(args: argparse.Namespace) -> int:
 
 
 def _sync(args: argparse.Namespace) -> int:
-    from repo_kit import bootstrap, files
+    from repo_kit import bootstrap, files, git
 
     changed: list[str] = []
     try:
@@ -86,6 +86,7 @@ def _sync(args: argparse.Namespace) -> int:
             changed=changed,
             adopt=args.adopt,
             confirm=bootstrap.ask,
+            resolve_sha=git.resolve_release_sha,
         )
     finally:
         if not args.check:

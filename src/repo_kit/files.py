@@ -768,6 +768,19 @@ def plan_sync(
     return plan
 
 
+def lacks_ref_pin(plan: SyncPlan, repo_root: Path, config: RepoConfig) -> bool:
+    """Whether a generated caller is rendered without the release's commit: the lock has none for
+    the pinned version. A repo whose callers are all `unmanaged` (repo-kit itself) has no need."""
+    managed = any(f.path in CALLERS and f.action is not Action.SKIP for f in plan.files)
+    return managed and not lock_ref_sha(read_lock(repo_root), config.version)
+
+
+NO_REF_PIN = (
+    "The callers aren't pinned by commit: the lock records no commit for the pinned release. "
+    "Run `rk sync` (with network access) and commit the result."
+)
+
+
 # --- applying ------------------------------------------------------------------------------
 
 
@@ -937,19 +950,32 @@ def run_sync(
     root: Path | None = None,
     adopt: bool = False,
     confirm: Callable[[str], bool] | None = None,
+    resolve_sha: Callable[[str], str] | None = None,
 ) -> int:
-    """The command. Returns the exit code: 1 when `--check` finds drift."""
+    """The command. Returns the exit code: 1 when `--check` finds drift, or finds the callers not
+    pinned by commit. A writing sync with no recorded commit for the pin resolves it (through
+    `resolve_sha`, as `install` does) and records it; `--check` never resolves, it fails."""
     git.require_version(cwd)
     repo_root = git.toplevel(cwd)
     config = load_repo_config(repo_root)
     require_pin(config)
     owner, repo = git.parse_owner_repo(git.remote_url(repo_root))
     plan = plan_sync(repo_root, config, owner, repo, root)
+    unpinned = lacks_ref_pin(plan, repo_root, config)
+    ref_sha: str | _Keep = KEEP
+    if unpinned and not check and resolve_sha is not None:
+        from repo_kit.bootstrap import resolve_ref  # here: bootstrap imports this module
+
+        ref_sha = resolve_ref(repo_root, config.version, resolve_sha, say)
+        if not isinstance(ref_sha, _Keep):
+            plan = plan_sync(repo_root, config, owner, repo, root, ref_sha)
     declined: list[str] = []
     if adopt and not check:
         plan, declined = _adopt(
             plan,
-            lambda accepted: plan_sync(repo_root, config, owner, repo, root, adopt=accepted),
+            lambda accepted: plan_sync(
+                repo_root, config, owner, repo, root, ref_sha, adopt=accepted
+            ),
             confirm or (lambda _question: False),
             say,
         )
@@ -957,6 +983,9 @@ def run_sync(
     if check:
         if plan.drifted:
             say("Out of sync with repo-kit: run `rk sync` and commit the result.")
+            return 1
+        if unpinned:
+            say(NO_REF_PIN)
             return 1
         return 0
     apply_plan(repo_root, plan, changed)
