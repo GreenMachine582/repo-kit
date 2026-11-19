@@ -35,9 +35,9 @@ worktree links a Core worktree.
 The steps are in [docs/adoption.md](docs/adoption.md#gth-repos). On 2026-11-19 greentechhub-core was adopted
 (core#98), with `configure` and `github apply` run and the old files deleted (core#99). `doctor` is all-OK there.
 
-- [ ] **(lead)** A plain `rk sync` with no `ref_sha` in the lock pins the callers by tag only (`@vX.Y.Z`), and
-  `sync --check` passes on that. It should resolve the release's commit, or refuse, as `install` and `upgrade` do.
-  `rk install` covers it for now.
+- [ ] **(lead)** `doctor`'s `ref-pin` WARN ("tag vX.Y.Z only") says "`rk upgrade` records one", but at the same pin
+  `upgrade` only prints "already at X.Y.Z". Since #75, the fix is `rk sync`, so point the WARN at it
+  (`src/repo_kit/doctor.py`, the `ref-pin` check, and its test)
 - [ ] **(lead)** One release of core through the new `release.yml`, after checking for an unpublished release PR
 - [ ] **(you)** Install both Apps on fastapi and ui
 - [ ] **(lead)** Adoption PR in fastapi, then ui, settling each refused file (each keeps its own `use-local-gth.sh`)
