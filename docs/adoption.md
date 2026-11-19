@@ -51,7 +51,8 @@ git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z`), then run `rk upgrade`.
    rk's version. An unreleased rk (`0.0.0`) accepts any explicit target, and needs one; it warns that its templates
    may differ from that release. A target below the current pin (a downgrade) is refused.
 2. **Checks, before any write.** The sync is planned with the new pin. A managed file with local edits stops here,
-   with its diff, and nothing is written. `.repo-kit.toml` must hold exactly one top-level `version = "…"` line.
+   with its diff, and nothing is written. The per-file table shows `.repo-kit.toml` as `updated` when the pin will
+   move, though the sync itself never touches that seeded file. `.repo-kit.toml` must hold exactly one top-level `version = "…"` line.
 3. **Files.** The plan is applied: managed files and blocks that use the version are re-rendered, and templates that
    are new in this release are created and entered in the lock.
 4. **Pin.** The `version` line of `.repo-kit.toml` is rewritten last, so a failed write leaves the old pin and a

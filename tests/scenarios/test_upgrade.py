@@ -200,3 +200,38 @@ def test_scenario_18_a_declared_rename_moves_the_file_in_one_upgrade(repo, templ
     again: list[str] = []
     assert "already at 1.1.0" in run(repo, templates, "1.1.0", again)
     assert again == []
+
+
+def test_the_table_shows_the_config_updated_when_the_pin_moves(repo, templates):
+    said = run(repo, templates, "v1.1.0")
+    (row,) = [
+        line
+        for line in said.splitlines()
+        if line.rstrip().split("  ")[-1].startswith(".repo-kit.toml")
+    ]
+    assert row.strip().startswith("updated")
+    assert "version pin moves to 1.1.0" in row
+
+
+def test_the_table_leaves_the_config_alone_when_the_pin_stays(repo, templates, monkeypatch):
+    run(repo, templates, "v1.1.0")
+    said = run(repo, templates, "v1.1.0")
+    assert "already at 1.1.0" in said
+    assert ".repo-kit.toml" not in said
+
+
+def test_a_dry_run_table_shows_the_pin_move_and_writes_nothing(repo, templates):
+    before = snapshot(repo)
+    said: list[str] = []
+    upgrade(
+        repo,
+        "o",
+        "origin",
+        "v1.1.0",
+        changed=[],
+        say=said.append,
+        templates=templates,
+        dry_run=True,
+    )
+    assert "updated  .repo-kit.toml" in "\n".join(said)
+    assert snapshot(repo) == before
