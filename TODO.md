@@ -32,12 +32,18 @@ v0.9.0 had to be published by hand first
 Done when `doctor` is all-OK in each, one release is cut per repo through the new `release.yml`, and a FastAPI
 worktree links a Core worktree.
 
-- [ ] **(you)** Install both Apps on core, fastapi and ui
-- [ ] **(lead)** `rk sync --adopt` in core, then fastapi, then ui, settling each refused file (each keeps its own
-  `use-local-gth.sh`)
-- [ ] **(you)** In each, after its adoption PR merges: `rk configure`, then `rk github diff` and `apply`. `rk github`
-  refuses a checkout without `.repo-kit.toml`, so this comes after the adoption
-- [ ] **(lead)** Delete the old scripts and ruleset JSON in each ([docs/adoption.md](docs/adoption.md#gth-repos))
+The steps are in [docs/adoption.md](docs/adoption.md#gth-repos). On 2026-11-19 greentechhub-core was adopted
+(core#98), with `configure` and `github apply` run and the old files deleted (core#99). `doctor` is all-OK there.
+
+- [ ] **(lead)** A plain `rk sync` with no `ref_sha` in the lock pins the callers by tag only (`@vX.Y.Z`), and
+  `sync --check` passes on that. It should resolve the release's commit, or refuse, as `install` and `upgrade` do.
+  `rk install` covers it for now.
+- [ ] **(lead)** One release of core through the new `release.yml`, after checking for an unpublished release PR
+- [ ] **(you)** Install both Apps on fastapi and ui
+- [ ] **(lead)** Adoption PR in fastapi, then ui, settling each refused file (each keeps its own `use-local-gth.sh`)
+- [ ] **(you)** In each, after its adoption PR merges: `rk configure`, `rk github diff` and `apply`, then delete the
+  old rulesets
+- [ ] **(lead)** Cleanup PR in each: the old workflows, scripts and ruleset JSON
 - [ ] **(lead)** Add each to `[fleet.repos]`; `rk fleet doctor` is all-OK
 
 ## Phase 4: remaining repos

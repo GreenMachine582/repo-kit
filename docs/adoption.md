@@ -215,23 +215,40 @@ Moves from `main` only to `dev-main` (Phase 2).
 
 Already `dev-main`; migrating (Phase 3), in the order core → fastapi → ui.
 
-1. `rk sync` takes over each existing workflow once it matches the render; where one differs,
-   it refuses with the diff. Run `rk sync --adopt` to go through those files one at a time: each is shown as a diff
-   and taken over (backed up, then replaced by the render) only after you type `y`. A difference worth keeping is
-   settled by hand instead (a config value, or an `[overrides]` entry). The existing manifest is kept (seeded). `scripts/use-local-gth.sh` stays the repo's own until the
-   `use-local-gth` extra is built (a Future item).
-2. Delete `scripts/apply-rulesets.sh`, `scripts/prune-branches.sh`, `.github/rulesets/*.json`,
-   `.github/repo-settings.json` and `.github/workflows/release-please.yml` (the managed `release.yml` replaces it).
-   Run `rk configure` to set `gth-release-bot`'s new variable and secret, and delete the old `RELEASE_APP_*` ones
-   ([github-app.md](github-app.md#releases-gth-release-bot)).
-3. Install `gth-release-bot` on the repo, then check that `rk github diff` shows no unexpected changes before
-   `apply`. After applying, delete the old `dev`, `main`
-   and `release tags` rulesets, which the diff lists as left alone. Before the first release, check for a release
-   that was never published ([below](#a-release-pr-merged-but-never-published)).
-4. The CONTRIBUTING sections become managed blocks. GTH's Branches, Pull requests, Chained PRs and Releasing
-   sections are deleted, and `rk sync` appends the blocks that replace them. Repo-specific sections such as
-   *Developing against local GTH repos* and *Rules* stay outside the markers.
-5. greentechhub-core's `local_gth.py` gets the new resolution order ([worktrees.md](worktrees.md#-local-gth-mode)).
+Two PRs per repo, with the owner's steps between them. greentechhub-core went this way (core#98, #99).
+
+1. **Before:** install `gth-pr-bot` and `gth-release-bot` on the repo.
+2. **Adoption PR**, from `rk wt start chore/adopt-repo-kit`:
+   - Write `.repo-kit.toml` by hand (profile, pin, `[project]`, `[checks].required` with the repo's own CI jobs,
+     `[worktree]`). `rk install` plans the sync before it writes anything, so if a file would be refused it stops
+     before seeding the config.
+   - Delete GTH's Branches, Pull requests, Chained PRs and Releasing sections from `CONTRIBUTING.md`.
+     Repo-specific sections such as *Developing against local GTH repos* and *Rules* stay, outside the markers.
+   - `rk sync` takes over each existing file that matches the render and appends the CONTRIBUTING blocks. Where a
+     file differs, it refuses with the diff. Run `rk sync --adopt` to go through those one at a time: each is shown
+     as a diff and taken over (backed up, then replaced by the render) only after you type `y`. A difference worth
+     keeping is settled by hand instead (a config value, or an `[overrides]` entry). The existing manifest is kept
+     (seeded). `scripts/use-local-gth.sh` stays the repo's own until the `use-local-gth` extra is built (a Future
+     item). Move the blocks above the repo's own sections if they were appended after them.
+   - Run `rk install` last. It adds the plugin and resolves the release's commit, so the callers are pinned
+     `@<sha> # vX.Y.Z`. A plain `sync` with no recorded commit writes `@vX.Y.Z` only.
+   - **Keep `commits.yml`.** The old rulesets still require its `commits` check, so the PR couldn't merge without it.
+3. **Owner, after it merges:**
+   - `rk configure` sets the Apps' labels, environments, variables and secrets.
+   - Check that `rk github diff` creates `repo-kit: dev`, `main` and `tags` and shows nothing unexpected, then run
+     `rk github apply`.
+   - Delete the old `dev`, `main` and `release tags` rulesets, which the diff lists as left alone. GitHub enforces
+     both sets until then. `rk github diff` should then match.
+4. **Cleanup PR:**
+   - Delete `.github/workflows/commits.yml` (`pr-checks` replaces it) and `.github/workflows/release-please.yml`
+     (the managed `release.yml` replaces it).
+   - Delete `scripts/apply-rulesets.sh`, `.github/rulesets/*.json` and `.github/repo-settings.json` (`rk github`
+     replaces them) and `scripts/prune-branches.sh` (`rk branches prune` replaces it).
+   - Point CONTRIBUTING's *Rules* at `.repo-kit.toml` and `rk github`.
+   - After it merges, the owner deletes the old `RELEASE_APP_*` secret and variable
+     ([github-app.md](github-app.md#releases-gth-release-bot)).
+5. **Before the first release**, check for a release that was never published
+   ([below](#a-release-pr-merged-but-never-published)).
 
 ### A release PR merged but never published
 
