@@ -10,6 +10,9 @@ One branch = one worktree = one Claude session. Never start work on a branch tha
 `rk` must be on `PATH`. If it isn't, stop and give the user the install line from the repo-kit README
 (`uv tool install git+https://github.com/GreenMachine582/repo-kit@vX.Y.Z`); don't install it yourself.
 
+If `rk` refuses because it is older than the repo's pin ("this repo is pinned to X but this rk is Y"), stop and give
+the user the install line it prints. Don't look for another `rk` on `PATH`.
+
 ## 1. Pick the branch name
 
 `<type>/<short-description>`, with a Conventional Commits type, such as `feat/api-v2` or `fix/scan-resume`.
@@ -23,12 +26,16 @@ rk wt start <type/description>
 Options:
 
 - `--from <branch>`: branch off another feature branch, to build a chain of PRs. Without it, the branch comes off the
-  profile's default base (`dev`).
+  profile's default base (`dev`). `rk` records the base, and `wt sync` and `wt done` use it.
 - `--link <pkg>=<branch>`: use a local worktree of a GTH package instead of its pin. Repeatable.
 - `--no-setup`: skip `[worktree].setup` (the venv and install). Only when asked.
 
+It refuses if the branch already exists, locally or on `origin`: pick another name, or work in the existing branch's
+worktree.
+
 `rk` creates the worktree under `<worktree_root>/<owner>-<repo>/<slug>-<hash6>`, runs the repo's setup, applies the
-links, then prints the path and the command to start Claude in it.
+links, then prints the path and the command to start Claude in it. If the setup fails, the worktree stays: fix the command
+and run it in that worktree by hand.
 
 ## 3. Hand over
 
